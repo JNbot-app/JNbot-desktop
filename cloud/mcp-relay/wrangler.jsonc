@@ -1,0 +1,44 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "mcp",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-08-02",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"workers_dev": true,
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "INSTALLATIONS",
+				"class_name": "InstallationRelay"
+			}
+		]
+	},
+	"kv_namespaces": [
+		{
+			"binding": "OAUTH_KV",
+			"id": "22df641ed4f44ad68e9192a5776ab809"
+		},
+		{
+			"binding": "jnbot_mcp_oauth",
+			"id": "d985528e6fa64ace8823a44b010837d7"
+		}
+	],
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"InstallationRelay"
+			]
+		}
+	],
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"enabled": true,
+			"invocation_logs": true
+		}
+	}
+}

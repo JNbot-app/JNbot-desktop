@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Brain",
+    "options": [
+      {
+        "id": "mode",
+        "label": "Mode",
+        "type": "select",
+        "options": [
+          { "label": "Record → train → run", "value": "all" },
+          { "label": "Record (JNbot Client)", "value": "record" },
+          { "label": "Train", "value": "train" },
+          { "label": "Run on bot", "value": "run" },
+          { "label": "Delete recordings + model", "value": "reset" }
+        ],
+        "defaultValue": "all"
+      },
+      { "id": "minutes", "label": "Record minutes", "type": "slider", "min": 1, "max": 30, "step": 1, "defaultValue": 5 },
+      { "id": "alt", "label": "Bot", "type": "altSelect" },
+      { "id": "gamemode", "label": "Gamemode", "type": "gamemodeSelect" }
+    ]
+  }
+]

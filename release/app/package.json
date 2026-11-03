@@ -1,0 +1,17 @@
+{
+  "name": "jnbot",
+  "version": "3.3.1",
+  "description": "Minecraft bot program built for JartexNetwork & PikaNetwork",
+  "main": "./dist/main/main.js",
+  "author": {
+    "name": "usserwout",
+    "email": "usserwout@gmail.com"
+  },
+  "scripts": {
+    "rebuild": "node -r ts-node/register ../../.erb/scripts/electron-rebuild.js",
+    "postinstall": "npm run rebuild && npm run link-modules",
+    "link-modules": "node -r ts-node/register ../../.erb/scripts/link-modules.ts"
+  },
+  "dependencies": {},
+  "license": "MIT"
+}

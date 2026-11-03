@@ -1,0 +1,17 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "share",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-09-06",
+	"workers_dev": false,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "jnbot-share",
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	],
+	// Public half of the reviewer key in test/share.test.ts.
+	"vars": { "OFFICIAL_PUBLIC_KEYS": "MCowBQYDK2VwAyEARd-8n5aswVoHg5HDMovW5rdnagl7gF5a26E0ir3Tb74" }
+}

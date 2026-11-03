@@ -1,0 +1,382 @@
+
+
+
+
+
+
+type Item = any
+type MineflayerBotEvents = any
+
+interface BotEvents {
+  chat: [username: string, message: string, translate: string | null, jsonMsg: any, matches: string[] | null];
+  whisper: [username: string, message: string, translate: string | null, jsonMsg: any, matches: string[] | null];
+  actionBar: [jsonMsg: any, verified: any];
+  message: [jsonMsg: any, position: string, sender: any, verified: any];
+  messagestr: [message: string, messagePosition: string, jsonMsg: any, sender: any, verified: any];
+  inject_allowed: [];
+  login: [];
+  spawn: [];
+  respawn: [];
+  game: [];
+  resourcePack: [url: string, hash?: string];
+  title: [title: string, type: string];
+  title_times: [fadeIn: number, stay: number, fadeOut: number];
+  title_clear: [];
+  rain: [];
+  weatherUpdate: [];
+  time: [];
+  kicked: [reason: string, loggedIn: boolean];
+  end: [reason: string];
+  error: [err: Error];
+  spawnReset: [];
+  death: [];
+  health: [];
+  breath: [];
+  entityAttributes: [entity: any];
+  entitySwingArm: [entity: any];
+  entityHurt: [entity: any];
+  entityDead: [entity: any];
+  entityTaming: [entity: any];
+  entityTamed: [entity: any];
+  entityShakingOffWater: [entity: any];
+  entityEatingGrass: [entity: any];
+  entityHandSwap: [entity: any];
+  entityWake: [entity: any];
+  entityEat: [entity: any];
+  entityCriticalEffect: [entity: any];
+  entityMagicCriticalEffect: [entity: any];
+  entityCrouch: [entity: any];
+  entityUncrouch: [entity: any];
+  entityEquip: [entity: any];
+  entitySleep: [entity: any];
+  entitySpawn: [entity: any];
+  entityElytraFlew: [entity: any];
+  itemDrop: [entity: any];
+  playerCollect: [collector: any, collected: any];
+  entityGone: [entity: any];
+  entityMoved: [entity: any];
+  entityDetach: [entity: any, vehicle: any];
+  entityAttach: [entity: any, vehicle: any];
+  entityUpdate: [entity: any];
+  entityEffect: [entity: any, effect: any];
+  entityEffectEnd: [entity: any, effect: any];
+  playerJoined: [player: any];
+  playerUpdated: [player: any];
+  playerLeft: [player: any];
+  blockUpdate: [oldBlock: any, newBlock: any];
+  'blockUpdate:(x, y, z)': [oldBlock: any, newBlock: any];
+  blockPlaced: [oldBlock: any, newBlock: any];
+  chunkColumnLoad: [point: any];
+  chunkColumnUnload: [point: any];
+  soundEffectHeard: [soundName: string, position: any, volume: number, pitch: number];
+  hardcodedSoundEffectHeard: [soundId: number, soundCategory: number, position: any, volume: number, pitch: number];
+  noteHeard: [block: any, instrument: any, pitch: number];
+  pistonMove: [block: any, isPulling: number, direction: number];
+  chestLidMove: [block: any, isOpen: number, block2: any];
+  blockBreakProgressObserved: [block: any, destroyStage: number, entity: any];
+  blockBreakProgressEnd: [block: any, entity: any];
+  diggingCompleted: [block: any];
+  diggingAborted: [block: any];
+  usedFirework: [fireworkEntityId: number];
+  move: [];
+  forcedMove: [];
+  mount: [];
+  dismount: [vehicle: any];
+  windowOpen: [window: any];
+  windowClose: [window: any];
+  sleep: [];
+  wake: [];
+  experience: [];
+  scoreboardCreated: [scoreboard: any];
+  scoreboardDeleted: [scoreboard: any];
+  scoreboardTitleChanged: [scoreboard: any];
+  scoreUpdated: [scoreboard: any, item: number];
+  scoreRemoved: [scoreboard: any, item: number];
+  scoreboardPosition: [position: any, scoreboard: any];
+  teamCreated: [team: any];
+  teamRemoved: [team: any];
+  teamUpdated: [team: any];
+  teamMemberAdded: [team: any];
+  teamMemberRemoved: [team: any];
+  bossBarCreated: [bossBar: any];
+  bossBarDeleted: [bossBar: any];
+  bossBarUpdated: [bossBar: any];
+  heldItemChanged: [heldItem: any];
+  physicsTick: [];
+  'chat:name': [matches: any];
+  particle: [];
+}
+
+type MineflayerBot = {
+  on<K extends keyof BotEvents>(
+    event: K,
+    listener: (...args: BotEvents[K]) => void,
+  ): MineflayerBot;
+  once<K extends keyof BotEvents>(
+    event: K,
+    listener: (...args: BotEvents[K]) => void,
+  ): MineflayerBot;
+  off<K extends keyof BotEvents>(
+    event: K,
+    listener: (...args: BotEvents[K]) => void,
+  ): MineflayerBot;
+
+  chat(message: string): void;
+  clickWindow(
+    slot: number,
+    mouseButton?: number,
+    mode?: number,
+  ): Promise<void>;
+  closeWindow(window: any): void;
+  end(reason?: string): void;
+
+  // Properties
+  username: string;
+  spawnPoint: any; // Vec3
+  heldItem: any; // Item
+  usingHeldItem: boolean;
+  game: {
+    levelType: any;
+    dimension: any;
+    difficulty: any;
+    gameMode: any;
+    hardcore: boolean;
+    maxPlayers: number;
+    serverBrand: string;
+    minY?: number;
+    height?: number;
+  };
+  entity: any; // Entity
+  entities: { [id: string]: any }; // Entity
+  player: any;
+  players: { [username: string]: any };
+  tablist: { header: any; footer: any };
+  isRaining: boolean;
+  rainState: number;
+  thunderState: number;
+  chatPatterns: any[];
+  settings: {
+    chat: any;
+    colorsEnabled: boolean;
+    viewDistance: any;
+    difficulty: any;
+    skinParts: any;
+    enableTextFiltering?: boolean;
+    enableServerListing?: boolean;
+  };
+  experience: { level: number; points: number; progress: number };
+  health: number;
+  food: number;
+  foodSaturation: number;
+  oxygenLevel: number;
+  physics: any;
+  fireworkRocketDuration: number;
+  simpleClick: {
+    leftMouse: (slot: number) => Promise<void>;
+    rightMouse: (slot: number) => Promise<void>;
+  };
+  time: {
+    doDaylightCycle: boolean;
+    bigTime: any;
+    time: number;
+    timeOfDay: number;
+    day: number;
+    isDay: boolean;
+    moonPhase: number;
+    bigAge: any;
+    age: number;
+  };
+  quickBarSlot: number;
+  inventory: any; // Window
+  targetDigBlock: any; // Block
+  isSleeping: boolean;
+  scoreboards: { [name: string]: any };
+  scoreboard: { [slot: any]: any };
+  teams: { [name: string]: any };
+  teamMap: { [name: string]: any };
+  controlState: any;
+  physicsEnabled: boolean;
+  world: any;
+  _client: any;
+  registry: any;
+
+  // Methods
+  connect: (options: any) => void;
+  supportFeature: (name: string) => boolean;
+  blockAt: (point: any, extraInfos?: boolean) => any | null; // Block
+  waitForChunksToLoad: () => Promise<void>;
+  blockInSight: (maxSteps: number, vectorLength: number) => any | null; // Block
+  blockAtCursor: (maxDistance?: number) => any | null; // Block
+  entityAtCursor: (maxDistance?: number) => any | null; // Entity
+  blockAtEntityCursor: (entity?: any, maxDistance?: number) => any | null; // Block
+  canSeeBlock: (block: any) => boolean;
+  findBlocks: (options: any) => any[]; // Vec3[]
+  findBlock: (options: any) => any | null; // Block
+  canDigBlock: (block: any) => boolean;
+  recipesFor: (
+    itemType: number,
+    metadata: number | null,
+    minResultCount: number | null,
+    craftingTable: any | boolean | null
+  ) => any[]; // Recipe[]
+  recipesAll: (
+    itemType: number,
+    metadata: number | null,
+    craftingTable: any | boolean | null
+  ) => any[]; // Recipe[]
+  nearestEntity: (match?: (entity: any) => boolean) => any | null; // Entity
+  quit: (reason?: string) => void;
+  tabComplete: (
+    str: string,
+    assumeCommand?: boolean,
+    sendBlockInSight?: boolean,
+    timeout?: number
+  ) => Promise<string[]>;
+  whisper: (username: string, message: string) => void;
+  chatAddPattern: (pattern: RegExp, chatType: string, description?: string) => number;
+  addChatPattern: (name: string, pattern: RegExp, options?: any) => number;
+  addChatPatternSet: (name: string, patterns: RegExp[], options?: any) => number;
+  removeChatPattern: (name: string | number) => void;
+  awaitMessage: (...args: string[] | RegExp[]) => Promise<string>;
+  setSettings: (options: Partial<any>) => void;
+  loadPlugin: (plugin: any) => void;
+  loadPlugins: (plugins: any[]) => void;
+  hasPlugin: (plugin: any) => boolean;
+  sleep: (bedBlock: any) => Promise<void>; // Block
+  isABed: (bedBlock: any) => boolean; // Block
+  wake: () => Promise<void>;
+  setControlState: (control: any, state: boolean) => void;
+  getControlState: (control: any) => boolean;
+  clearControlStates: () => void;
+  getExplosionDamages: (entity: any, position: any, radius: number, rawDamages?: boolean) => number | null;
+  lookAt: (point: any, force?: boolean) => Promise<void>; // Vec3
+  look: (yaw: number, pitch: number, force?: boolean) => Promise<void>;
+  updateSign: (block: any, text: string, back?: boolean) => void; // Block
+  equip: (item: any | number, destination: any | null) => Promise<void>; // Item
+  unequip: (destination: any | null) => Promise<void>;
+  tossStack: (item: any) => Promise<void>; // Item
+  toss: (itemType: number, metadata: number | null, count: number | null) => Promise<void>;
+  elytraFly: () => Promise<void>;
+  dig: ((block: any, forceLook?: boolean | 'ignore') => Promise<void>) & ((block: any, forceLook: boolean | 'ignore', digFace: 'auto' | any | 'raycast') => Promise<void>); // Block
+  stopDigging: () => void;
+  digTime: (block: any) => number; // Block
+  acceptResourcePack: () => void;
+  denyResourcePack: () => void;
+  placeBlock: (referenceBlock: any, faceVector: any) => Promise<void>; // Block, Vec3
+  placeEntity: (referenceBlock: any, faceVector: any) => Promise<any>; // Block, Vec3, Entity
+  activateBlock: (block: any, direction?: any, cursorPos?: any) => Promise<void>; // Block, Vec3, Vec3
+  activateEntity: (entity: any) => Promise<void>; // Entity
+  activateEntityAt: (entity: any, position: any) => Promise<void>; // Entity, Vec3
+  consume: () => Promise<void>;
+  fish: () => Promise<void>;
+  activateItem: (offHand?: boolean) => void;
+  deactivateItem: () => void;
+  useOn: (targetEntity: any) => void; // Entity
+  attack: (entity: any, swing?: boolean) => void; // Entity
+  swingArm: (hand?: 'left' | 'right', showHand?: boolean) => void;
+  mouse: { click: (button: 'left' | 'right') => void; press: (button: 'left' | 'right') => void; release: (button: 'left' | 'right') => void; isDown: (button: 'left' | 'right') => boolean }; // vanilla-accurate mouse button emulation
+  mount: (entity: any) => void; // Entity
+  dismount: () => void;
+  moveVehicle: (left: number, forward: number) => void;
+  setQuickBarSlot: (slot: number) => void;
+  craft: (recipe: any, count?: number, craftingTable?: any) => Promise<void>; // Recipe, Block
+  writeBook: (slot: number, pages: string[]) => Promise<void>;
+  openContainer: (container: any | any, direction?: any, cursorPos?: any) => Promise<any>; // Block | Entity, Vec3, Vec3
+  openChest: (chest: any | any, direction?: number, cursorPos?: any) => Promise<any>; // Block | Entity, Vec3
+  openFurnace: (furnace: any) => Promise<any>; // Block
+  openDispenser: (dispenser: any) => Promise<any>; // Block
+  openEnchantmentTable: (enchantmentTable: any) => Promise<any>; // Block
+  openAnvil: (anvil: any) => Promise<any>; // Block
+  openVillager: (villager: any) => Promise<any>; // Entity
+  trade: (villagerInstance: any, tradeIndex: string | number, times?: number) => Promise<void>;
+  setCommandBlock: (pos: any, command: string, options?: any) => void; // Vec3
+  waitForTicks: (ticks: number) => Promise<void>;
+  respawn: () => void;
+  // Lower level inventory methods
+  putSelectedItemRange: (start: number, end: number, window: any, slot: any) => Promise<void>;
+  putAway: (slot: number) => Promise<void>;
+  transfer: (options: any) => Promise<void>;
+  openBlock: (block: any, direction?: any, cursorPos?: any) => Promise<any>; // Block, Vec3, Vec3
+  openEntity: (entity: any) => Promise<any>; // Entity
+  moveSlotItem: (sourceSlot: number, destSlot: number) => Promise<void>;
+  updateHeldItem: () => void;
+  getEquipmentDestSlot: (destination: string) => number;
+  // Creative methods
+  creative: {
+    setInventorySlot: (slot: number, item: any | null) => Promise<void>; // Item
+    clearSlot: (slot: number) => Promise<void>;
+    clearInventory: () => Promise<void>;
+    flyTo: (destination: any) => Promise<void>; // Vec3
+    startFlying: () => void;
+    stopFlying: () => void;
+  };
+};
+
+type Bot =  MineflayerBot & {
+  botId: number;
+  join: (
+    gamemode: string,
+  ) => undefined | Promise<undefined> | { error: string };
+  isOnline: () => boolean;
+  getGamemode: () => string;
+  itemInfo(item: Item | null): { name: string; info: string };
+  login: (password?: string) => Promise<void>; // Only works if you call this in the start of bot
+
+  getRank: () => string | undefined;
+  transferItems: (
+    mode: number | 'trade' | 'gift' | 'window' | 'tradeWithKeys',
+    options: {
+      username?: string;
+      command?: string;
+      ignore?: string[];
+      filter?: string[];
+      itemFilter?: (item: Item) => boolean;
+      keep?: boolean; // whether pass the item if not filtered
+      keys?: string[]; // How many items it should click on each key  ("<keyType>,<amount>")
+      forceTradeKeys?: boolean; // Whether to force trade keys even when no other items are in player inventory
+      timeout?: number | null;
+      shiftClick?: boolean; // Whether to shift click items into window (windowBehaviour only)}) => void
+    },
+  ) => Promise<void>;
+
+  findWindowSlots: (
+    filter: { name?: string; lore?: string } | string,
+    options?: {
+      caseSensitive?: boolean;
+      rows?: number[] | null;
+      columns?: number[] | null;
+      slotRange?: number[] | null;
+      window?: { slots: (Item | null)[]; inventoryStart: number };
+      toAlpha?: boolean;
+    },
+  ) => Item[];
+
+  openInventory: () => void;
+
+  onceWithTimeout: <K extends string>(
+    event: K,
+    timeoutInTicks: number,
+  ) => Promise<unknown>;
+
+  getWindowTitle: () => string;
+  actions: any;
+};
+
+declare const bot: Bot;
+
+declare const console: {
+  log(...data: unknown[]): void;
+  error(...data: unknown[]): void;
+  warn(...data: unknown[]): void;
+  success(...data: unknown[]): void;
+  info(...data: unknown[]): void;
+};
+/** Aborted when the run is stopped or times out. */
+declare const signal: {
+  readonly aborted: boolean;
+  addEventListener(type: 'abort', listener: () => void): void;
+};
+declare function setTimeout(callback: (...args: any[]) => void, ms?: number, ...args: any[]): any;
+declare function setInterval(callback: (...args: any[]) => void, ms?: number, ...args: any[]): any;
+declare function clearTimeout(id: any): void;
+declare function clearInterval(id: any): void;

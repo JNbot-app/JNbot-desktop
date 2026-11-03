@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Debug Fabric Client",
+      "request": "launch",
+      "mainClass": "", 
+      "projectName": "jnbot-fabric",
+      "args": "runClient",
+      "vmArgs": "-XX:+AllowEnhancedClassRedefinition", 
+      "cwd": "${workspaceFolder}/minecraft-mods/jnbot-fabric"
+    }
+  ]
+}

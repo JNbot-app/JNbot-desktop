@@ -1,0 +1,8 @@
+{
+  "id": "jnbot-local-v1",
+  "engineRevision": "representation-v4-1",
+  "mainUrl": "https://github.com/usserwout/JNbot-updater/releases/download/v3.3.0/jnbot-model-deployment.cact",
+  "mainSha256": "99d78c3b8ce5294aad814374d68ac6349ea61ca05bca6db5d383d78bb9dfe987",
+  "flashUrl": "https://github.com/usserwout/JNbot-updater/releases/download/v3.3.0/jnbot-model-flash-deployment.cact",
+  "flashSha256": "ed076605c9ea7459119ffce0016edcfe88e186ae836da3a5472684c4ae954398"
+}

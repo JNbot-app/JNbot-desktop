@@ -1,0 +1,246 @@
+// Type declarations for profile-UI plugins. Loaded by the code editor when
+// the active plugin has scriptType === 'profileUi'. Keep this file in sync
+// with the runtime source in src/common/profileUiBuildersSource.ts.
+
+type ProfileUiTone =
+  | 'amber'
+  | 'emerald'
+  | 'rose'
+  | 'indigo'
+  | 'sky'
+  | 'purple'
+  | 'slate'
+  | 'red'
+  | 'cyan';
+
+type ProfileUiColumn = 'left' | 'right';
+
+interface ProfileUiPlayer {
+  /** Required — the in-game name. */
+  username: string;
+  /** Override the body skin URL. Defaults to crafthead.net based on `username`. */
+  skinUrl?: string;
+  /** Override the big-name display. Defaults to `username`. */
+  displayName?: string;
+  /** Highlighted rank pill rendered before the name (e.g. "Warrior"). */
+  displayRank?: string;
+}
+
+interface ProfileUiSampleArgs {
+  /** Active server id, e.g. "jartexnetwork". */
+  server: string;
+  /** Player being looked up — may not be one of your alts. */
+  username: string;
+  /** The matching alt, if `username` is one of yours. `null` otherwise. */
+  alt: {
+    username: string;
+    UID: string | null;
+    email?: string;
+  } | null;
+  /** Per-server alt info (premium, ranks / gkits). Password is never exposed. */
+  serverAltInfo: {
+    premium?: boolean;
+    ranks: { [gamemode: string]: string };
+    gkits: { [gamemode: string]: string[] };
+  } | null;
+  /** Cumulative stats stored locally for this alt. */
+  stats: {
+    joinCount: number;
+    lastJoined: number | null;
+    playTime: number;
+    createdOn: number;
+  } | null;
+  /**
+   * The active server's JNdata profile — server metadata plus the
+   * per-gamemode rank & gkit catalog (prices + colors). `null` when the
+   * server isn't in JNdata. No script references are exposed.
+   */
+  profile: {
+    server: string;
+    /** Server display metadata (no script references). */
+    data: {
+      name: string;
+      shortName: string;
+      id: string;
+      color: string;
+      icon: string | null;
+      gamemodes: string[];
+      kitGamemodes: string[];
+      defaultGamemode: string;
+      defaultIp: string;
+      defaultPort: number;
+      ips: string[];
+    };
+    /** Per-gamemode rank & gkit catalog. */
+    gamemodes: {
+      [gamemode: string]: {
+        ranks: { [rank: string]: { price: number; color: string } };
+        gkits: { [gkit: string]: number };
+      };
+    };
+  } | null;
+  /** Restricted fetch. Only http/https, 1 MiB body cap, 6 s timeout. */
+  fetch(
+    url: string,
+    options?: {
+      headers?: Record<string, string>;
+      method?: 'GET' | 'POST';
+      body?: string;
+    },
+  ): Promise<{
+    status: number;
+    ok: boolean;
+    text: string;
+    json: any | null;
+  }>;
+}
+
+// ----------------- Builder API -----------------
+
+/** Builder for the identity card (skin, rank pill, badges, counts). */
+declare class IdentityBuilder {
+  /**
+   * Add a small badge below the player name.
+   * @param label Short text (e.g. "discord verified").
+   * @param tone  Optional color tone.
+   * @param icon  Optional icon key (e.g. "discord", "mail").
+   */
+  badge(label: string, tone?: ProfileUiTone, icon?: string): this;
+  /**
+   * Add a count tile to the identity strip (e.g. level, friends, ranks).
+   */
+  count(label: string, value: number | string): this;
+}
+
+/** Builder for the row of KPI cards. */
+declare class KpiBuilder {
+  /**
+   * Add a KPI tile.
+   * @param label  Uppercase secondary label (e.g. "account worth").
+   * @param value  Big value (e.g. "€ 295.00").
+   * @param opts   Optional icon ("money", "hash", "clock", "star", "trophy", "bolt") + tone.
+   */
+  item(
+    label: string,
+    value: string,
+    opts?: { icon?: string; tone?: ProfileUiTone },
+  ): this;
+}
+
+/** Builder for the ranks pill grid. */
+declare class RanksBuilder {
+  /**
+   * Add a rank pill.
+   * @param name   Rank name (e.g. "Warrior").
+   * @param server Gamemode the rank applies to (e.g. "kitpvp").
+   * @param tone   Optional color tone.
+   * @param opts   Optional `emphasis`: 'high' draws the pill filled/primary,
+   *               'low' de-emphasises it (muted/outlined). Use it to contrast
+   *               two classes of rank.
+   */
+  add(
+    name: string,
+    server?: string,
+    tone?: ProfileUiTone,
+    opts?: { emphasis?: 'high' | 'low' },
+  ): this;
+}
+
+/**
+ * Per-gamemode sub-builder returned by `StatsBuilder.gamemode(...)`.
+ * Stat rows added here only render when this gamemode is the active tile
+ * in the selector.
+ */
+declare class StatsGamemodeBuilder {
+  /**
+   * Add a stat row scoped to this gamemode.
+   * @example stats.gamemode('kitpvp', 'KitPvP').add('Kills', '12,847', { rank: '#142', delta: '+318' })
+   */
+  add(
+    label: string,
+    value: string,
+    opts?: { rank?: string; delta?: string },
+  ): this;
+}
+
+/** Builder for the multi-gamemode stats card. */
+declare class StatsBuilder {
+  /**
+   * Add a gamemode tile to the top selector. Returns a sub-builder whose
+   * `.add()` writes stat rows that only show when this tile is active.
+   * @param id     Stable id (used by `selected()`).
+   * @param label  Human-readable label.
+   * @param opts   Optional emoji icon + accent hex (e.g. "#5fb3ff").
+   */
+  gamemode(
+    id: string,
+    label: string,
+    opts?: { icon?: string; accent?: string },
+  ): StatsGamemodeBuilder;
+  /** Highlight the given gamemode by default. */
+  selected(id: string): this;
+  /**
+   * Gamemode-agnostic stat row — only used as a fallback when the active
+   * gamemode has no rows of its own. Prefer `.gamemode(...).add(...)`.
+   */
+  add(
+    label: string,
+    value: string,
+    opts?: { rank?: string; delta?: string },
+  ): this;
+}
+
+/** Builder for the friend / clan / players list. */
+declare class UserListBuilder {
+  /** Title shown in the card header (defaults to constructor arg). */
+  title(t: string): this;
+  /** Icon key (currently unused — reserved for custom headers). */
+  icon(i: string): this;
+  /**
+   * Add a user row.
+   * @param username The username (avatar is auto-derived).
+   * @param opts     Online dot + secondary text on the right.
+   */
+  add(username: string, opts?: { online?: boolean; extra?: string }): this;
+}
+
+/** Builder for the gkits card (groups by gamemode). */
+declare class GkitsBuilder {
+  /**
+   * Add a gkit group. Each item becomes a tag inside the group.
+   */
+  group(gamemode: string, items: string[]): this;
+}
+
+/**
+ * Compose the full player-profile JSON. Start with `new ProfileBuilder()`,
+ * set the player header via `.player(...)`, then add one or more sections
+ * to the left/right column, and finish with `.build()`.
+ *
+ * @example
+ * const p = new ProfileBuilder()
+ *   .player({ username: args.username, displayRank: 'Warrior' });
+ * p.identity('left').badge('email verified', 'emerald').count('level', 2);
+ * p.kpis('right').item('account worth', '€ 295', { icon: 'money', tone: 'amber' });
+ * return p.build();
+ */
+declare class ProfileBuilder {
+  /** Set the header player info. Subsequent calls merge. */
+  player(data: Partial<ProfileUiPlayer>): this;
+  identity(column?: ProfileUiColumn): IdentityBuilder;
+  kpis(column?: ProfileUiColumn): KpiBuilder;
+  ranks(column?: ProfileUiColumn): RanksBuilder;
+  stats(column?: ProfileUiColumn): StatsBuilder;
+  userList(title?: string, column?: ProfileUiColumn): UserListBuilder;
+  gkits(column?: ProfileUiColumn): GkitsBuilder;
+  /** Materialize the page JSON. Return this from `main()`. */
+  build(): unknown;
+}
+
+/**
+ * Profile-UI entrypoint. Called once per drawer open. Return the result
+ * of `new ProfileBuilder().…build()` (or a hand-rolled JSON of the same
+ * shape). Anything you return is validated server-side — unknown fields
+ * and over-sized arrays are dropped silently.
+ */
+declare function main(args: ProfileUiSampleArgs): Promise<unknown>;

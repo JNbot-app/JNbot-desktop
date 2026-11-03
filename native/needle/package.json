@@ -1,0 +1,8 @@
+{
+  "name": "jnbot-needle",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Packaged native Needle binding for JNbot's shared Node backend",
+  "react-native": "index.js",
+  "main": "index.js"
+}

@@ -1,0 +1,4006 @@
+# JNbot Plugin Authoring Reference
+
+# JNbot plugin authoring
+
+Create or update plugins with `save_plugin`; do not merely return source code when the user asked for a plugin. Read this guide first and use `get_jnbot_reference` with the relevant section for an API you are unsure about.
+
+## Entrypoints
+
+Normal plugins own their bot lifecycle. Import `script` and read persistent options from `script.settings`.
+
+```js
+const { script } = require('jnbot');
+
+async function main() {
+  for await (const bot of script.forEachBot(script.getAlts(), script.settings)) {
+    bot.chat(script.settings.message);
+  }
+}
+
+main();
+```
+
+Actions run on one already-connected bot. They must define `async function main(bot, settings, args = [])`; never join another bot in an action. `settings` is the saved option object plus run-time overrides. `args` is transient positional input only.
+
+```js
+async function main(bot, settings, args = []) {
+  bot.chat(settings.message);
+  return { sent: settings.message, args };
+}
+```
+
+In a chain, `args[0]` holds the values returned by earlier steps (plus `alt`, the bot's username). Return an object to add values for later steps, which users can insert into text options as `{name}`. Return `false` or throw to mark the step as failed, so the chain follows its "If it fails" choice. A chain can be started like a plugin with `script.startPlugin({ pluginId: 'chain:<chainId>' })`.
+
+## Options
+
+Add an option for any value a user may want to change without editing code. Read it as `script.settings.optionId` in normal plugins or `settings.optionId` in actions. Schemas are arrays of named sections. Every option needs a stable URL-safe `id`, a label, and a type. Never set defaults for passwords, tokens, credentials, or API keys.
+
+| Type | Stored value | Required configuration |
+| --- | --- | --- |
+| `input` | string or number | `inputType` may be `text`, `number`, or `password` |
+| `switch` | boolean | none |
+| `select` | string or number | non-empty `{ label, value }[]` `options` |
+| `multiSelect` | string array | non-empty string `options` |
+| `slider` | number | `min`, `max`, positive `step` |
+| `gamemodeSelect` | string or string array | optional `multiple` |
+| `altSelect` / `altsSelect` | alt name / alt-name array | none |
+| `tagsSelect` | tag-ID array | none |
+| `altRange` | `[start|null, end|null]` | none |
+| `list` | object array | 1–6 unique `fields` |
+| `coordinate` | `{ x?, y?, z?, dimension? }` | optional `withDimension` |
+| `keybind` | string | optional `simple` |
+
+```json
+[
+  {
+    "name": "General",
+    "options": [
+      { "id": "message", "label": "Message", "type": "input", "defaultValue": "Hello" },
+      { "id": "repeat", "label": "Repeat", "type": "slider", "min": 1, "max": 10, "step": 1, "defaultValue": 1 },
+      { "id": "enabled", "label": "Enabled", "type": "switch", "defaultValue": true }
+    ]
+  }
+]
+```
+
+Use `valueByFieldId` only to make an eligible `select`, `gamemodeSelect`, `altSelect`, or `keybind` option control how another option is stored.
+
+
+## Save workflow
+
+1. Determine whether the request is a normal plugin or an action.
+2. Create the source and an option schema together when settings are needed.
+3. Call `save_plugin` with `mode: "source"`; include `pluginId` only when updating.
+4. Poll `get_operation` rather than resubmitting a pending save.
+5. Report the installed plugin ID or the actionable validation/approval result.
+
+
+
+## Preferred APIs
+
+Local AI is available through `script.ai`. Create an agent with explicit tool names, descriptions, object JSON Schemas, and optional handlers. `predict()` returns proposed calls without executing them. `run()` makes one prediction and executes its accepted calls sequentially, retaining completed results if a later handler fails. Handler results are not sent back to the model. Each input is independent; unchanged tools stay prepared. Agents start with no tools and support `setTools`, `addTool`, `removeTool`, and `dispose`.
+
+Choose `model: 'main'` for accuracy or `model: 'flash'` for lower memory use and faster inference. Main is the default. Both support tool calls and `script.ai.extract(text, schema, options)`, which returns a validated object or `null`. Reasoning is disabled by default. Pass `{ reasoning: true }` to `agent.predict()`, `agent.run()`, or `script.ai.extract()` to generate reasoning before tool calls. Pass `false` or omit the option to skip reasoning; predictions then return `reasoning: null`. `agent.embed(text, options)` returns `{ modelId, values }` using the agent's selected Gemma model, including its custom model URL. It accepts `signal` and `timeoutMs`, works without tools, and cancels when the agent is disposed. `script.ai.embed(text, options)` also remains available. Both embedding methods reject flash with `AI_UNSUPPORTED_FEATURE`. Rebuild stored embeddings when the model ID changes.
+
+Tool filtering is disabled by default. On main, pass `{ toolFilterThreshold: 0.75 }` to `agent.predict()`, `agent.run()`, or `script.ai.extract()` to retain only tools whose name and description meet that cosine threshold. Values must be finite and between -1 and 1. Omit it or pass `null` to disable it; flash bypasses filtering. Tool vectors are cached in the inference worker, and the query encoding is shared with memory. When no tools survive, inference returns no match without decoding. Calibrate the threshold on your messages: similarity alone does not reliably distinguish placing from breaking, selling from buying, negation, or exact prices. The value 0.75 is an example, not a recommended default.
+
+Pass `modelUrl` to `createAgent({ tools, model, modelUrl })`, `extract(text, schema, { model, modelUrl })`, or `embed(text, { model: 'main', modelUrl })` to use a custom model. The URL must download an HTTPS `.cact` file compatible with the selected variant. Omit it or pass a blank string to use the configured release model. An agent keeps its selected variant and URL. Downloads happen at first inference; creation and tool edits do not load a model. Installed files work offline, and flash can reuse a compatible installed main file. Publish new custom model versions at new URLs. Download or loading failures report an error without substituting another model. AI-authored plugins with external network access disabled cannot select custom models.
+
+The model focuses on English. All supplied tools must fit within the model context; registration has no fixed tool count limit. Optional fields can be absent, and confidence can be `null`. Supported schema keywords are the fields of `AiSchema`; unsupported keywords fail at registration. Requests default to a 120-second deadline and 512 output tokens. Options accept `signal`, `timeoutMs`, and `maxNewTokens` where applicable. `run()` has no completion loop or step limit. A running handler cannot recursively call AI. Existing plugin permissions still apply to handlers.
+
+Native support must be packaged for the device. Local inference supports desktop builds, Android ARM64, and iOS device and simulator builds. Other Android architectures return `AI_UNSUPPORTED_PLATFORM`. The app command UI and typing previews are not part of this API.
+
+- Use `script.forEachBot(script.getAlts(), script.settings)` for multi-alt scripts; its settings object enables standard alt filters.
+- Use `await bot.openWindow(command)` rather than sending a command then waiting for a window event.
+- Use `bot.findWindowSlots()` before relying on slot numbers and `await bot.transferItems()` for supported transfer flows.
+- Import JNbot helpers from `require('jnbot')`. Supported sandbox modules include `axios`, `events`, selected Prismarine modules, `vec3`, and `assert`; AI-authored plugins cannot use process, child processes, proxy APIs, account passwords, Fabric clients, or managed servers.
+- [IMPORTANT] Use `BotMachine` for the entire bot task. Avoid creating long functions. Split the task up into smaller steps. This will allow the bot to recover from errors like if some action failed or the bot gets suddenly kicked to hub, BotMachine allows you to deal with these scenarios much easier. For the `when` condition, try to find when the bot should perform the action. For example, if the bot doesn\'t have a window opened -> do window action. Or if specific window must be opened, we can check it using bot.getWindowTitle(). Avoid doing stuff like state.step = "step1" and then checking for state.step === "step1" in the next task.
+
+# Compact plugin examples
+
+## Local tool calls and extraction
+
+```js
+const { script } = require('jnbot');
+
+async function main() {
+  const schema = {
+    type: 'object',
+    properties: { quantity: { type: 'integer', minimum: 1 } },
+    required: ['quantity'],
+    additionalProperties: false,
+  };
+  // Use an HTTPS URL for a compatible fine-tuned .cact model, or leave blank.
+  const modelUrl = '';
+  const agent = script.ai.createAgent({ model: 'flash', modelUrl });
+  agent.addTool({
+    name: 'set_quantity',
+    description: 'Set the requested item quantity',
+    parameters: schema,
+    handler: ({ quantity }) => {
+      console.log(`Requested quantity: ${quantity}`);
+      return { quantity };
+    },
+  });
+  try {
+    console.log(await agent.predict('Set quantity to 7')); // No handler runs.
+    const result = await agent.run('Set quantity to 7');
+    if (result.status === 'failed') console.log(result.error, result.results);
+    console.log(await script.ai.extract('The quantity is 3', schema, { model: 'flash', modelUrl }));
+    const { modelId, values } = await script.ai.embed('diamond sword', { model: 'main' });
+    console.log(modelId, values.length);
+    agent.removeTool('set_quantity');
+    agent.setTools([]);
+  } finally {
+    agent.dispose();
+  }
+}
+```
+
+## Multi-alt chat plugin
+
+```json
+[{"name":"General","options":[{"id":"message","label":"Message","type":"input","defaultValue":"Hello"},{"id":"gamemode","label":"Gamemode","type":"gamemodeSelect"},{"id":"altRange","label":"Alt range","type":"altRange"},{"id":"ignoreAlts","label":"Ignore alts","type":"altsSelect"}]}]
+```
+
+```js
+const { script } = require('jnbot');
+
+async function main() {
+  for await (const bot of script.forEachBot(script.getAlts(), script.settings, {
+    join: { gamemode: script.settings.gamemode, login: true },
+  })) bot.chat(script.settings.message);
+}
+
+main();
+```
+
+## Connected-bot action
+
+```js
+async function main(bot, settings, args = []) {
+  await bot.openWindow(settings.command);
+  return { command: settings.command, args };
+}
+```
+
+## Rich option schema
+
+```json
+[{"name":"Settings","options":[{"id":"mode","label":"Mode","type":"select","options":[{"label":"Safe","value":"safe"},{"label":"Fast","value":"fast"}],"defaultValue":"safe"},{"id":"apiToken","label":"API token","type":"input","inputType":"password"},{"id":"targets","label":"Targets","type":"list","fields":[{"key":"name","label":"Name","type":"input"},{"key":"enabled","label":"Enabled","type":"switch","defaultValue":true}]},{"id":"home","label":"Home","type":"coordinate","withDimension":true}]}]
+```
+
+## Learned mob fighter (Brain)
+
+Record yourself fighting in the JNbot Client, train, then let a bot copy you. Recordings store raw observations, so you can change `features` and train again without recording again.
+
+```json
+[{"name":"Brain","options":[{"id":"mode","label":"Mode","type":"select","options":[{"label":"Record (JNbot Client)","value":"record"},{"label":"Train","value":"train"},{"label":"Run on bot","value":"run"}],"defaultValue":"record"},{"id":"minutes","label":"Record minutes","type":"input","inputType":"number","defaultValue":"10"}]}]
+```
+
+```js
+const { Brain, script } = require('jnbot');
+
+const brain = new Brain({
+  name: 'mob-fighter',
+  features: (o) => ({
+    health: o.self.health,
+    onGround: o.self.onGround,
+    mobs: Brain.swarm(o, { filter: (e) => e.hostile }),
+    terrain: Brain.rays(o, { count: 8, length: 4 }),
+  }),
+  // which mob to focus: learned from the mob you attack next. The bot walks to it
+  // with the pathfinder (around walls) and copies you once it's in reach and in
+  // sight; every head also sees its features as `target.*`
+  target: {
+    candidates: (o) => o.entities.filter((e) => e.hostile),
+    features: (o, e) => ({ dist: e.dist, angle: e.angle, dy: e.dy, approach: e.approach, health: e.health }),
+  },
+  heads: ['forward', 'strafe', 'jump', 'sprint', 'attack'],
+});
+
+async function main() {
+  const { mode } = script.settings;
+  if (mode === 'record') {
+    const [client] = await script.getMcClients();
+    if (!client) return console.log('Launch Minecraft with the JNbot Client first');
+    const recording = await brain.record(script.getMcClient(client.clientId));
+    script.onExit(() => recording.stop());
+    const total = Number(script.settings.minutes) * 60;
+    for (let seconds = 0; seconds < total; seconds++) {
+      script.updateProgress({ current: seconds, total });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    await recording.stop();
+  } else if (mode === 'train') {
+    console.log(await brain.train());
+  } else {
+    for await (const bot of script.forEachBot(script.getAlts().slice(0, 1), {})) {
+      script.onExit(brain.run(bot));
+      await new Promise(() => {}); // run until the plugin is stopped
+    }
+  }
+}
+
+main();
+```
+
+### Learned farmer (block targets)
+
+Targets can be blocks too: `o.findBlocks(match)` lists blocks in the observed cube with their state (e.g. wheat `age`). The bot learns which block you break or right-click next, walks there, and then `attack` breaks it and `use` right-clicks it (planting seeds on farmland). Full plugin: `examples/brain/farm-bot.js`.
+
+```js
+const ripe = (b) => b.name === 'wheat' && b.state?.age === 7;
+const brain = new Brain({
+  name: 'farm-bot',
+  observe: { blockRadius: 8 }, // see across the field
+  features: (o) => ({ ripe: o.findBlocks(ripe).length, seeds: o.self.items.wheat_seeds ?? 0 }),
+  target: {
+    // all wheat (so it learns to wait for age 7) and empty farmland to replant
+    candidates: (o) => o.findBlocks((b, dx, dy, dz) =>
+      b.name === 'wheat' || (b.name === 'farmland' && o.block(dx, dy + 1, dz)?.name === 'air')),
+    features: (o, b) => ({ wheat: b.name === 'wheat', age: b.state?.age, dist: b.dist, angle: b.angle }),
+  },
+  heads: ['forward', 'strafe', 'jump', 'attack', 'use', Brain.hold({ seeds: /wheat_seeds/ })],
+});
+```
+
+# Full Plugin API Types
+
+```ts
+// ─── Bot API ───────────────────────────────────────────────────────────
+
+interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+  add(other: Vec3): this;
+  offset(dx: number, dy: number, dz: number): Vec3;
+  floored(): Vec3;
+  subtract(other: Vec3): this;
+  distanceTo(other: Vec3): number;
+  clone(): Vec3;
+}
+
+interface Item {
+  type: number;
+  slot: number;
+  count: number;
+  metadata: number;
+  nbt: object | null;
+  stackId: number | null;
+  name: string;
+  displayName: string;
+  stackSize: number;
+  maxDurability: number;
+  durabilityUsed: number;
+  enchants: { name: string; lvl: number }[];
+  blocksCanPlaceOn: string[][];
+  blocksCanDestroy: string[][];
+  repairCost: number;
+  customName: string | null;
+  customLore: string | string[] | null;
+  customModel: string | null;
+  readonly spawnEggMobName: string;
+}
+
+interface ChatMessage {
+  text?: string;
+  translate?: string;
+  with?: ChatMessage[];
+  extra?: ChatMessage[];
+  toString(): string;
+}
+
+interface Entity {
+  id: number;
+  type:
+    | 'player'
+    | 'mob'
+    | 'object'
+    | 'global'
+    | 'orb'
+    | 'projectile'
+    | 'hostile'
+    | 'other';
+  uuid?: string;
+  username?: string;
+  mobType?: string;
+  displayName?: string;
+  entityType?: number;
+  kind?: string;
+  name?: string;
+  objectType?: string;
+  count?: number;
+  position: Vec3;
+  velocity: Vec3;
+  yaw: number;
+  pitch: number;
+  height: number;
+  width: number;
+  onGround: boolean;
+  equipment: (Item | null)[];
+  heldItem: Item | null;
+  metadata: object[];
+  isValid: boolean;
+  health?: number;
+  food?: number;
+  foodSaturation?: number;
+  elytraFlying?: boolean;
+  player?: object;
+  effects: Effect[];
+  vehicle: Entity | null;
+  passengers: Entity[];
+}
+
+interface Block {
+  stateId: number;
+  type: number;
+  metadata: number;
+  light: number;
+  skyLight: number;
+  blockEntity: object;
+  entity: object | null;
+  hash?: number;
+  name: string;
+  displayName: string;
+  shapes: [number, number, number, number, number, number][];
+  hardness: number;
+  boundingBox: 'block' | 'empty';
+  position: Vec3;
+  digTime: number;
+}
+
+interface Window {
+  id: number;
+  type: number | string;
+  title: string;
+  slots: (Item | null)[];
+  inventoryStart: number;
+  inventoryEnd: number;
+  hotbarStart: number;
+  craftingResultSlot: number;
+  requiresConfirmation: boolean;
+  selectedItem: Item | null;
+}
+
+interface RecipeItem {
+  id: number;
+  metadata: number | null;
+  count: number;
+}
+
+interface Recipe {
+  result: RecipeItem;
+  inShape: RecipeItem[][];
+  outShape: RecipeItem[][];
+  ingredients: RecipeItem[];
+  delta: RecipeItem[];
+  requiresTable: boolean;
+}
+
+interface Registry {
+  version: string;
+  [key: string]: unknown;
+}
+
+interface Client {
+  write(name: string, params: object): void;
+  end(reason?: string): void;
+}
+
+interface WorldSync {
+  getBlock(point: Vec3): Block | null;
+}
+
+type MineflayerBotEvents = BotEvents;
+
+interface BotEvents {
+  chat: [
+    username: string,
+    message: string,
+    translate: string | null,
+    jsonMsg: ChatMessage,
+    matches: string[] | null,
+  ];
+  whisper: [
+    username: string,
+    message: string,
+    translate: string | null,
+    jsonMsg: ChatMessage,
+    matches: string[] | null,
+  ];
+  actionBar: [jsonMsg: ChatMessage];
+  message: [jsonMsg: ChatMessage, position: string];
+  messagestr: [message: string, position: string, jsonMsg: ChatMessage];
+  inject_allowed: [];
+  login: [];
+  spawn: [];
+  respawn: [];
+  game: [];
+  resourcePack: [url: string, hash?: string, uuid?: string];
+  title: [title: string, type: 'subtitle' | 'title'];
+  title_times: [fadeIn: number, stay: number, fadeOut: number];
+  title_clear: [];
+  rain: [];
+  weatherUpdate: [];
+  time: [];
+  kicked: [reason: string, loggedIn: boolean];
+  end: [reason: string];
+  error: [err: Error];
+  spawnReset: [];
+  death: [];
+  health: [];
+  breath: [];
+  entityAttributes: [entity: Entity];
+  entitySwingArm: [entity: Entity];
+  entityHurt: [entity: Entity, source: Entity];
+  entityDead: [entity: Entity];
+  entityTaming: [entity: Entity];
+  entityTamed: [entity: Entity];
+  entityShakingOffWater: [entity: Entity];
+  entityEatingGrass: [entity: Entity];
+  entityHandSwap: [entity: Entity];
+  entityWake: [entity: Entity];
+  entityEat: [entity: Entity];
+  entityCriticalEffect: [entity: Entity];
+  entityMagicCriticalEffect: [entity: Entity];
+  entityCrouch: [entity: Entity];
+  entityUncrouch: [entity: Entity];
+  entityEquip: [entity: Entity];
+  entitySleep: [entity: Entity];
+  entitySpawn: [entity: Entity];
+  entityElytraFlew: [entity: Entity];
+  itemDrop: [entity: Entity];
+  playerCollect: [collector: Entity, collected: Entity];
+  entityGone: [entity: Entity];
+  entityMoved: [entity: Entity];
+  entityDetach: [entity: Entity, vehicle: Entity];
+  entityAttach: [entity: Entity, vehicle: Entity];
+  entityUpdate: [entity: Entity];
+  entityEffect: [entity: Entity, effect: Effect];
+  entityEffectEnd: [entity: Entity, effect: Effect];
+  playerJoined: [player: Player];
+  playerUpdated: [player: Player];
+  playerLeft: [player: Player];
+  blockUpdate: [oldBlock: Block | null, newBlock: Block];
+  'blockUpdate:(x, y, z)': [oldBlock: Block | null, newBlock: Block | null];
+  blockPlaced: [oldBlock: Block, newBlock: Block];
+  chunkColumnLoad: [point: Vec3];
+  chunkColumnUnload: [point: Vec3];
+  soundEffectHeard: [
+    soundName: string,
+    position: Vec3,
+    volume: number,
+    pitch: number,
+  ];
+  hardcodedSoundEffectHeard: [
+    soundId: number,
+    soundCategory: number,
+    position: Vec3,
+    volume: number,
+    pitch: number,
+  ];
+  noteHeard: [block: Block, instrument: Instrument, pitch: number];
+  pistonMove: [block: Block, isPulling: number, direction: number];
+  chestLidMove: [block: Block, isOpen: number, block2: Block | null];
+  blockBreakProgressObserved: [block: Block, destroyStage: number];
+  blockBreakProgressEnd: [block: Block];
+  diggingCompleted: [block: Block];
+  diggingAborted: [block: Block];
+  usedFirework: [];
+  move: [position: Vec3];
+  forcedMove: [];
+  mount: [];
+  dismount: [vehicle: Entity];
+  windowOpen: [window: Window];
+  windowClose: [window: Window];
+  sleep: [];
+  wake: [];
+  experience: [];
+  physicsTick: [];
+  physicTick: [];
+  scoreboardCreated: [scoreboard: ScoreBoard];
+  scoreboardDeleted: [scoreboard: ScoreBoard];
+  scoreboardTitleChanged: [scoreboard: ScoreBoard];
+  scoreUpdated: [scoreboard: ScoreBoard, item: number];
+  scoreRemoved: [scoreboard: ScoreBoard, item: number];
+  scoreboardPosition: [position: DisplaySlot, scoreboard: ScoreBoard];
+  teamCreated: [team: Team];
+  teamRemoved: [team: Team];
+  teamUpdated: [team: Team];
+  teamMemberAdded: [team: Team];
+  teamMemberRemoved: [team: Team];
+  bossBarCreated: [bossBar: BossBar];
+  bossBarDeleted: [bossBar: BossBar];
+  bossBarUpdated: [bossBar: BossBar];
+  heldItemChanged: [newItem: Item | null];
+  particle: [particle: Particle];
+}
+
+interface Player {
+  uuid: string;
+  username: string;
+  displayName: ChatMessage;
+  gamemode: number;
+  ping: number;
+  entity: Entity;
+  skinData?: { url: string; model: string | null };
+}
+
+interface GameState {
+  levelType:
+    | 'default'
+    | 'flat'
+    | 'largeBiomes'
+    | 'amplified'
+    | 'customized'
+    | 'buffet'
+    | 'default_1_1';
+  gameMode: 'survival' | 'creative' | 'adventure' | 'spectator';
+  hardcore: boolean;
+  dimension: 'the_nether' | 'overworld' | 'the_end';
+  difficulty: 'peaceful' | 'easy' | 'normal' | 'hard';
+  maxPlayers: number;
+  serverBrand: string;
+}
+
+interface GameSettings {
+  chat: 'enabled' | 'commandsOnly' | 'disabled';
+  colorsEnabled: boolean;
+  viewDistance: 'far' | 'normal' | 'short' | 'tiny' | number;
+  difficulty: number;
+  skinParts: SkinParts;
+  mainHand: 'left' | 'right';
+  enableTextFiltering?: boolean;
+  enableServerListing?: boolean;
+}
+
+interface SkinParts {
+  showCape: boolean;
+  showJacket: boolean;
+  showLeftSleeve: boolean;
+  showRightSleeve: boolean;
+  showLeftPants: boolean;
+  showRightPants: boolean;
+  showHat: boolean;
+}
+
+interface Experience {
+  level: number;
+  points: number;
+  progress: number;
+}
+interface PhysicsOptions {
+  [key: string]: number;
+}
+interface Time {
+  doDaylightCycle: boolean;
+  bigTime: bigint;
+  time: number;
+  timeOfDay: number;
+  day: number;
+  isDay: boolean;
+  moonPhase: number;
+  bigAge: bigint;
+  age: number;
+}
+interface ControlStateStatus {
+  forward: boolean;
+  back: boolean;
+  left: boolean;
+  right: boolean;
+  jump: boolean;
+  sprint: boolean;
+  sneak: boolean;
+}
+type ControlState = keyof ControlStateStatus;
+interface Effect {
+  id: number;
+  amplifier: number;
+  duration: number;
+}
+interface Instrument {
+  id: number;
+  name: 'harp' | 'doubleBass' | 'snareDrum' | 'sticks' | 'bassDrum';
+}
+interface FindBlockOptions {
+  point?: Vec3;
+  matching: number | number[] | ((block: Block) => boolean);
+  maxDistance?: number;
+  count?: number;
+  useExtraInfo?: boolean | ((block: Block) => boolean);
+}
+type EquipmentDestination =
+  | 'hand'
+  | 'head'
+  | 'torso'
+  | 'legs'
+  | 'feet'
+  | 'off-hand';
+interface ChatPattern {
+  pattern: RegExp;
+  type: string;
+  description: string;
+}
+interface SimpleClick {
+  leftMouse(slot: number): Promise<void>;
+  rightMouse(slot: number): Promise<void>;
+}
+interface Tablist {
+  header: ChatMessage;
+  footer: ChatMessage;
+}
+interface ScoreBoard {
+  name: string;
+  title: ChatMessage;
+  items: Record<string, number>;
+}
+interface Team {
+  name: string;
+  displayName: ChatMessage;
+  members: string[];
+  prefix: ChatMessage;
+  suffix: ChatMessage;
+}
+interface BossBar {
+  title: ChatMessage;
+  health: number;
+  division: number;
+  flags: number;
+}
+interface Particle {
+  name: string;
+  position: Vec3;
+  offset: Vec3;
+  quantity: number;
+  size: number;
+}
+
+interface BotActions {
+  chatMessage(msg: string): void;
+  joinGamemode(gamemode: string): Promise<void>;
+  movementPacket(): void;
+  openInventory(): Promise<unknown> | void;
+  closeInventory(): void;
+  closeWindow(): void;
+  setHotbar(hotbar: number): Promise<void> | void;
+  infoPacket(): void;
+  inventoryClick(data: { slot: number; button?: number; mode?: number }): void;
+  tossItems(count?: number): Promise<void>;
+  activateItem(): Promise<void>;
+  toggleMovement(movement: ControlState | 'fly'): void;
+  startPathFinder(pos: { x: number; y?: number; z: number }): void;
+  leave(): void;
+  setHeadRotation(angles: { yaw: number; pitch: number }): void;
+  eat(): Promise<void>;
+  chatPacket(): void;
+  tabComplete(str: string): Promise<string[]>;
+  login(): Promise<void>;
+  runCode(code: string): Promise<void>;
+}
+
+interface MineflayerBot {
+  /**
+   * Listen to a bot event.
+   *
+   * @example
+   *   bot.on('messagestr', (message) => console.log(message));
+   */
+  on<K extends keyof BotEvents>(
+    event: K,
+    listener: (...args: BotEvents[K]) => void,
+  ): this;
+  once<K extends keyof BotEvents>(
+    event: K,
+    listener: (...args: BotEvents[K]) => void,
+  ): this;
+  off<K extends keyof BotEvents>(
+    event: K,
+    listener: (...args: BotEvents[K]) => void,
+  ): this;
+  username: string;
+  protocolVersion: string;
+  majorVersion: string;
+  version: string;
+  spawnPoint: Vec3;
+  heldItem: Item | null;
+  usingHeldItem: boolean;
+  game: GameState;
+  entity: Entity;
+  entities: Record<string, Entity>;
+  player: Player;
+  players: Record<string, Player>;
+  tablist: Tablist;
+  isRaining: boolean;
+  rainState: number;
+  thunderState: number;
+  chatPatterns: ChatPattern[];
+  settings: GameSettings;
+  experience: Experience;
+  health: number;
+  food: number;
+  foodSaturation: number;
+  oxygenLevel: number;
+  physics: PhysicsOptions;
+  fireworkRocketDuration: number;
+  simpleClick: SimpleClick;
+  time: Time;
+  quickBarSlot: number;
+  inventory: Window;
+  currentWindow: Window | null;
+  targetDigBlock: Block | null;
+  isSleeping: boolean;
+  scoreboards: Record<string, ScoreBoard>;
+  scoreboard: Partial<Record<DisplaySlot, ScoreBoard>>;
+  teams: Record<string, Team>;
+  teamMap: Record<string, Team>;
+  controlState: ControlStateStatus;
+  physicsEnabled: boolean;
+  world: WorldSync;
+  _client: Client;
+  registry: Registry;
+  /**
+   * Send a chat message or command.
+   *
+   * @example
+   *   bot.chat('/spawn');
+   */
+  chat(message: string): void;
+  whisper(username: string, message: string): void;
+  clickWindow(slot: number, mouseButton: number, mode: number): Promise<void>;
+  closeWindow(window: Window): void;
+  end(reason?: string): void;
+  connect(options: object): void;
+  supportFeature(name: string): boolean;
+  waitForChunksToLoad(): Promise<void>;
+  /**
+   * Block at a position, or null when its chunk is not loaded.
+   *
+   * @example
+   *   const block = bot.blockAt(bot.entity.position.offset(0, -1, 0));
+   */
+  blockAt(point: Vec3, extraInfos?: boolean): Block | null;
+  blockInSight(maxSteps: number, vectorLength: number): Block | null;
+  blockAtCursor(maxDistance?: number): Block | null;
+  entityAtCursor(maxDistance?: number): Entity | null;
+  blockAtEntityCursor(entity?: Entity, maxDistance?: number): Block | null;
+  canSeeBlock(block: Block): boolean;
+  findBlocks(options: FindBlockOptions): Vec3[];
+  /**
+   * Nearest block matching the options.
+   *
+   * @example
+   *   const chest = bot.findBlock({
+   *     matching: bot.registry.blocksByName.chest.id,
+   *     maxDistance: 16,
+   *   });
+   */
+  findBlock(options: FindBlockOptions): Block | null;
+  canDigBlock(block: Block): boolean;
+  recipesFor(
+    itemType: number,
+    metadata: number | null,
+    minResultCount: number | null,
+    craftingTable: Block | boolean | null,
+  ): Recipe[];
+  recipesAll(
+    itemType: number,
+    metadata: number | null,
+    craftingTable: Block | boolean | null,
+  ): Recipe[];
+  /**
+   * Nearest entity, optionally filtered.
+   *
+   * @example
+   *   const player = bot.nearestEntity((e) => e.type === 'player');
+   */
+  nearestEntity(match?: (entity: Entity) => boolean): Entity | null;
+  quit(reason?: string): void;
+  tabComplete(
+    str: string,
+    assumeCommand?: boolean,
+    sendBlockInSight?: boolean,
+    timeout?: number,
+  ): Promise<string[]>;
+  setSettings(options: Partial<GameSettings>): void;
+  loadPlugin(plugin: (bot: MineflayerBot) => void): void;
+  loadPlugins(plugins: ((bot: MineflayerBot) => void)[]): void;
+  hasPlugin(plugin: (bot: MineflayerBot) => void): boolean;
+  sleep(bedBlock: Block): Promise<void>;
+  isABed(bedBlock: Block): boolean;
+  wake(): Promise<void>;
+  setControlState(control: ControlState, state: boolean): void;
+  getControlState(control: ControlState): boolean;
+  clearControlStates(): void;
+  getExplosionDamages(
+    entity: Entity,
+    position: Vec3,
+    radius: number,
+    rawDamages?: boolean,
+  ): number | null;
+  /**
+   * Turn the head towards a position.
+   *
+   * @example
+   *   await bot.lookAt(block.position.offset(0.5, 0.5, 0.5));
+   */
+  lookAt(point: Vec3, force?: boolean): Promise<void>;
+  look(yaw: number, pitch: number, force?: boolean): Promise<void>;
+  updateSign(block: Block, text: string, back?: boolean): void;
+  equip(
+    item: Item | number,
+    destination: EquipmentDestination | null,
+  ): Promise<void>;
+  unequip(destination: EquipmentDestination | null): Promise<void>;
+  tossStack(item: Item): Promise<void>;
+  toss(
+    itemType: number,
+    metadata: number | null,
+    count: number | null,
+  ): Promise<void>;
+  dig(
+    block: Block,
+    forceLook?: boolean | 'ignore',
+    digFace?: 'auto' | Vec3 | 'raycast',
+  ): Promise<void>;
+  stopDigging(): void;
+  digTime(block: Block): number;
+  acceptResourcePack(): void;
+  denyResourcePack(): void;
+  placeBlock(referenceBlock: Block, faceVector: Vec3): Promise<void>;
+  placeEntity(referenceBlock: Block, faceVector: Vec3): Promise<Entity>;
+  activateBlock(
+    block: Block,
+    direction?: Vec3,
+    cursorPos?: Vec3,
+  ): Promise<void>;
+  activateEntity(entity: Entity): Promise<void>;
+  activateEntityAt(entity: Entity, position: Vec3): Promise<void>;
+  consume(): Promise<void>;
+  fish(): Promise<void>;
+  activateItem(offHand?: boolean): void;
+  deactivateItem(): void;
+  useOn(targetEntity: Entity): void;
+  attack(entity: Entity, swing?: boolean): void;
+  swingArm(hand?: 'left' | 'right', showHand?: boolean): void;
+  /** Vanilla-accurate mouse buttons: click once, or press and hold until released. */
+  mouse: {
+    click(button: 'left' | 'right'): void;
+    press(button: 'left' | 'right'): void;
+    release(button: 'left' | 'right'): void;
+    isDown(button: 'left' | 'right'): boolean;
+  };
+  mount(entity: Entity): void;
+  dismount(): void;
+  moveVehicle(left: number, forward: number): void;
+  setQuickBarSlot(slot: number): void;
+  craft(recipe: Recipe, count?: number, craftingTable?: Block): Promise<void>;
+  writeBook(slot: number, pages: string[]): Promise<void>;
+  openContainer(
+    container: Block | Entity,
+    direction?: Vec3,
+    cursorPos?: Vec3,
+  ): Promise<Window>;
+  openChest(
+    chest: Block | Entity,
+    direction?: number,
+    cursorPos?: Vec3,
+  ): Promise<Window>;
+  openFurnace(furnace: Block): Promise<Window>;
+  openDispenser(dispenser: Block): Promise<Window>;
+  openEnchantmentTable(table: Block): Promise<Window>;
+  openAnvil(anvil: Block): Promise<Window>;
+  openVillager(villager: Entity): Promise<Window>;
+  trade(
+    villager: Entity,
+    tradeIndex: string | number,
+    times?: number,
+  ): Promise<void>;
+  setCommandBlock(
+    pos: Vec3,
+    command: string,
+    options: Record<string, boolean | number>,
+  ): void;
+  /**
+   * Wait for a number of game ticks (20 ticks = 1 second).
+   *
+   * @example
+   *   await bot.waitForTicks(20);
+   */
+  waitForTicks(ticks: number): Promise<void>;
+  respawn(): void;
+  putSelectedItemRange(
+    start: number,
+    end: number,
+    window: Window,
+    slot: number,
+  ): Promise<void>;
+  putAway(slot: number): Promise<void>;
+  transfer(options: {
+    window: Window;
+    itemType: number;
+    metadata: number | null;
+    count?: number;
+    sourceStart: number;
+    sourceEnd: number;
+    destStart: number;
+    destEnd: number;
+  }): Promise<void>;
+  openBlock(block: Block, direction?: Vec3, cursorPos?: Vec3): Promise<Window>;
+  openEntity(entity: Entity): Promise<Window>;
+  moveSlotItem(sourceSlot: number, destSlot: number): Promise<void>;
+  updateHeldItem(): void;
+  getEquipmentDestSlot(destination: EquipmentDestination): number;
+  awaitMessage(...args: (string | RegExp)[]): Promise<string>;
+  addChatPattern(
+    name: string,
+    pattern: RegExp,
+    options?: { repeat: boolean; parse: boolean },
+  ): number;
+  addChatPatternSet(
+    name: string,
+    patterns: RegExp[],
+    options?: { repeat: boolean; parse: boolean },
+  ): number;
+  removeChatPattern(name: string | number): void;
+  creative: {
+    setInventorySlot(slot: number, item: Item | null): Promise<void>;
+    clearSlot(slot: number): Promise<void>;
+    clearInventory(): Promise<void>;
+    flyTo(destination: Vec3): Promise<void>;
+    startFlying(): void;
+    stopFlying(): void;
+  };
+}
+
+type DisplaySlot = 'list' | 'sidebar' | 'below_name' | `sidebar.team.${string}`;
+type Bot = MineflayerBot & BotPluginExtensions;
+
+// ─── Minecraft client API ───────────────────────────────────────────────────────────
+
+interface McPosition {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly yaw: number;
+  readonly pitch: number;
+  readonly onGround?: boolean;
+  readonly velocity?: McVec3;
+  readonly dimension?: string;
+}
+
+type McVec3 = {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+};
+
+type McBlockPos = {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+};
+
+type McChatKind = 'chat' | 'game' | 'actionbar';
+
+type McChatEvent = {
+  readonly message: string;
+  readonly kind: McChatKind;
+  readonly ts: number;
+};
+
+type McPositionEvent = McPosition & {
+  readonly ts: number;
+};
+
+type McWindowOpenEvent = {
+  readonly syncId: number;
+  readonly screenClass?: string;
+  readonly title?: string;
+  readonly ts: number;
+};
+
+type McWindowCloseEvent = {
+  readonly syncId: number;
+  readonly ts: number;
+};
+
+type McItemStack =
+  | {
+      readonly empty: true;
+    }
+  | {
+      readonly empty: false;
+      readonly count: number;
+      readonly itemId: string;
+      readonly name: string;
+      readonly maxCount?: number;
+      readonly damage?: number;
+      readonly maxDamage?: number;
+      readonly enchantingGlint?: boolean;
+      readonly components?: string;
+      readonly componentsTruncated?: boolean;
+    };
+
+type McWindowSlotUpdate = {
+  readonly slot: number;
+  readonly stack: McItemStack;
+};
+
+type McWindowItemsEvent = {
+  readonly syncId: number;
+  readonly changedSlots: readonly McWindowSlotUpdate[];
+  readonly cursorStack: McItemStack | null;
+  readonly ts: number;
+};
+
+type McForcedTeleportEvent = {
+  readonly from: McVec3;
+  readonly to: McVec3;
+  readonly dist: number;
+  readonly ts: number;
+};
+
+interface McHealth {
+  readonly health: number;
+  readonly maxHealth: number;
+  readonly food?: number;
+  readonly saturation?: number;
+  readonly air?: number;
+  readonly armor?: number;
+}
+
+interface McExperience {
+  readonly level: number;
+  readonly progress: number;
+  readonly total: number;
+}
+
+interface McStatusEffect {
+  readonly id: string;
+  readonly amplifier: number;
+  readonly duration: number;
+  readonly ambient: boolean;
+  readonly showParticles: boolean;
+}
+
+interface McHeldItems {
+  readonly mainHand: McItemStack;
+  readonly offHand: McItemStack;
+  readonly selectedHotbarSlot?: number;
+}
+
+interface McInventoryItem {
+  readonly slot: number;
+  readonly count: number;
+  readonly itemId: string;
+  readonly name: string;
+  readonly damage?: number;
+}
+
+interface McInventorySnapshot {
+  readonly items: readonly McInventoryItem[];
+  readonly size: number;
+  readonly selectedHotbarSlot?: number;
+}
+
+interface McWindowInfo {
+  readonly syncId: number;
+  readonly inventory?: boolean;
+  readonly type?: string;
+  readonly title?: string;
+  readonly screenClass?: string;
+  readonly selectedHotbarSlot?: number;
+  readonly cursorStack?: unknown;
+  readonly slots?: readonly unknown[];
+  readonly properties?: Readonly<Record<string, string | number | boolean>>;
+}
+
+interface McEntityInfo {
+  readonly id: number;
+  readonly type: string;
+  readonly name: string;
+  readonly uuid?: string;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly yaw?: number;
+  readonly pitch?: number;
+  readonly isAlive?: boolean;
+  readonly health?: number;
+  readonly maxHealth?: number;
+  readonly distance?: number;
+  readonly hostile?: boolean;
+  readonly onGround?: boolean;
+  readonly sneaking?: boolean;
+  readonly sprinting?: boolean;
+  readonly onFire?: boolean;
+  readonly vehicle?: boolean;
+  readonly equipment?: readonly (McItemStack & { readonly slot?: string })[];
+  /** synced numbers and flags that differ from the entity's defaults, named as minecraft-data does (`wool`, `baby`), `#index` when the game's names are obfuscated */
+  readonly data?: Readonly<Record<string, number | boolean>>;
+}
+
+interface McEntityFilter {
+  readonly type?: string;
+  readonly name?: string;
+  readonly radius?: number;
+  readonly limit?: number;
+  readonly hostile?: boolean;
+}
+
+interface McNearbyEntitiesResult {
+  readonly radius: number;
+  readonly entities: readonly McEntityInfo[];
+}
+
+interface McOnlinePlayersResult {
+  readonly players: readonly McEntityInfo[];
+}
+
+type McMovementState = {
+  readonly forward?: boolean;
+  readonly back?: boolean;
+  readonly left?: boolean;
+  readonly right?: boolean;
+  readonly jump?: boolean;
+  readonly sneak?: boolean;
+  readonly sprint?: boolean;
+};
+
+type McLookMode = 'absolute' | 'delta';
+type McLookEasing = 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
+type McPathfinderMovement = 'auto' | 'walk' | 'fly';
+
+interface McSmoothLookOptions {
+  readonly durationMs?: number;
+  readonly easing?: McLookEasing;
+  readonly taskId?: string;
+}
+
+interface McTaskStartResult {
+  readonly ok: boolean;
+  readonly taskId?: string;
+  readonly type?: string;
+  readonly reason?: string;
+}
+
+interface McSmoothLookStatus {
+  readonly active: boolean;
+  readonly taskId?: string;
+  readonly durationMs?: number;
+  readonly elapsedMs?: number;
+}
+
+interface McNavigationOptions {
+  readonly maxNodes?: number;
+  readonly maxRange?: number;
+  readonly sprint?: boolean;
+  readonly arriveRadius?: number;
+  readonly movement?: McPathfinderMovement;
+  readonly taskId?: string;
+}
+
+interface McMiningOptions {
+  readonly matching?: string | readonly string[];
+  readonly maxBlocks?: number;
+  readonly maxDistance?: number;
+  readonly reach?: number;
+  readonly maxRange?: number;
+  readonly autoTool?: boolean;
+  readonly sprint?: boolean;
+  readonly movement?: McPathfinderMovement;
+  readonly blockTimeoutMs?: number;
+  readonly taskId?: string;
+}
+
+interface McMiningStatus {
+  readonly active: boolean;
+  readonly taskId?: string;
+  readonly type?: 'block' | 'nearest' | 'vein';
+  readonly phase?: string;
+  readonly mined?: number;
+  readonly skipped?: number;
+  readonly queued?: number;
+  readonly current?: McBlockPos;
+}
+
+type McKey =
+  | 'forward'
+  | 'back'
+  | 'left'
+  | 'right'
+  | 'jump'
+  | 'sneak'
+  | 'sprint'
+  | 'attack'
+  | 'use';
+
+type McBlockFace = 'up' | 'down' | 'north' | 'south' | 'east' | 'west';
+type McHand = 'main' | 'off';
+
+interface McBlockInfo {
+  readonly position: McBlockPos;
+  readonly blockId: string;
+  readonly name: string;
+  readonly empty: boolean;
+  readonly isAir: boolean;
+  readonly isLiquid: boolean;
+  readonly isSolid: boolean;
+  readonly hardness: number;
+  readonly luminance: number;
+  readonly state?: Record<string, string>;
+  readonly face?: McBlockFace;
+  readonly hitPos?: McVec3;
+}
+
+interface McFindBlocksResult {
+  readonly blocks: readonly McBlockInfo[];
+  readonly scannedRadius: number;
+  readonly total: number;
+}
+
+interface McScanResult {
+  readonly blocks: readonly McBlockInfo[];
+  readonly total: number;
+  readonly volume: number;
+}
+
+/** every block of a box: the distinct blocks, and runs of [palette index, count] in y, then z, then x order */
+interface McBlockCube {
+  readonly palette: readonly {
+    readonly blockId: string;
+    readonly isSolid: boolean;
+    readonly isLiquid: boolean;
+    readonly state?: Readonly<Record<string, string>>;
+  }[];
+  readonly runs: readonly number[];
+}
+
+interface McColumnInfo {
+  readonly x: number;
+  readonly z: number;
+  readonly worldSurfaceY: number;
+  readonly motionBlockingY: number;
+  readonly topBlockId?: string;
+}
+
+interface McBiomeInfo {
+  readonly id: string;
+  readonly temperature: number;
+  readonly hasPrecipitation: boolean;
+}
+
+interface McLightInfo {
+  readonly block: number;
+  readonly sky: number;
+  readonly total: number;
+}
+
+interface McWorldInfo {
+  readonly dimension: string;
+  readonly time: number;
+  readonly timeOfDay: number;
+  readonly raining: boolean;
+  readonly thundering: boolean;
+  readonly difficulty?: string;
+  readonly ambientDarkness?: number;
+}
+
+interface McWindowGeometry {
+  readonly width: number;
+  readonly height: number;
+  readonly scaledWidth: number;
+  readonly scaledHeight: number;
+  readonly framebufferWidth: number;
+  readonly framebufferHeight: number;
+  readonly fullscreen: boolean;
+  readonly scaleFactor: number;
+  readonly fps?: number;
+}
+
+interface McSignText {
+  readonly front: readonly string[];
+  readonly back: readonly string[];
+}
+
+interface McPathfinderGotoResult {
+  readonly ok: boolean;
+  readonly reason?: string;
+  readonly searchMs: number;
+  readonly visited: number;
+  readonly pathLength?: number;
+  readonly etaMs?: number;
+  readonly start?: McBlockPos;
+  readonly end?: McBlockPos;
+  readonly taskId?: string;
+  readonly movement?: 'walk' | 'fly';
+}
+
+interface McPathfinderStatus {
+  readonly active: boolean;
+  readonly index: number;
+  readonly pathLength: number;
+  readonly taskId?: string;
+  readonly movement: 'walk' | 'fly';
+}
+
+interface McPlayerState {
+  readonly username: string;
+  readonly uuid: string;
+  readonly onGround: boolean;
+  readonly onFire: boolean;
+  readonly swimming: boolean;
+  readonly sneaking: boolean;
+  readonly sprinting: boolean;
+  readonly gliding: boolean;
+  readonly flying: boolean;
+  readonly usingItem: boolean;
+  readonly sleeping: boolean;
+  readonly hasVehicle: boolean;
+  readonly air: number;
+  readonly fallDistance: number;
+  readonly gameMode?: string;
+  readonly vehicleId?: number;
+}
+
+type McUiElement =
+  | { readonly type: 'label'; readonly id?: string; readonly label: string }
+  | { readonly type: 'toggle'; readonly id: string; readonly label: string; readonly value?: boolean }
+  | { readonly type: 'button'; readonly id: string; readonly label: string };
+
+interface McUiDefinition {
+  readonly id: string;
+  readonly title: string;
+  readonly elements: readonly McUiElement[];
+}
+
+interface McUiActionEvent {
+  readonly uiId: string;
+  readonly elementId: string;
+  readonly action: 'click' | 'change' | 'close';
+  readonly value: boolean;
+  readonly ts: number;
+}
+
+interface McBlockChangedEvent {
+  readonly watchId: string;
+  readonly changes: readonly McBlockInfo[];
+  readonly ts: number;
+}
+
+interface McPlayerStateEvent {
+  readonly onFire: boolean;
+  readonly usingItem: boolean;
+  readonly swimming: boolean;
+  readonly gliding: boolean;
+  readonly air: number;
+  readonly ts: number;
+}
+
+interface McDimensionChangedEvent {
+  readonly from: string;
+  readonly to: string;
+  readonly ts: number;
+}
+
+interface McApiList {
+  readonly methods: readonly string[];
+  readonly count: number;
+}
+
+interface McApiVersion {
+  readonly protocolVersion: number;
+  readonly modVersion: string;
+  readonly mcVersion?: string;
+}
+
+interface McApiCapabilities extends McApiList {
+  readonly events: readonly string[];
+  readonly limits: Readonly<Record<string, number>>;
+  readonly binaryTransport: boolean;
+  readonly taskCancellation: boolean;
+  readonly declarativeUi: boolean;
+  readonly flightPathfinding: boolean;
+  readonly miningAutomation: boolean;
+  readonly smoothLook: boolean;
+}
+
+// ---- Event payloads added in this revision ----
+
+type McHealthChangedEvent = {
+  readonly health: number;
+  readonly maxHealth: number;
+  readonly food: number;
+  readonly ts: number;
+};
+
+type McDeathEvent = { readonly ts: number };
+type McRespawnEvent = { readonly ts: number };
+type McKickedEvent = { readonly reason: string; readonly ts: number };
+type McPathfinderArrivedEvent = { readonly durationMs: number; readonly nodes: number; readonly taskId?: string; readonly ts: number };
+type McPathfinderFailedEvent = { readonly reason: string; readonly taskId?: string; readonly ts: number };
+type McEntitySpawnedEvent = { readonly entities: readonly McEntityInfo[]; readonly ts: number };
+type McEntityDiedEvent = { readonly ids: readonly number[]; readonly ts: number };
+type McEntityDespawnedEvent = { readonly ids: readonly number[]; readonly ts: number };
+type McTaskEvent = {
+  readonly taskId: string;
+  readonly type: string;
+  readonly reason?: string;
+  readonly mined?: number;
+  readonly skipped?: number;
+  readonly ts: number;
+};
+
+
+/** Player input captured by the client: `move` (per tick, held keys), `attackEntity`, `useItem`, … */
+type McCaptureAction = {
+  readonly kind: string;
+  readonly ts?: number;
+  readonly [key: string]: unknown;
+};
+
+type McClientEventPayloads = {
+  readonly 'mc.chat': McChatEvent;
+  readonly 'mc.position': McPositionEvent;
+  readonly 'mc.window.open': McWindowOpenEvent;
+  readonly 'mc.window.close': McWindowCloseEvent;
+  readonly 'mc.window.items': McWindowItemsEvent;
+  readonly 'mc.player.forcedTeleport': McForcedTeleportEvent;
+  readonly 'mc.health.changed': McHealthChangedEvent;
+  readonly 'mc.death': McDeathEvent;
+  readonly 'mc.respawn': McRespawnEvent;
+  readonly 'mc.kicked': McKickedEvent;
+  readonly 'mc.pathfinder.arrived': McPathfinderArrivedEvent;
+  readonly 'mc.pathfinder.failed': McPathfinderFailedEvent;
+  readonly 'mc.entity.spawned': McEntitySpawnedEvent;
+  readonly 'mc.entity.died': McEntityDiedEvent;
+  readonly 'mc.entity.despawned': McEntityDespawnedEvent;
+  readonly 'mc.player.stateChanged': McPlayerStateEvent;
+  readonly 'mc.player.heldItemChanged': McHeldItems & { readonly ts: number };
+  readonly 'mc.player.effectsChanged': { readonly effects: readonly McStatusEffect[]; readonly ts: number };
+  readonly 'mc.dimension.changed': McDimensionChangedEvent;
+  readonly 'mc.block.changed': McBlockChangedEvent;
+  readonly 'mc.ui.action': McUiActionEvent;
+  readonly 'mc.task.completed': McTaskEvent;
+  readonly 'mc.task.failed': McTaskEvent;
+  readonly 'mc.automation.action': McCaptureAction;
+};
+
+type WorkerMcClientEventName =
+  | 'move'
+  | 'chat'
+  | 'windowOpen'
+  | 'windowClose'
+  | 'updateSlot'
+  | 'forceMove'
+  | 'healthChanged'
+  | 'death'
+  | 'respawn'
+  | 'kicked'
+  | 'pathArrived'
+  | 'pathFailed'
+  | 'entitySpawned'
+  | 'entityDied'
+  | 'entityDespawned'
+  | 'playerStateChanged'
+  | 'heldItemChanged'
+  | 'effectsChanged'
+  | 'dimensionChanged'
+  | 'blockChanged'
+  | 'uiAction'
+  | 'taskCompleted'
+  | 'taskFailed'
+  | 'input';
+
+type WorkerMcClientEventPayloads = {
+  readonly move: McPositionEvent;
+  readonly chat: McChatEvent;
+  readonly windowOpen: McWindowOpenEvent;
+  readonly windowClose: McWindowCloseEvent;
+  readonly updateSlot: McWindowItemsEvent;
+  readonly forceMove: McForcedTeleportEvent;
+  readonly healthChanged: McHealthChangedEvent;
+  readonly death: McDeathEvent;
+  readonly respawn: McRespawnEvent;
+  readonly kicked: McKickedEvent;
+  readonly pathArrived: McPathfinderArrivedEvent;
+  readonly pathFailed: McPathfinderFailedEvent;
+  readonly entitySpawned: McEntitySpawnedEvent;
+  readonly entityDied: McEntityDiedEvent;
+  readonly entityDespawned: McEntityDespawnedEvent;
+  readonly playerStateChanged: McPlayerStateEvent;
+  readonly heldItemChanged: McHeldItems & { readonly ts: number };
+  readonly effectsChanged: { readonly effects: readonly McStatusEffect[]; readonly ts: number };
+  readonly dimensionChanged: McDimensionChangedEvent;
+  readonly blockChanged: McBlockChangedEvent;
+  readonly uiAction: McUiActionEvent;
+  readonly taskCompleted: McTaskEvent;
+  readonly taskFailed: McTaskEvent;
+  /** per-tick player input; only streamed while a capture (task recording or brain recording) runs */
+  readonly input: McCaptureAction;
+};
+
+
+interface IMcClient {
+  readonly id: string;
+
+  // Chat / input
+  chat(message: string): Promise<void>;
+  setMovement(state: McMovementState): Promise<void>;
+  setKey(params: { key: McKey; pressed: boolean }): Promise<void>;
+  look(params: { yaw: number; pitch: number; mode?: McLookMode }): Promise<void>;
+  smoothLook(params: { yaw: number; pitch: number; mode?: McLookMode } & McSmoothLookOptions): Promise<McTaskStartResult & { durationMs?: number }>;
+  smoothLookAt(params: McVec3 & McSmoothLookOptions): Promise<McTaskStartResult & { durationMs?: number }>;
+  stopSmoothLook(taskId?: string): Promise<{ ok: boolean; reason?: string }>;
+  smoothLookStatus(): Promise<McSmoothLookStatus>;
+  click(button?: 'left' | 'right'): Promise<void>;
+
+  // Inventory windows
+  clickSlot(params: { slot: number; button?: number; actionType?: string; syncId?: number }): Promise<void>;
+  closeWindow(): Promise<void>;
+  setHotbarSlot(slot: number): Promise<void>;
+  getInventory(): Promise<McInventorySnapshot>;
+  getCurrentWindow(): Promise<McWindowInfo | null>;
+  findInventoryItems(params: { matching: string; limit?: number }): Promise<{ items: readonly (McItemStack & { readonly slot: number })[]; totalCount: number; matchedSlots: number }>;
+  countInventoryItem(matching: string): Promise<number>;
+  moveInventorySlot(params: { from: number; to: number }): Promise<{ ok: boolean; affected: number; reason?: string }>;
+  swapInventorySlots(params: { from: number; to: number }): Promise<{ ok: boolean; affected: number; reason?: string }>;
+  quickMoveInventorySlot(slot: number): Promise<{ ok: boolean; affected: number; reason?: string }>;
+  transferInventory(params: { from: 'player' | 'container'; matching?: string; limit?: number }): Promise<{ ok: boolean; affected: number; reason?: string }>;
+
+  // Player info
+  getCurrentPosition(): Promise<McPosition>;
+  getHealth(): Promise<McHealth>;
+  getExperience(): Promise<McExperience>;
+  getHeldItems(): Promise<McHeldItems>;
+  getStatusEffects(): Promise<{ effects: readonly McStatusEffect[] }>;
+  getPlayerState(): Promise<McPlayerState>;
+
+  // Player actions
+  swingArm(params?: { hand?: McHand }): Promise<void>;
+  dropItem(params?: { entireStack?: boolean }): Promise<void>;
+  dig(params: McBlockPos & { face?: McBlockFace }): Promise<{ ok: boolean; instant?: boolean; reason?: string }>;
+  stopDig(): Promise<void>;
+  placeBlock(params: McBlockPos & { face?: McBlockFace; hand?: McHand }): Promise<{ ok: boolean }>;
+  activateBlock(params: McBlockPos & { face?: McBlockFace; hand?: McHand }): Promise<{ ok: boolean }>;
+  useOnLooked(params?: { maxDistance?: number }): Promise<{ ok: boolean; reason?: string; block?: McBlockPos }>;
+  equip(params: { itemId?: string; slot?: number; destination: 'hand' | 'off-hand' | 'head' | 'chest' | 'legs' | 'feet' | 'hotbar' }): Promise<{ ok: boolean; reason?: string; destinationSlot?: number }>;
+  sleep(): Promise<{ ok: boolean }>;
+  wake(): Promise<{ ok: boolean }>;
+  lookAt(params: McVec3): Promise<{ ok: boolean; reason?: string }>;
+  useItem(params?: { hand?: McHand }): Promise<{ ok: boolean; reason?: string }>;
+  releaseUseItem(): Promise<{ ok: boolean; reason?: string }>;
+  swapHands(): Promise<{ ok: boolean; reason?: string }>;
+  respawn(): Promise<{ ok: boolean; reason?: string }>;
+
+  // Entities
+  attackEntity(params: { id: number }): Promise<{ ok: boolean; reason?: string }>;
+  useEntity(params: { id: number; hand?: McHand }): Promise<{ ok: boolean; reason?: string }>;
+  getEntityById(params: { id: number }): Promise<McEntityInfo | null>;
+  findEntities(params?: McEntityFilter): Promise<{ entities: readonly McEntityInfo[]; total: number }>;
+  nearestEntity(params?: Omit<McEntityFilter, 'limit'>): Promise<McEntityInfo | null>;
+  lookAtEntity(id: number): Promise<{ ok: boolean; reason?: string }>;
+  followEntity(params: { id: number; distance?: number; sprint?: boolean; taskId?: string }): Promise<{ ok: boolean; taskId?: string; reason?: string }>;
+  attackEntityUntilDead(params: { id: number; distance?: number; sprint?: boolean; taskId?: string }): Promise<{ ok: boolean; taskId?: string; reason?: string }>;
+  stopTask(taskId?: string): Promise<{ ok: boolean; reason?: string }>;
+  taskStatus(): Promise<{ active: boolean; taskId?: string; type?: string; entityId?: number }>;
+
+  // World / blocks
+  getNearbyEntities(params?: { radius?: number; limit?: number; includePlayers?: boolean; type?: string }): Promise<McNearbyEntitiesResult>;
+  getOnlinePlayers(): Promise<McOnlinePlayersResult>;
+  getBlockAt(params: McBlockPos): Promise<McBlockInfo>;
+  blockAtCursor(params?: { maxDistance?: number }): Promise<McBlockInfo | null>;
+  raycast(params?: { maxDistance?: number }): Promise<McBlockInfo | null>;
+  findBlock(params: { matching: string | readonly string[]; maxDistance?: number; useExtraInfo?: boolean }): Promise<McBlockInfo | null>;
+  findBlocks(params: { matching: string | readonly string[]; maxDistance?: number; count?: number; useExtraInfo?: boolean }): Promise<McFindBlocksResult>;
+  /** non-air blocks in a box; `details` adds isSolid, isLiquid and state (properties) to each */
+  scanBox(params: { from: McBlockPos; to: McBlockPos; matching?: string | readonly string[]; count?: number; details?: boolean }): Promise<McScanResult>;
+  /** every block of a box (at most 262,144), compact */
+  getBlockCube(params: { from: McBlockPos; to: McBlockPos }): Promise<McBlockCube>;
+  getColumn(params: { x: number; z: number }): Promise<McColumnInfo>;
+  getBiome(params: McBlockPos): Promise<McBiomeInfo>;
+  getLight(params: McBlockPos): Promise<McLightInfo>;
+  getWorldInfo(): Promise<McWorldInfo>;
+  getSignText(params: McBlockPos): Promise<McSignText | null>;
+  watchBlocks(params: { id?: string; from: McBlockPos; to: McBlockPos; intervalMs?: number }): Promise<{ ok: boolean; id?: string; volume?: number; reason?: string }>;
+  unwatchBlocks(id: string): Promise<{ ok: boolean }>;
+  clearBlockWatches(): Promise<{ ok: boolean; affected: number }>;
+
+  // Mining automation
+  mineBlock(params: McBlockPos & Omit<McMiningOptions, 'matching' | 'maxBlocks'>): Promise<McTaskStartResult>;
+  mineNearest(params: McMiningOptions & { matching: string | readonly string[] }): Promise<McTaskStartResult>;
+  veinMine(params: McBlockPos & McMiningOptions & { diagonal?: boolean }): Promise<McTaskStartResult>;
+  stopMining(taskId?: string): Promise<{ ok: boolean; reason?: string }>;
+  miningStatus(): Promise<McMiningStatus>;
+
+  // Pathfinder
+  goto(params: McBlockPos & McNavigationOptions): Promise<McPathfinderGotoResult>;
+  gotoEntity(params: { id: number } & McNavigationOptions): Promise<McPathfinderGotoResult>;
+  gotoBlock(params: { matching: string | readonly string[]; maxDistance?: number } & McNavigationOptions): Promise<McPathfinderGotoResult>;
+  flee(params: { x: number; z: number; distance?: number } & Pick<McNavigationOptions, 'sprint' | 'movement' | 'maxNodes' | 'maxRange' | 'taskId'>): Promise<McPathfinderGotoResult>;
+  stopPath(taskId?: string): Promise<void>;
+  pathStatus(): Promise<McPathfinderStatus>;
+
+  // Game window
+  getWindowInfo(): Promise<McWindowGeometry>;
+  setWindowTitle(params: { title: string }): Promise<void>;
+  setFullscreen(params?: { fullscreen?: boolean }): Promise<void>;
+
+  // HUD / OS
+  toast(params: { title: string; body?: string; kind?: 'info' | 'ok' | 'warn' | 'error'; durationMs?: number }): Promise<{ ok: boolean }>;
+  clearToasts(): Promise<void>;
+  /** a world label; with entityId it follows that entity */
+  marker(params: { id?: string; x: number; y: number; z: number; label?: string; color?: string; ttlMs?: number; entityId?: number }): Promise<{ id: string }>;
+  removeMarker(params: { id: string }): Promise<void>;
+  clearMarkers(): Promise<void>;
+  beep(params?: { sound?: string; volume?: number; pitch?: number }): Promise<{ ok: boolean }>;
+  flashWindow(): Promise<{ ok: boolean }>;
+
+  // Declarative Minecraft UI
+  openUi(definition: McUiDefinition): Promise<{ ok: boolean; id: string }>;
+  closeUi(id?: string): Promise<{ ok: boolean }>;
+
+  // Diagnostics
+  apiList(): Promise<McApiList>;
+  apiVersion(): Promise<McApiVersion>;
+  apiCapabilities(): Promise<McApiCapabilities>;
+
+  // Ergonomic orchestration helpers
+  runSequence(steps: readonly { method: string; params?: unknown }[]): Promise<readonly unknown[]>;
+  waitFor<T>(probe: () => Promise<T>, predicate: (value: T) => boolean, options?: { timeoutMs?: number; intervalMs?: number }): Promise<T>;
+
+  // Escape hatch — call any websocket method by name
+  request<T = unknown>(method: string, params?: unknown): Promise<T>;
+  request<T = unknown>(envelope: { method: string; params?: unknown }): Promise<T>;
+
+  // Events
+  on<E extends WorkerMcClientEventName>(
+    event: E,
+    handler: (data: WorkerMcClientEventPayloads[E]) => void,
+  ): Promise<() => void>;
+}
+
+// ─── Minecraft server API ───────────────────────────────────────────────────────────
+
+type MinecraftServerState =
+  | 'installing'
+  | 'stopped'
+  | 'starting'
+  | 'online'
+  | 'stopping'
+  | 'offline'
+  | 'error';
+type MinecraftServerApiState =
+  | 'unsupported'
+  | 'offline'
+  | 'connecting'
+  | 'online'
+  | 'error';
+interface McServerHandleSummary {
+  id: string;
+  name: string;
+  version: string;
+  state: MinecraftServerState;
+  apiState: MinecraftServerApiState;
+}
+interface McServerApiStatus extends McServerHandleSummary {
+  apiVersion?: string;
+  players: number;
+  uptimeMs?: number;
+}
+interface McServerPlayer {
+  uuid: string;
+  name: string;
+  displayName?: string;
+  gameMode?: string;
+  dimension?: string;
+  position?: { x: number; y: number; z: number };
+  latency?: number;
+}
+interface McServerWorldSummary {
+  id: string;
+  name: string;
+}
+interface McServerWorldInfo extends McServerWorldSummary {
+  time: number;
+  timeOfDay: number;
+  difficulty?: string;
+  raining: boolean;
+  thundering: boolean;
+  spawn?: { x: number; y: number; z: number };
+  players: number;
+}
+interface McServerApiList {
+  methods: string[];
+  events: string[];
+}
+interface McServerApiVersion {
+  protocol: number;
+  api: string;
+  minecraft: string;
+  mod?: string;
+}
+interface McServerApiCapabilities {
+  methods: string[];
+  events: string[];
+}
+interface McServerEventPayloads {
+  stateChanged: {
+    previous: MinecraftServerState;
+    state: MinecraftServerState;
+  };
+  started: { ts: number };
+  stopping: { ts: number };
+  playerJoin: { player: McServerPlayer; ts: number };
+  playerLeave: { player: McServerPlayer; reason?: string; ts: number };
+  chat: { player: McServerPlayer; message: string; ts: number };
+}
+type McServerEventName = keyof McServerEventPayloads;
+interface IMcServer {
+  readonly id: string;
+  getStatus(): Promise<McServerApiStatus>;
+  executeCommand(command: string): Promise<{
+    result: number;
+    output: readonly string[];
+  }>;
+  broadcast(message: string): Promise<void>;
+  getPlayers(): Promise<readonly McServerPlayer[]>;
+  getPlayer(nameOrUuid: string): Promise<McServerPlayer | null>;
+  sendMessage(nameOrUuid: string, message: string): Promise<void>;
+  kickPlayer(nameOrUuid: string, reason?: string): Promise<void>;
+  getWorlds(): Promise<readonly McServerWorldSummary[]>;
+  getWorldInfo(dimension?: string): Promise<McServerWorldInfo>;
+  apiList(): Promise<McServerApiList>;
+  apiVersion(): Promise<McServerApiVersion>;
+  apiCapabilities(): Promise<McServerApiCapabilities>;
+  request<T = unknown>(method: string, params?: unknown): Promise<T>;
+  on<E extends McServerEventName>(
+    event: E,
+    handler: (data: McServerEventPayloads[E]) => void,
+  ): Promise<() => void>;
+}
+
+// ─── JNbot proxy API ───────────────────────────────────────────────────────────
+
+/**
+ * Shared types for the transparent JNbot proxy (proxyV3).
+ *
+ * This file is the canonical home for the public proxy API, the recording
+ * format and the IPC shapes exchanged with the renderer.
+ */
+
+/** Direction of a packet relative to the player. */
+type PacketDirection = 'c2s' | 's2c';
+
+/** Packet data decoded by minecraft-protocol for the current client version. */
+type ProxyPacketData = Record<string, unknown>;
+
+/** A raw, decompressed Minecraft packet body. It includes the packet id. */
+type RawPacket = Uint8Array;
+
+/** `client`: a Minecraft client running the JNbot mod. */
+type ProxyParticipantKind = 'vanilla' | 'bot' | 'client';
+
+/**
+ * - `driver`: its c2s packets reach the server (one per session).
+ * - `spectator`: receives the live stream, its c2s is dropped (e.g. a frozen bot).
+ * - `syncing`: joined later and receives nothing until bootstrapped.
+ */
+type ProxyParticipantRole = 'driver' | 'spectator' | 'syncing';
+
+/* ---------- state transfer (bootstrapping a participant that joins late) ---------- */
+
+interface ProxyStateChunk {
+  x: number;
+  z: number;
+  /** Server-supplied heightmap metadata for this exact chunk frame. */
+  heightmaps?: unknown;
+  /** A Prismarine JSON column or freshly exported protocol section data. */
+  column:
+    | string
+    | { sectionData: string; minY: number; height: number };
+}
+
+interface ProxyStateEntity {
+  id: number;
+  uuid?: string;
+  type: string | number;
+  name?: string;
+  position: { x: number; y: number; z: number; yaw?: number; pitch?: number; headYaw?: number };
+  velocity?: { x: number; y: number; z: number };
+  metadata?: unknown;
+  attributes?: unknown[];
+  equipment?: Array<{ slot: number | string; item: unknown }>;
+  passengers?: number[];
+  vehicleId?: number;
+}
+
+interface ProxyStatePlayer {
+  position: { x: number; y: number; z: number; yaw: number; pitch: number };
+  health: number;
+  food: number;
+  foodSaturation: number;
+  experienceBar: number;
+  experienceLevel: number;
+  totalExperience: number;
+  selectedSlot: number;
+  abilities?: ProxyPacketData;
+}
+
+interface ProxyStateInventory {
+  items: unknown[];
+  cursor?: unknown;
+  stateId?: number;
+  window?: {
+    id: number;
+    type: string | number;
+    title: unknown;
+    slots: unknown[];
+    stateId?: number;
+    properties?: Record<number, number>;
+  };
+}
+
+/**
+ * A provider's state at one stream position. The provider owns its world model;
+ * the proxy replays `handshake` verbatim and either `bootstrap` (raw packets) or
+ * compiles `game`/`player`/`world`/`inventory`/`entities` into packets.
+ */
+interface ProxyStateSnapshot {
+  protocol: number | string;
+  /** Raw packet bodies (including the packet id) exactly as the server sent them. */
+  handshake: {
+    /** The latest configuration phase, without liveness packets and `finish_configuration`. */
+    configuration: RawPacket[];
+    login: RawPacket;
+    /** The latest respawn after `login`, when the dimension changed since. */
+    respawn?: RawPacket;
+    /** The latest copy of session-wide play packets (commands, difficulty, …). */
+    singletons: RawPacket[];
+  };
+  /** Raw play packets that recreate the provider's world (chunks, position, inventory, …). */
+  bootstrap?: RawPacket[];
+  game?: {
+    viewDistance?: number;
+    /** Current dimension shape used to decode chunk sections. */
+    dimension?: { name?: string; minY: number; height: number };
+  };
+  player?: ProxyStatePlayer;
+  world?: { chunks: ProxyStateChunk[] };
+  inventory?: ProxyStateInventory;
+  entities?: ProxyStateEntity[];
+  synchronization?: { teleportId?: number };
+}
+
+/** A participant that mirrors the session and can export its state (a bot or the JNbot mod). */
+interface ProxyStateProvider {
+  /** Whether a capture would be faithful right now. Default: ready. */
+  status?(): { ready: boolean; reasons?: readonly string[] };
+  capture(signal: AbortSignal): Promise<ProxyStateSnapshot>;
+}
+
+/* ---------- results, limits, admission ---------- */
+
+interface ProxyOperationFailure {
+  ok: false;
+  code: string;
+  message: string;
+  sessionId?: string;
+  participantId?: string;
+}
+
+interface ProxySwitchReceipt {
+  sessionId: string;
+  sourceParticipantId: string;
+  targetParticipantId: string;
+}
+
+type ProxyOperationResult<T = undefined> =
+  | (T extends undefined ? { ok: true } : { ok: true; value: T })
+  | ProxyOperationFailure;
+
+interface ProxyLimits {
+  admissionWaitMs: number;
+  maxPendingAdmissions: number;
+  /** Upper bound for one `switchTo`/`sync`/`move`, including waiting for play and a provider. */
+  transferTimeoutMs: number;
+  debugDiskBytes: number;
+}
+
+/**
+ * Keep the participants connected when the server connection drops, and log
+ * back in. Needs clients with a configuration phase (1.20.2+); older clients
+ * are disconnected as before.
+ */
+interface ProxyReconnectOptions {
+  attempts: number;
+  delayMs: number;
+}
+
+/** Set while a session is reconnecting to the server. */
+interface ProxyReconnectState {
+  attempt: number;
+  attempts: number;
+  reason: string;
+}
+
+interface ProxyAdmissionRequest {
+  username: string;
+  protocol: number | string;
+  /** Aborts when the client leaves or the admission wait runs out. */
+  signal: AbortSignal;
+}
+
+type ProxyAdmissionDecision =
+  | {
+      type: 'new-session';
+      /** Account the upstream logs in as. Default: the joining username. */
+      account?: string;
+      host?: string;
+      port?: number;
+      kind?: ProxyParticipantKind;
+      provider?: ProxyStateProvider;
+    }
+  | {
+      /** Attach to a running session as a `syncing` participant. */
+      type: 'join';
+      sessionId: string;
+      kind?: ProxyParticipantKind;
+      provider?: ProxyStateProvider;
+    }
+  | { type: 'reject'; reason: string };
+
+type ProxyAdmissionHandler = (
+  request: ProxyAdmissionRequest,
+) => ProxyAdmissionDecision | void | Promise<ProxyAdmissionDecision | void>;
+
+interface ProxyDriverEvent {
+  sessionId: string;
+  /** Undefined when the driver left and nobody took over. */
+  driver?: ProxyParticipant;
+  previous?: ProxyParticipant;
+}
+
+/** A packet the proxy could not decode, transform or re-encode. It was still forwarded. */
+interface ProxyPacketError {
+  sessionId: string;
+  participantId?: string;
+  name: string;
+  direction: PacketDirection;
+  code: 'parse' | 'handler' | 'serialize';
+  message: string;
+}
+
+/** Who drives after the driver leaves. `previous`: the last driver still connected. */
+type ProxyHandback =
+  | 'previous'
+  | 'none'
+  | ((session: ProxySession, leaving: ProxyParticipant) => ProxyParticipant | undefined);
+
+interface ProxyGrantOptions {
+  /** Also drop the driver's packets of these names while the grant holds. */
+  exclusive?: boolean;
+}
+
+/* ---------- packet pipeline ---------- */
+
+/** A packet queued after the current packet. */
+type InjectedProxyPacket =
+  | { kind: 'parsed'; name: string; data: ProxyPacketData }
+  | { kind: 'raw'; raw: RawPacket };
+
+interface PacketContext<
+  T extends ProxyPacketData | null = ProxyPacketData | null,
+> {
+  readonly name: string;
+  readonly state: string;
+  readonly direction: PacketDirection;
+  /** The decompressed packet body JNbot will forward, including its packet id. */
+  readonly raw: RawPacket;
+  /** True when JNbot could not decode this packet for the active protocol. */
+  readonly unparsed: boolean;
+  readonly sessionId?: string;
+  readonly sourceParticipantId?: string;
+  readonly targetParticipantId?: string;
+  readonly sequence: number;
+  /** `local`: written by the proxy or a plugin itself. */
+  readonly origin: 'upstream' | 'downstream' | 'local';
+  readonly failure: {
+    code: 'handler_error' | 'async_handler' | 'serialization_error';
+    message: string;
+  } | null;
+  data: T;
+  readonly isModified: boolean;
+  readonly isDropped: boolean;
+  readonly injected: readonly InjectedProxyPacket[];
+  /** Mark in-place edits to `data` for re-encoding. */
+  markModified(): this;
+  /** Replace this packet with a raw packet body. Works for undecodable packets. */
+  replaceRaw(raw: RawPacket): this;
+  /** Stop forwarding this packet. */
+  drop(): this;
+  /** Send a parsed packet to the same target after this packet. */
+  inject(name: string, data: ProxyPacketData): this;
+  /** Send a raw packet body to the same target after this packet. */
+  injectRaw(raw: RawPacket): this;
+}
+
+type PacketHandler = (context: PacketContext) => void;
+
+interface PacketPipeline {
+  hasListeners(name: string): boolean;
+  on(events: string | string[], handler: PacketHandler): this;
+  once(events: string | string[], handler: PacketHandler): this;
+  /** Observe final transformation intent without copying large packet payloads. */
+  observe(events: string | string[], handler: PacketHandler): () => void;
+  off(events: string | string[], handler: PacketHandler): this;
+  clear(): void;
+}
+
+/* ---------- plugins ---------- */
+
+interface ProxyPluginMeta {
+  name: string;
+  description: string;
+  commands?: ProxyCommand[];
+  hidden?: boolean;
+}
+
+interface ProxyCommand {
+  name: string;
+  description: string;
+  args?: string[];
+  hidden?: boolean;
+  handler(args: string[]): void;
+}
+
+interface ProxyPlugin {
+  readonly connection: ProxySession;
+  readonly meta: ProxyPluginMeta;
+  readonly pipeline: PacketPipeline;
+  tell(message: string): void;
+  start(): void;
+  stop(): void;
+}
+
+type ProxyPluginConstructor = new (
+  connection: ProxySession,
+) => ProxyPlugin;
+
+interface PluginManager {
+  readonly connection: ProxySession;
+  readonly plugins: ReadonlyMap<string, ProxyPlugin>;
+  readonly commands: ReadonlyMap<
+    string,
+    { plugin: ProxyPlugin; command: ProxyCommand }
+  >;
+  enablePlugin<T extends ProxyPlugin = ProxyPlugin>(plugin: ProxyPluginConstructor): T;
+  disablePlugin(name: string): boolean;
+  getPlugin<T extends ProxyPlugin = ProxyPlugin>(name: string): T | undefined;
+}
+
+interface DebugPlugin extends ProxyPlugin {
+  readonly active: boolean;
+  readonly fileId?: string;
+  startDebug(options?: { fileName?: string; full?: boolean }): void;
+  stopDebug(): void;
+}
+
+/* ---------- server, sessions, participants ---------- */
+
+interface ProxyServerConfig {
+  /** Port the proxy listens on. Clients/bots connect here. */
+  proxyPort?: number;
+  /** Whether the local listener requires Microsoft authentication. */
+  onlineMode?: boolean;
+  /** Upstream server the proxy forwards every connection to. */
+  host?: string;
+  port?: number;
+  /**
+   * Protocol version forwarded to `minecraft-data` for the listener defaults
+   * (motd/ping). The *actual* per-connection version is always inferred from
+   * the client handshake, so this only affects the server list ping.
+   */
+  fallbackVersion?: string;
+  limits?: Partial<ProxyLimits>;
+  /** Default for every session. Default: 5 attempts, 5 seconds apart. */
+  reconnect?: ProxyReconnectOptions | false;
+}
+
+/** What the renderer needs to render the proxy page. */
+interface ProxyInfo {
+  sessions: ProxySessionInfo[];
+  config: {
+    port: number;
+    onlineMode: boolean;
+  };
+}
+
+interface ProxySessionInfo {
+  id: string;
+  /** Account the upstream is logged in as. */
+  account: string;
+  version: string;
+  reconnecting?: ProxyReconnectState;
+  /** Whether a new client could take over this session now. */
+  switching: { supported: boolean; reasons: string[] };
+  debugRecording?: string;
+  participants: {
+    id: string;
+    username: string;
+    kind: ProxyParticipantKind;
+    role: ProxyParticipantRole;
+  }[];
+}
+
+interface ProxyServer {
+  /** Resolves when the local listener is accepting connections. */
+  readonly ready: Promise<void>;
+  readonly config: ProxyServerConfig & {
+    proxyPort: number;
+    host: string;
+    port: number;
+  };
+  readonly sessions: ReadonlyMap<string, ProxySession>;
+  readonly pendingAdmissions: number;
+  getSession(id: string): ProxySession | undefined;
+  getParticipants(): ProxyParticipant[];
+  getParticipant(idOrUsername: string): ProxyParticipant | undefined;
+  /** Give `target` control of the session it is in. */
+  switch(target: ProxyParticipant | string): Promise<ProxyOperationResult<ProxySwitchReceipt>>;
+  /**
+   * Move a connected participant into another session without disconnecting it,
+   * and give it control unless `drive` is false. Needs a 1.20.2+ client.
+   */
+  move(
+    participant: ProxyParticipant | string,
+    session: ProxySession | string,
+    options?: { drive?: boolean; timeoutMs?: number },
+  ): Promise<ProxyOperationResult>;
+  tell(target: ProxyParticipant | string, message: string): void;
+  broadcast(message: string): void;
+  kick(target: ProxyParticipant | string, reason?: string): void;
+  /** Handlers run in order; the first decision wins. Default: a new session. */
+  onAdmission(handler: ProxyAdmissionHandler): () => void;
+  /** Run `handler` in every session's pipeline, current and future. */
+  onPacket(events: string | string[], handler: PacketHandler): () => void;
+  getInfo(): ProxyInfo;
+  stop(): void;
+  on(
+    event: 'session',
+    listener: (action: 'created' | 'ended', session: ProxySession, reason?: string) => void,
+  ): this;
+  on(
+    event: 'participant',
+    listener: (
+      action: 'attached' | 'detached',
+      participant: ProxyParticipant,
+      session: ProxySession,
+      reason?: string,
+    ) => void,
+  ): this;
+  on(event: 'driver', listener: (event: ProxyDriverEvent & { session: ProxySession }) => void): this;
+  on(
+    event: 'reconnect',
+    listener: (session: ProxySession, state: ProxyReconnectState | undefined) => void,
+  ): this;
+  on(event: 'packetError', listener: (error: ProxyPacketError) => void): this;
+  /** Anything `getInfo()` reports may have changed. Batched per tick. */
+  on(event: 'change', listener: () => void): this;
+}
+
+interface ProxyParticipant {
+  readonly id: string;
+  /** The session it is in. Changes on `server.move`. */
+  readonly session?: ProxySession;
+  readonly username: string;
+  readonly protocol: number | string;
+  readonly kind: ProxyParticipantKind;
+  readonly role: ProxyParticipantRole;
+  /** Protocol phase of this connection: `login`, `configuration` or `play`. */
+  readonly phase: string;
+  readonly connected: boolean;
+  /** Packets of this participant only. Moves with it between sessions. */
+  readonly pipeline: PacketPipeline;
+  readonly isProviderFresh: boolean;
+  /** Whether it can be reconfigured: moved between sessions or kept through a reconnect. */
+  readonly canReconfigure: boolean;
+  provider?: ProxyStateProvider;
+  /**
+   * A line kept on screen: the action bar of vanilla clients, the HUD of the
+   * JNbot mod. The session sets it while spectating or reconnecting.
+   */
+  status?: string;
+  tell(message: string): void;
+  end(reason?: string): void;
+  on(event: 'phase', listener: (phase: string) => void): this;
+  on(event: 'leave', listener: (reason: string) => void): this;
+}
+
+interface ProxySession {
+  readonly id: string;
+  readonly server: ProxyServer;
+  readonly config: ProxyServerConfig;
+  /** Account the upstream is logged in as. */
+  readonly account: string;
+  readonly version: string;
+  readonly protocol: number | string;
+  /** Upstream phase: `configuration` or `play` once connected. */
+  readonly phase: string;
+  readonly isClosed: boolean;
+  readonly switchingCapability: {
+    supported: boolean;
+    reasons: string[];
+  };
+  readonly participants: ReadonlyMap<string, ProxyParticipant>;
+  readonly driver?: ProxyParticipant;
+  readonly limits: ProxyLimits;
+  readonly pipeline: PacketPipeline;
+  readonly pluginManager: PluginManager;
+  handback: ProxyHandback;
+  reconnect: ProxyReconnectOptions | false;
+  readonly reconnecting?: ProxyReconnectState;
+  onPacket(events: string | string[], handler: PacketHandler): () => void;
+  /** Chat to the driver. */
+  tell(message: string): void;
+  /** c2s goes upstream as if the driver sent it; s2c to one or every synced participant. */
+  write(
+    direction: PacketDirection,
+    name: string,
+    data: ProxyPacketData,
+    participantId?: string,
+  ): boolean;
+  writeRaw(direction: PacketDirection, raw: RawPacket, participantId?: string): boolean;
+  /** Bootstrap a `syncing` participant into a spectator without giving it control. */
+  sync(participant: ProxyParticipant | string, options?: { timeoutMs?: number }): Promise<ProxyOperationResult>;
+  /** Give control to `participant`, bootstrapping it first if needed. Waits for play. */
+  switchTo(
+    participant: ProxyParticipant | string,
+    options?: { timeoutMs?: number },
+  ): Promise<ProxyOperationResult<ProxySwitchReceipt>>;
+  /**
+   * Let a participant that is not driving send these c2s packets to the server,
+   * e.g. a frozen bot handling the inventory (`PacketGroups.inventory`) while a
+   * player drives. Returns a function that revokes the grant.
+   */
+  grant(
+    participant: ProxyParticipant | string,
+    packets: string | readonly string[],
+    options?: ProxyGrantOptions,
+  ): () => void;
+  kick(participantId: string, reason?: string): boolean;
+  end(reason?: string): void;
+  on(
+    event: 'participant',
+    listener: (action: 'attached' | 'detached', participant: ProxyParticipant, reason?: string) => void,
+  ): this;
+  on(event: 'driver', listener: (event: ProxyDriverEvent) => void): this;
+  on(event: 'reconnect', listener: (state: ProxyReconnectState | undefined) => void): this;
+  on(event: 'packetError', listener: (error: ProxyPacketError) => void): this;
+  on(event: 'close', listener: (session: ProxySession, reason: string) => void): this;
+}
+
+/** c2s packet names by purpose, across protocol versions. For `session.grant`. */
+type ProxyPacketGroup = 'movement' | 'inventory' | 'interaction' | 'chat';
+
+/* ---------- recordings ---------- */
+
+/**
+ * What a recording is for:
+ * - `replay`: client->server stream, used to drive a connection (the default).
+ * - `debug`: both directions, large packets truncated — for inspection only.
+ * Absent on legacy recordings (treat as `replay`).
+ */
+type RecordingKind = 'replay' | 'debug';
+
+/** Metadata file written alongside every recording (`<name>.json`). */
+interface RecordingHeader {
+  /** stable id == base filename; survives renames of the display `name` */
+  id: string;
+  name: string;
+  /** what the recording is for; absent on legacy recordings (treat as 'replay') */
+  kind?: RecordingKind;
+  /** recorder format version */
+  version: string;
+  timestamp: number;
+  /** minecraft version the recording was captured on */
+  mcVersion: string;
+  ignoredPackets: string[];
+  packetCount: number;
+  /** total duration in ms */
+  duration: number;
+}
+
+/** One line of the NDJSON `<name>.log` data file. */
+interface RecordingPacket {
+  /** packet name */
+  n: string;
+  /** delta time from recording start, ms */
+  dt: number;
+  /** packet params */
+  p: Record<string, any>;
+  /** free-form metadata */
+  m: Record<string, any>;
+  /** direction; absent on legacy recordings (treat as 'c2s') */
+  d?: PacketDirection;
+}
+
+/** A pure transform applied to a packet during record or replay. */
+type Transformer = (packet: RecordingPacket) => RecordingPacket | null;
+
+// ─── Plugin options ───────────────────────────────────────────────────────────
+
+type AltRangeValue = [string | null, string | null];
+
+type ActiveBotFilter = 'all' | 'bots' | 'minecraft';
+
+type PluginOptionType =
+  | 'select'
+  | 'multiSelect'
+  | 'slider'
+  | 'input'
+  | 'gamemodeSelect'
+  | 'altSelect'
+  | 'altsSelect'
+  | 'tagsSelect'
+  | 'altRange'
+  | 'switch'
+  | 'list'
+  | 'coordinate'
+  | 'keybind'
+  | 'activeBotSelect';
+
+interface PluginOptionBase {
+  id: string;
+  label: string;
+  type: PluginOptionType;
+  tooltip?: string;
+  required?: boolean;
+  valueByFieldId?: string;
+  className?: string;
+}
+
+type PluginOptionChoice = { label: string; value: string | number };
+
+interface PluginListField {
+  key: string;
+  label: string;
+  type: 'input' | 'switch' | 'slider' | 'select' | 'altSelect';
+  inputType?: 'text' | 'number' | 'password';
+  placeholder?: string;
+  options?: PluginOptionChoice[];
+  min?: number;
+  max?: number;
+  step?: number;
+  defaultValue?: unknown;
+}
+
+interface PluginOptionInput extends PluginOptionBase {
+  type: 'input';
+  inputType?: 'text' | 'number' | 'password';
+  placeholder?: string;
+  defaultValue?: number | string;
+}
+
+interface PluginOptionSwitch extends PluginOptionBase {
+  type: 'switch';
+  defaultValue?: boolean;
+  labelChecked?: string;
+  labelUnchecked?: string;
+}
+
+interface PluginOptionSelect extends PluginOptionBase {
+  type: 'select';
+  options: PluginOptionChoice[];
+  defaultValue?: string | number;
+  clearable?: boolean;
+  freeSolo?: boolean;
+}
+
+interface PluginOptionMultiSelect extends PluginOptionBase {
+  type: 'multiSelect';
+  options: string[];
+  defaultValue?: string[];
+  freeSolo?: boolean;
+}
+
+interface PluginOptionSlider extends PluginOptionBase {
+  type: 'slider';
+  min: number;
+  max: number;
+  step: number;
+  marks?: Record<number, string>;
+  defaultValue?: number;
+}
+
+interface PluginOptionGamemodeSelect extends PluginOptionBase {
+  type: 'gamemodeSelect';
+  gamemodes?: string[];
+  multiple?: boolean;
+  defaultValue?: string | string[];
+}
+
+interface PluginOptionAltSelect extends PluginOptionBase {
+  type: 'altSelect';
+  defaultValue?: string;
+  clearable?: boolean;
+  freeSolo?: boolean;
+}
+
+interface PluginOptionAltsSelect extends PluginOptionBase {
+  type: 'altsSelect';
+  defaultValue?: string[];
+}
+
+interface PluginOptionTagsSelect extends PluginOptionBase {
+  type: 'tagsSelect';
+  defaultValue?: string[];
+}
+
+interface PluginOptionAltRange extends PluginOptionBase {
+  type: 'altRange';
+  defaultValue?: AltRangeValue;
+}
+
+interface PluginOptionList extends PluginOptionBase {
+  type: 'list';
+  fields: PluginListField[];
+  defaultValue?: Record<string, any>[];
+  minItems?: number;
+  maxItems?: number;
+  addLabel?: string;
+}
+
+interface PluginOptionCoordinate extends PluginOptionBase {
+  type: 'coordinate';
+  defaultValue?: {
+    x?: number;
+    y?: number;
+    z?: number;
+    dimension?: 'overworld' | 'nether' | 'end';
+  };
+  withDimension?: boolean;
+}
+
+interface PluginOptionKeybind extends PluginOptionBase {
+  type: 'keybind';
+  defaultValue?: string;
+  simple?: boolean;
+}
+
+interface PluginOptionActiveBotSelect extends PluginOptionBase {
+  type: 'activeBotSelect';
+  botFilter?: ActiveBotFilter;
+  filter?: ActiveBotFilter;
+  multiple?: boolean;
+  clearable?: boolean;
+  freeSolo?: boolean;
+  placeholder?: string;
+  defaultValue?: string[];
+}
+
+type PluginOption =
+  | PluginOptionInput
+  | PluginOptionSwitch
+  | PluginOptionSelect
+  | PluginOptionMultiSelect
+  | PluginOptionSlider
+  | PluginOptionGamemodeSelect
+  | PluginOptionAltSelect
+  | PluginOptionAltsSelect
+  | PluginOptionTagsSelect
+  | PluginOptionAltRange
+  | PluginOptionList
+  | PluginOptionCoordinate
+  | PluginOptionKeybind
+  | PluginOptionActiveBotSelect;
+
+interface PluginOptionSection {
+  name: string;
+  options: PluginOption[];
+  collapsed?: boolean;
+  className?: string;
+}
+
+type PluginOptionSchema = PluginOptionSection[];
+
+// ─── JNbot plugin API ───────────────────────────────────────────────────────────
+
+// =============================================================================
+// SINGLE SOURCE OF TRUTH for the evolving plugin API surface.
+//
+// App code imports the real types from this file, so the runtime
+// implementations (jsRuntime's `buildScript`/`console`, workerTypes' `Bot`,
+// BotMachine) are type-checked against the exact contract plugins see — the two
+// can no longer drift.
+//
+// `scripts/build-jnbot-types.mjs` turns this module into the ambient plugin
+// surface (fullApiTypes.txt, the @jnbot/types npm package, and the
+// PLUGIN_API_TYPES constant) by:
+//   1. deleting every `import …;` line, and
+//   2. stripping the leading `export ` keyword from each declaration.
+// The stub types that the deleted imports referred to (Bot, Item, BotActions,
+// IMcClient, BotMachine) are supplied by `pluginPrelude.d.ts`, which the
+// generator prepends. That is how the same `IMcClient`/`Bot` symbol resolves to
+// the *real* internal type in the app and to the *curated* plugin stub in the
+// generated surface.
+//
+// AUTHORING RULES (so the line-based generator stays correct):
+//   • keep every `import` on a SINGLE line,
+//   • only `export` declarations / `export declare` globals — no runtime code,
+//   • don't reference internal types unless they're imported here (so they get
+//     stripped) and stubbed in pluginPrelude.d.ts.
+// =============================================================================
+
+
+
+type MacroLanguage = 'js' | 'ts' | 'components';
+type MacroScriptType = 'script' | 'action' | 'profileUi';
+
+type MacroInfo = {
+  name: string;
+  description: string;
+
+  pluginId: string; //
+
+  editedAt: number | null;
+  createdAt: number;
+  public: boolean;
+  language: MacroLanguage;
+  downloads?: number;
+  /**
+   * Provenance of this plugin, used to decide whether to warn before
+   * importing/running. Set during create (author) or import (verified |
+   * trusted | unverified). Missing on legacy plugins — treat as trusted.
+   *
+   * - 'author'     — created locally by the user
+   * - 'verified'   — `.jnp` carried a valid maintainer signature
+   * - 'trusted'    — user explicitly accepted an unverified plugin
+   * - 'unverified' — user imported despite the warning (one-time pass)
+   */
+  trust?: 'author' | 'verified' | 'trusted' | 'unverified';
+  scriptType: MacroScriptType;
+  config?: PluginOptionSchema;
+  banner?: string;
+};
+// =========================== Plugin API ========================= \\
+
+type AltUpdateData = {
+  password?: string;
+  ranks?: Record<string, string | null>;
+  gkits?: Record<string, string[]>;
+};
+
+/**
+ * Alt changes keyed by username. Existing usernames are partially updated,
+ * new usernames are added (and require `password`), and `null` removes an alt.
+ */
+type AltUpdateRequest = Record<string, AltUpdateData | null>;
+
+/* ===========================================================================
+ * Cooldowns
+ * ======================================================================== */
+
+/**
+ * A cooldown owned by your plugin. Returned by `script.getCooldowns()` and
+ * `script.addCooldown()`. Use the methods to inspect or restart its countdown.
+ */
+interface Cooldown {
+  readonly id: string;
+  /** Owning plugin (set automatically). `pluginId + reminderId` is globally unique. */
+  readonly pluginId: string;
+  /** Plugin-defined id (e.g. the gamemode). Unique within a pluginId. */
+  reminderId?: string;
+  name: string;
+  /** Cooldown length in milliseconds. */
+  cooldown: number;
+  /** Start epoch (ms); the cooldown is ready at `time + cooldown`. */
+  time: number;
+  /** Option overrides replayed when this cooldown auto-runs the plugin. */
+  options?: Record<string, any>;
+  /** Epoch (ms) at which this cooldown becomes ready (`time + cooldown`). */
+  readonly readyAt: number;
+  /** `true` once the cooldown has fully elapsed. */
+  isCompleted(): boolean;
+  /** Milliseconds left until the cooldown is ready (0 once completed). */
+  remaining(): number;
+  /** Restart the countdown from now (ready again after one cooldown). */
+  reset(): Promise<Cooldown>;
+  /** Permanently remove this cooldown. */
+  delete(): Promise<void>;
+}
+
+/** @deprecated Use {@link Cooldown} instead. */
+type Reminder = Cooldown;
+
+/* ===========================================================================
+ * Active scripts
+ * ======================================================================== */
+
+type ActiveScriptsType = Record<
+  string,
+  {
+    name: string;
+    scriptId: string;
+    scriptInstanceId: number;
+    instances: { id: string; instanceId: number }[];
+  }
+>;
+
+type ServerAltInfo = {
+  /** Whether this alt uses Microsoft authentication on this profile. */
+  premium?: boolean;
+  password?: string;
+  gkits: { [gamemode: string]: string[] };
+  ranks: { [gamemode: string]: string };
+};
+
+/**
+ * An alt. Identity only — username, UID, email — shared across every server.
+ * Per-server authentication mode, credentials/ranks/gkits live in
+ * `SettingsObj.altData` of the corresponding server file. Merge the two
+ * sides with `AltWithData` for in-memory use.
+ */
+interface Alt {
+  username: string;
+  UID?: string | null;
+  email?: string;
+}
+
+/**
+ * Alt merged with the active server's `ServerAltInfo`. This is what UI,
+ * workers, and IPC payloads pass around. An alt with no `data` for the
+ * active server should be treated as "not used on this server".
+ */
+type AltWithData = Alt & { data: ServerAltInfo };
+
+type JNdataGamemodeData = {
+  ranks: {
+    [rank: string]: {
+      price: number;
+      color: string;
+    };
+  };
+  gkits: {
+    [gkit: string]: number;
+  };
+};
+
+type IterateAltsOptions = {
+  /**
+   * Options forwarded to the underlying `join()` call for every alt
+   * (e.g. `{ gamemode: 'survival' }`). Defaults to `{ login: true }`.
+   */
+  join?: JoinConfig;
+  options?: AltCredentials;
+  /**
+   * Extra per-alt predicate, applied on top of the filtering already derived
+   * from `scriptOptions` (tags, ranks, gkits, altRange, ...).
+   */
+  altFilter?: (alt: Alt) => boolean;
+  /**
+   * Whether to run the standard `filterAlts` pipeline on the given alts.
+   * Defaults to `true`. Set to `false` when the caller has already filtered.
+   */
+  filter?: boolean;
+
+  showProgress?: boolean; // Whether to send progress updates to the UI (for scripts with many alts)
+  disableControls?: boolean; // Whether to disable the pause/skip/previous buttons in the UI
+  startCount?: number; // Starting index in the filtered alt list
+};
+
+type ScriptSettingsForFilter = Partial<{
+  gamemode?: string;
+  alts?: string[] | string;
+  altRange?: [string | null, string | null];
+  ignoreAlts?: string[];
+  withTags?: string[];
+  altFilter?: (alt: Alt) => boolean;
+  withRanks?: boolean | string[];
+  withGkits?: boolean | string[];
+  [other: string]: any;
+}>;
+
+type StartPluginOptions = {
+  /* @deprecated use pluginId instead */
+  name: string;
+  /** A plugin's id, or `chain:<chainId>` to start one of the user's chains. */
+  pluginId: string;
+  optionOverrides?: Record<string, any>;
+  /* @deprecated */
+  quitOnExit?: boolean | string;
+};
+
+type PromptOptions = {
+  title: string;
+  label?: string;
+  placeholder?: string;
+  defaultValue?: string;
+  description?: string;
+};
+
+type NotificationOptions = {
+  type: string;
+  title: string;
+  message: string;
+};
+
+type DialogButton = { label: string; type:  "link" | "text" | "default" | "primary" | "dashed" | undefined, danger?: boolean };
+
+type DialogOptions = {
+  title: string;
+  body: string;
+  buttons: DialogButton[];
+};
+
+type SnackbarOptions = { type: string; title: string };
+
+type ProgressUpdate = {
+  current: number;
+  total: number;
+};
+
+type ActionArgs = {
+  actionId: string;
+  bot?: Bot;
+  optionOverrides?: Record<string, unknown>;
+  args: any[];
+};
+
+interface AppVersion {
+  current: string;
+  isLaterThan: (otherVersion: string) => boolean;
+}
+
+/* ===========================================================================
+ * `script` global
+ * ======================================================================== */
+
+type AiJson = null | boolean | number | string | AiJson[] | AiJsonObject;
+interface AiJsonObject { [key: string]: AiJson; }
+/** Supported draft-07 subset. Unsupported keywords are rejected at registration. */
+interface AiSchema {
+  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'null';
+  description?: string;
+  title?: string;
+  properties?: Record<string, AiSchema>;
+  required?: string[];
+  additionalProperties?: boolean;
+  items?: AiSchema;
+  enum?: AiJson[];
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number;
+  exclusiveMaximum?: number;
+  multipleOf?: number;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  minItems?: number;
+  maxItems?: number;
+  uniqueItems?: boolean;
+}
+interface AiTool {
+  name: string;
+  description: string;
+  parameters: AiSchema;
+  handler?: (arguments_: AiJsonObject) => AiJson | void | Promise<AiJson | void>;
+}
+interface AiRequestOptions { signal?: AbortSignal; timeoutMs?: number; }
+/** Select a built-in variant, optionally overriding its compatible HTTPS model download. */
+interface AiModelOptions { model?: 'main' | 'flash'; modelUrl?: string; }
+interface AiPredictOptions extends AiRequestOptions {
+  maxNewTokens?: number;
+  /** Generate reasoning before tool calls. Defaults to false. */
+  reasoning?: boolean;
+  /** Optional Gemma tool cosine threshold in [-1, 1]. Omit or null disables it. Main model only; flash bypasses filtering. */
+  toolFilterThreshold?: number | null;
+}
+type AiRunOptions = AiPredictOptions;
+interface AiCall { name: string; arguments: AiJsonObject; }
+interface AiPrediction {
+  status: 'calls' | 'no_match' | 'withheld';
+  calls: AiCall[];
+  suppressedCalls: (AiCall & { reason?: string })[];
+  toolsetRevision: number;
+  confidence: number | null;
+  reasoning: string | null;
+  modelId: string;
+}
+interface AiError { code: string; message: string; }
+type AiExecutionResult = AiCall & ({ value: AiJson; error?: never } | { error: AiError; value?: never });
+interface AiRunResult {
+  status: 'completed' | 'no_match' | 'withheld' | 'failed' | 'cancelled';
+  toolsetRevision: number;
+  modelId: string;
+  steps: number;
+  results: AiExecutionResult[];
+  prediction?: AiPrediction;
+  error?: AiError;
+}
+interface AiAgent {
+  /** Embed text with this agent's Gemma model. Flash rejects with AI_UNSUPPORTED_FEATURE. */
+  embed(text: string, options?: AiRequestOptions): Promise<{ modelId: string; values: number[] }>;
+  predict(text: string, options?: AiPredictOptions): Promise<AiPrediction>;
+  run(text: string, options?: AiRunOptions): Promise<AiRunResult>;
+  setTools(tools: AiTool[]): void;
+  /** Add a tool or replace its definition if its name already exists. */
+  addTool(tool: AiTool): void;
+  removeTool(name: string): void;
+  dispose(): void;
+}
+interface AiAPI {
+  createAgent(options?: AiModelOptions & { tools?: AiTool[] }): AiAgent;
+  extract(text: string, schema: AiSchema, options?: AiPredictOptions & AiModelOptions): Promise<AiJsonObject | null>;
+  embed(text: string, options?: AiRequestOptions & AiModelOptions): Promise<{ modelId: string; values: number[] }>;
+}
+
+interface ScriptAPI {
+  /** Local inference. Agents start with no tools and do not load a model until used. */
+  ai: AiAPI;
+  stop(): void;
+  restart(): Promise<never>;
+  /**
+   * Register a handler invoked when this script is about to end (stop button,
+   * app close, restart). You get a short grace window (~100ms) for cleanup
+   * before the worker is killed, so keep the handler quick. Returns an
+   * unsubscribe fn.
+   */
+  onExit(handler: () => void): () => void;
+  /**
+   * @deprecated Use `script.startPlugin()` instead.
+   */
+  startScript(options: { name: string; quitOnExit?: boolean | string }): void;
+  /**
+   * @deprecated Use `script.stopPlugin()` instead.
+   */
+  stopScript(options: { name: string }): void;
+  startPlugin(options: StartPluginOptions): void;
+  stopPlugin(options: { pluginId: string }): void;
+  /** Ask the user for a value. Resolves with `{ response }` once they submit. */
+  prompt(options: PromptOptions): Promise<{ response: string }>;
+  notification(options: NotificationOptions): void;
+  snackbar(options: SnackbarOptions): void;
+  dialog(options: DialogOptions): Promise<string>;
+  updateProgress(progress: ProgressUpdate): void;
+  /**
+   * Enable runner control buttons in the UI. `controls` is a bitfield built
+   * from `script.Controls`, e.g. `script.Controls.PAUSE | script.Controls.SKIP`.
+   */
+  setControls(controls: number): void;
+  /** Listen for control-button clicks; handler gets the pressed Controls bit. Returns an unsubscribe fn. */
+  onControl(handler: (control: number) => void): () => void;
+  /** Bitfield flags for setControls/onControl. */
+  Controls: {
+    NONE: 0;
+    PAUSE: number;
+    RESUME: number;
+    RESTART: number;
+    SKIP: number;
+    PREVIOUS: number;
+  };
+  optionError(
+    options: { field: string; message: string },
+    scriptInfo?: any,
+  ): void;
+  getAlts(): AltWithData[];
+  /**
+   * Ask the user for permission to read an account password. The user can
+   * grant this account or every account for the current script run. Premium
+   * accounts resolve to `null`; declining throws an error.
+   */
+  requestAccountPassword(username: string): Promise<string | null>;
+  /**
+   * Iterate over your alts the easy way. Pass your alts (from `getAlts()`) and
+   * the script's options (`settings`); it filters the alts (tags, ranks,
+   * gkits, altRange, ignored alts, ...), wires up the pause/skip/previous
+   * control buttons, joins + logs in each alt, yields the live bot and ends it
+   * once your loop body finishes.
+   *
+   *   for await (const bot of script.forEachBot(script.getAlts(), script.settings)) {
+   *     // drive `bot` here — it's already joined and logged in
+   *   }
+   */
+  forEachBot(
+    alts: AltWithData[],
+    scriptOptions?: ScriptSettingsForFilter,
+    options?: IterateAltsOptions,
+  ): AsyncGenerator<Bot, void, unknown>;
+
+  /**
+   * Like {@link forEachBot}, but does NOT join the server: it filters your alts
+   * and wires up the pause/skip/previous buttons the same way, yet yields the
+   * plain alt object instead of a joined bot. Use it when you only need each
+   * alt's data and don't want to log in.
+   *
+   *   for await (const alt of script.forEachAlt(script.getAlts(), script.settings)) {
+   *     // inspect `alt` — no bot has been joined
+   *   }
+   */
+  forEachAlt(
+    alts: AltWithData[],
+    scriptOptions?: ScriptSettingsForFilter,
+    options?: Omit<IterateAltsOptions, 'filter' | 'join' | 'options'>,
+  ): AsyncGenerator<AltWithData, void, unknown>;
+
+  /**
+   * Request changes to stored alts. Key updates by username: provide `password`,
+   * `ranks`, and/or `gkits` to patch an alt; use `null` to remove one. New alts
+   * require a password. JNbot presents the update to the user for confirmation.
+   */
+  requestAltUpdate(updates: AltUpdateRequest): void;
+  /**
+   * Run another script-action by name. Mirrors an action's own `main` signature:
+   * the `bot` is passed first, the action's resolved settings second, and any
+   * extra `args` third — i.e. the action receives `main(bot, settings, args)`.
+   */
+  /** @deprecated  Use `script.startAction()` instead. */
+  runAction(action: string, bot?: Bot, ...args: any[]): Promise<any>;
+
+  startAction(options: ActionArgs): Promise<any>;
+  getActiveScripts(): Promise<ActiveScriptsType>;
+  /** Returns the live Minecraft-bridge client for the given id. */
+  getMcClient(clientId: string): IMcClient;
+  getMcClients(): Promise<{ username: string; clientId: string }[]>;
+  /** Returns a managed Fabric server handle. LAN and joined servers are excluded. */
+  getMcServer(serverId: string): IMcServer;
+  getMcServers(): Promise<McServerHandleSummary[]>;
+  /**
+   * Record semantic gameplay from a JNbot Minecraft client and replay saved
+   * automations on either a Minecraft client or a Mineflayer bot.
+   */
+  automations: AutomationAPI;
+  sendDiscordMessage(options: {
+    message: string;
+    webhook_url: string;
+  }): Promise<void>;
+  /** This plugin's stored cooldowns for the active server. */
+  getCooldowns(): Promise<Cooldown[]>;
+  /**
+   * Create (or update) a cooldown owned by this plugin. Passing a `reminderId`
+   * that already exists for this plugin updates that cooldown instead of adding
+   * a new one. Throws once the limit (max 10) is reached. Resolves with the
+   * {@link Cooldown} — call `.reset()`, `.delete()`, `.isCompleted()` on it.
+   *
+   * Pass `options` (field id → value) to capture the context this cooldown
+   * runs in; it's replayed over the stored settings if the user enables
+   * auto-run, so the plugin runs the same way no matter what's selected later
+   * (e.g. `{ gamemode: 'skyblockdream' }`).
+   */
+  addCooldown(options: {
+    name: string;
+    cooldown: number;
+    reminderId?: string;
+    time?: number;
+    options?: Record<string, any>;
+  }): Promise<Cooldown>;
+  /** @deprecated Use `script.getCooldowns()` instead. */
+  getReminders(): Promise<Cooldown[]>;
+  /** @deprecated Use `script.addCooldown()` instead. */
+  addReminder(options: {
+    name: string;
+    cooldown: number;
+    reminderId?: string;
+    time?: number;
+    options?: Record<string, any>;
+  }): Promise<Cooldown>;
+  /**
+   * Saved plugin options, keyed by option id.
+   *
+   * @example
+   *   const message = script.settings.message ?? 'Hello';
+   */
+  settings: Record<string, any>;
+
+  JNdata: { gamemodes: Record<string, JNdataGamemodeData> };
+  scriptInfo: MacroInfo;
+  appVersion: AppVersion;
+}
+
+interface AutomationSummary {
+  id: string;
+  name: string;
+  revision: number;
+  createdAt: number;
+  updatedAt: number;
+  durationMs: number;
+  stepCount: number;
+  interrupted?: boolean;
+}
+
+interface AutomationDocument {
+  schemaVersion: 2;
+  id: string;
+  name: string;
+  revision: number;
+  createdAt: number;
+  updatedAt: number;
+  durationMs: number;
+  source: {
+    kind: 'minecraft';
+    clientId?: string;
+    username?: string;
+    mcVersion?: string;
+    serverAddress?: string;
+    dimension?: string;
+  };
+  origin: AutomationVec3 & { yaw: number; pitch: number };
+  inputs: {
+    id: string;
+    label: string;
+    secret: boolean;
+    required: boolean;
+  }[];
+  steps: AutomationStep[];
+  interrupted?: boolean;
+}
+
+interface AutomationVec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+interface AutomationPosition {
+  absolute: AutomationVec3;
+  relative: AutomationVec3;
+}
+
+interface AutomationEntityTarget {
+  uuid?: string;
+  type: string;
+  name?: string;
+  position?: AutomationPosition;
+  radius?: number;
+}
+
+type AutomationStep = {
+  id: string;
+  enabled: boolean;
+  atMs: number;
+  label?: string;
+} & (
+  | {
+      kind: 'movePath';
+      points: (AutomationPosition & {
+        atMs: number;
+        tick: number;
+        yaw: number;
+        pitch: number;
+        onGround: boolean;
+        velocity?: AutomationVec3;
+        forward?: boolean;
+        back?: boolean;
+        left?: boolean;
+        right?: boolean;
+        jump?: boolean;
+        sprint?: boolean;
+        sneak?: boolean;
+      })[];
+    }
+  | { kind: 'chat'; message: string }
+  | { kind: 'hotbar'; slot: number }
+  | { kind: 'openInventory' }
+  | {
+      kind: 'windowClick';
+      window: { title?: string; type?: string; inventory?: boolean };
+      slot: number;
+      button: number;
+      actionType: string;
+    }
+  | { kind: 'closeWindow'; window?: { title?: string; type?: string } }
+  | {
+      kind: 'attackEntity' | 'useEntity';
+      entity: AutomationEntityTarget;
+      hand?: 'main' | 'off';
+    }
+  | {
+      kind: 'breakBlock' | 'useBlock';
+      position: AutomationPosition;
+      face?: 'up' | 'down' | 'north' | 'south' | 'east' | 'west';
+      hand?: 'main' | 'off';
+    }
+  | {
+      kind: 'useItem' | 'releaseUseItem' | 'swingArm' | 'swapHands' | 'wake' | 'respawn';
+      hand?: 'main' | 'off';
+    }
+  | { kind: 'dropItem'; entireStack?: boolean }
+  | {
+      kind: 'screenAction';
+      action: 'button' | 'recipe' | 'trade' | 'rename' | 'beacon' | 'book' | 'sign' | 'bundle' | 'creativeSlot' | 'pickItem' | 'spectatorTeleport';
+      data: Record<string, unknown>;
+    }
+);
+
+interface AutomationSessionStatus {
+  sessionId: string;
+  automationId: string;
+  state:
+    | 'recording'
+    | 'playing'
+    | 'paused'
+    | 'failed'
+    | 'completed'
+    | 'stopped';
+  currentStep: number;
+  totalSteps: number;
+  error?: string;
+  issues: { stepId: string; stepIndex: number; kind: AutomationStep['kind']; atMs: number; reason: string }[];
+}
+
+interface AutomationHandle {
+  readonly id: string;
+  readonly done: Promise<AutomationSessionStatus>;
+  pause(): Promise<unknown>;
+  resume(): Promise<unknown>;
+  stop(): Promise<unknown>;
+}
+
+interface AutomationAPI {
+  list(): Promise<AutomationSummary[]>;
+  get(id: string): Promise<AutomationDocument>;
+  record(
+    client: IMcClient,
+    options?: {
+      /** Existing recording-plugin id to replace. Omit to create a new plugin. */
+      pluginId?: string;
+      name?: string;
+    },
+  ): Promise<AutomationHandle>;
+  replay(
+    target: Bot | IMcClient,
+    idOrDocument: string | AutomationDocument,
+    options: {
+      spatialMode: 'relative' | 'absolute';
+      inputs?: Record<string, string>;
+    },
+  ): Promise<AutomationHandle>;
+}
+
+/* ===========================================================================
+ * `console` global
+ * ======================================================================== */
+
+interface ConsoleAPI {
+  log(...data: unknown[]): void;
+  error(...data: unknown[]): void;
+  warn(...data: unknown[]): void;
+  success(...data: unknown[]): void;
+  clear(): void;
+}
+
+/* ===========================================================================
+ * BotMachine value types  (the class shape itself lives in pluginPrelude.d.ts)
+ * ======================================================================== */
+
+type Awaitable<T> = T | Promise<T>;
+
+interface BotMachine<S extends object = Record<string, unknown>>
+  extends BotMachineControls {
+  bot: Bot | null;
+  state: S;
+  delay: number;
+  addTask(task: Task<S>): BotMachine<S>;
+  addTasks(tasks: Task<S>[]): BotMachine<S>;
+  once(when: Guard<S>, run: Action<S>, name?: string): BotMachine<S>;
+  setState(patch: Partial<S>): BotMachine<S>;
+  getState(): S;
+  setDelay(ms: number): BotMachine<S>;
+  resetOnce(): BotMachine<S>;
+  start(): BotMachine<S>;
+  pause(botId?: number): BotMachine<S>;
+  resume(botId?: number): BotMachine<S>;
+  stop(): BotMachine<S>;
+  finish(): BotMachine<S>;
+  interrupt(reason?: string): BotMachine<S>;
+  onFinish(
+    listener: (data: { bot: Bot | null; state: S }) => void,
+  ): BotMachine<S>;
+  onError(
+    listener: (error: unknown, task: Task<S>, context: TaskContext<S>) => void,
+  ): BotMachine<S>;
+}
+
+interface TaskContext<S extends object = Record<string, unknown>> {
+  /** The bot. */
+  bot: Bot;
+  /** Shared, mutable state for this run — persists across ticks. */
+  state: S;
+  /** The machine itself, so a task can pause/stop/setDelay/addTask, etc. */
+  machine: BotMachine<S>;
+}
+
+type Guard<S extends object = Record<string, unknown>> = (
+  ctx: TaskContext<S>,
+) => boolean;
+
+type Action<S extends object = Record<string, unknown>> = (
+  ctx: TaskContext<S>,
+) => Awaitable<void>;
+
+interface Task<S extends object = Record<string, unknown>> {
+  /** Optional label, logged (when `debug`) each time the task runs. */
+  name?: string;
+  /** Task runs only when this returns true AND no earlier task matched. */
+  when: Guard<S>;
+  /** What to do when this task is the first match of the tick. */
+  run: Action<S>;
+  /** Run at most once (re-armed on rejoin when `resetOnceOnRejoin`). */
+  once?: boolean;
+  /** Internal: set once a `once` task has fired. */
+  _done?: boolean;
+}
+
+interface AltCredentials {
+  username: string;
+  version?: string;
+  host?: string;
+  port?: number;
+  /** Route this bot through a ProxyServer created by the current plugin. */
+  minecraftProxy?: {
+    host?: string;
+    port?: number;
+    onlineMode?: boolean;
+    /** Join an existing ProxySession without running login or backend selection. */
+    takeover?: boolean;
+  };
+  [k: string]: unknown;
+}
+
+interface JoinConfig {
+  /** When set, the machine drives the bot into this gamemode first. */
+  gamemode?: string;
+  /** Extra options forwarded to the underlying join() call. */
+  login?: boolean;
+  /** Treat a gamemode-join attempt as successful without confirmation. */
+  optimisticJoin?: boolean;
+  chunkLoadLimit?: number | null
+}
+
+interface BotMachineControls {
+  readonly active: boolean;
+  readonly paused: boolean;
+  pause(botId?: number): BotMachineControls;
+  resume(botId?: number): BotMachineControls;
+  finish(): BotMachineControls;
+  interrupt(reason?: string): BotMachineControls;
+  setDelay(ms: number): unknown;
+}
+
+interface BotMachineOptions<S extends object = Record<string, unknown>> {
+  /** Existing bot to drive. Omit (or pass null) to let `join.joinOptions` create one. */
+  bot?: Bot | null;
+  /** Initial shared state. */
+  state?: S;
+  /** Delay between ticks (ms). Default: appSettings.delay_between_actions ?? 250. */
+  delay?: number;
+  /** Built-in join-server / join-gamemode steps. */
+  join?: JoinConfig;
+  options?: AltCredentials;
+  /** Stop the machine when a tick matches no task. Default: false. */
+  stopWhenIdle?: boolean;
+  /** Re-arm `once` tasks whenever the bot rejoins the server. Default: true. */
+  resetOnceOnRejoin?: boolean;
+  /** Log each task that runs. Default: true. */
+  debug?: boolean;
+  /** Used for BOT_STATUS_UPDATE on pause/resume. Defaults to bot.botId. */
+  botId?: number;
+
+  disableAutoReconnect?: boolean;
+}
+
+/* ===========================================================================
+ * Bot — custom (jnbot-added) members on top of the mineflayer Bot.
+ *
+ * Only the PUBLIC members live here. Internal-only members (`__login`,
+ * `botMachine`) are added in workerTypes.d.ts so they never reach plugins.
+ * `Item` and `BotActions` are imported above purely so the app sees their real
+ * types; the generator strips those imports and pluginPrelude.d.ts stubs them
+ * as `any`.
+ * ======================================================================== */
+
+type TransferItemMode =
+  | 'keep'
+  | 'trade'
+  | 'gift'
+  | 'window'
+  | 'tradeWithKeys'
+  | 'trash'
+  | 0
+  | 1
+  | 2
+  | 3
+  | 4
+  | 5;
+
+interface TransferItemsOptions {
+  username?: string;
+  command?: string;
+  ignore?: (string | number)[];
+  filter?: (string | number)[];
+  itemFilter?: (item: Item) => boolean;
+  keep?: boolean; // whether to pass/keep the item if not filtered
+  keys?: string[]; // How many items it should click on each key ("<keyType>,<amount>")
+  forceTradeKeys?: boolean; // Whether to force trade keys even when no other items are in player inventory
+  timeout?: number | null;
+  shiftClick?: boolean; // Whether to shift click items into window (windowBehaviour only)
+}
+
+interface TransferItemsFn {
+  (
+    mode: 'keep' | 0,
+    options?: TransferItemsOptions,
+  ): Promise<void>;
+  (
+    mode: 'trade' | 'gift' | 'window' | 'tradeWithKeys' | 'trash' | 1 | 2 | 3 | 4 | 5,
+    options?: TransferItemsOptions,
+  ): Promise<boolean>;
+  (
+    mode: TransferItemMode | number,
+    options?: TransferItemsOptions,
+  ): Promise<boolean | void>;
+  trade: (options?: TransferItemsOptions) => Promise<boolean>;
+  gift: (options?: TransferItemsOptions) => Promise<boolean>;
+  window: (options?: TransferItemsOptions) => Promise<boolean>;
+  tradeWithKeys: (options?: TransferItemsOptions) => Promise<boolean>;
+  trash: (options?: TransferItemsOptions) => Promise<boolean>;
+}
+
+type BotPluginExtensions = {
+  botId: number;
+  mainVersion: number;
+  join: (gamemode: string, options?: Record<string, unknown>) => Promise<void>;
+  isOnline: () => boolean;
+  getGamemode: () => string | null;
+  itemInfo(item: Item | null): { name: string; info: string };
+  login: (password?: string) => Promise<void>; // Only works if you call this in the start of bot
+  /**
+   * Send a command that opens a GUI and wait for the matching window. Prefer
+   * this over manually combining `bot.chat(command)` with `windowOpen` waits.
+   */
+  openWindow: (
+    command: string,
+    options?: {
+      timeout?: number;
+      check?: (window: unknown) => boolean;
+      commandInverval?: number;
+      ticks?: number;
+      signal?: { aborted: boolean };
+    },
+  ) => Promise<unknown | null>;
+  transferItems: TransferItemsFn;
+  findWindowSlots: (
+    filter: { name?: string; lore?: string } | string,
+    options?: {
+      caseSensitive?: boolean;
+      rows?: number[] | null;
+      columns?: number[] | null;
+      slotRange?: number[] | null;
+      window?: { slots: (Item | null)[]; inventoryStart: number };
+      toAlpha?: boolean;
+    },
+  ) => Item[];
+  openInventory: () => void;
+  onceWithTimeout: <K extends string>(
+    event: K,
+    timeoutInTicks: number,
+  ) => Promise<unknown>;
+  getWindowTitle: (window?: unknown) => string | null;
+  hasFullInventory: () => boolean;
+  countInventoryItems: () => number;
+  dumpChunk: (chunk: unknown) => number[];
+  dumpChunkWithPos: (
+    chunk: unknown,
+    position: { x: number; y: number; z: number },
+  ) => number[];
+  actions: BotActions;
+};
+
+interface Behaviour {
+  shouldTrigger: (bot?: Bot | null, targets?: any) => boolean;
+  action:
+    | (() => void)
+    | (() => Promise<void>)
+    | Statemachine
+    | (() => Statemachine)
+    | Array<() => Promise<any>>;
+  name: string;
+  once?: boolean;
+  ignore?: boolean;
+}
+
+interface StatemachineOptions {
+  delay?: number;
+  stopOnIdle?: boolean;
+  resetOnceOnEnd?: boolean;
+  targets?: any;
+  debug?: boolean;
+  extensions?: {
+    reconnect?: boolean;
+    rejoinGm?: boolean;
+  };
+}
+
+/**
+ * @deprecated use `BotMachine` (from require('JNbot')) instead
+ */
+interface Statemachine {
+  active: boolean;
+  bot: Bot | null;
+  targets: any;
+  behaviours: Behaviour[];
+  onFinishCallbacks: any[];
+  options: StatemachineOptions;
+  new (behaviours?: Behaviour[], options?: StatemachineOptions): Statemachine;
+  addBehaviour(behaviour: Behaviour): void;
+  onFinish(cb: any): void;
+  resetOnce(): void;
+  activate(): this;
+  start(): this;
+  callStopCallbacks(bot?: Bot | null, targets?: any): void;
+  stop(bot?: Bot | null, targets?: any): void;
+  interrupt(reason?: string): void;
+  clock(): Promise<void>;
+  trigger(
+    bot?: Bot | null,
+    targets?: any,
+    behaviours?: Behaviour[],
+  ): Promise<void>;
+}
+
+/** The account / connection options used to create a bot. */
+interface BotProfile {
+  username: string;
+  host?: string;
+  port?: number;
+  version?: string;
+  plugins?: any;
+  password?: string;
+  auth?: string;
+  onMsaCode?: (code: any) => void;
+  [k: string]: unknown;
+}
+
+/** Options controlling how a bot joins the server. */
+interface JoinOptions {
+  stopOnEnd?: boolean;
+  gamemode?: string | null;
+  joinGamemode?: boolean;
+  login?: boolean;
+  verbose?: boolean;
+  retryOnLoginFail?: boolean;
+  onKick?: (reason: string) => void;
+  onEnd?: () => void;
+  joinServerTimeout?: number;
+  requiresConfirmation?: boolean;
+}
+
+/** A bot handle created from a profile. Call `join()` to connect. */
+interface BotHandle {
+  readonly profile: BotProfile;
+  /** Join the server with this bot's profile. Resolves with the connected {@link Bot}. */
+  join(options?: JoinOptions): Promise<Bot>;
+}
+
+/**
+ * The `Bot` class — the entry point for creating a bot and joining a server.
+ *
+ * @example
+ *   const { Bot } = require('JNbot');
+ *   const bot = new Bot({ username: 'Zola' });
+ *   await bot.join({ gamemode: 'skyblockdream', login: true });
+ *
+ * @example
+ *   const bot = await Bot.join({ username: 'Zola' }, { gamemode: 'skyblockdream' });
+ */
+interface BotConstructor {
+  new (profile: BotProfile): BotHandle;
+  /** Create a bot from a profile and join in one call. */
+  join(profile: BotProfile, options?: JoinOptions): Promise<Bot>;
+}
+
+// ─── Brain API ───────────────────────────────────────────────────────────
+
+// Learned bot behaviour ("brains"): record a player in the JNbot Client, train
+// small gradient-boosted tree models, and run them on a mineflayer bot.
+// Same authoring rules as pluginApi.d.ts: single-line imports, export-only.
+
+
+interface BrainBlock {
+  name: string;
+  solid: boolean;
+  liquid: boolean;
+  /** block properties, e.g. `{ age: 7 }` for fully grown wheat; undefined when it has none */
+  state?: Record<string, string | number | boolean>;
+}
+
+/** What to do with a target once in reach; the bot does it itself (see {@link BrainOptions.target}). */
+interface BrainAction {
+  /** break a block, attack an entity, right-click either, or draw and release a bow/trident at an entity */
+  verb: 'break' | 'attack' | 'use' | 'shoot';
+  /** item to hold for it; undefined = whatever is in hand */
+  item?: string;
+  /** block face to right-click (default 'up'), e.g. 'north' to place a block against its north side */
+  face?: 'up' | 'down' | 'north' | 'south' | 'east' | 'west';
+}
+
+/** A block found with {@link BrainObservation.findBlocks}, usable as a target. */
+interface BrainBlockTarget extends BrainBlock {
+  kind: 'block';
+  /** world position as 'x,y,z' */
+  id: string;
+  /** world block position */
+  x: number;
+  y: number;
+  z: number;
+  /** offset from your feet block, for `o.block(dx, dy + 1, dz)` (what's above it) */
+  dx: number;
+  dy: number;
+  dz: number;
+  /** distance from your eyes to the block centre (as reach is measured) */
+  dist: number;
+  /** offset in your facing frame: blocks in front of / to the right of you */
+  forward: number;
+  right: number;
+  /** horizontal angle from your crosshair in radians, positive = to the right */
+  angle: number;
+  /** set on a candidate: what to do with it (see {@link BrainOptions.target}) */
+  action?: BrainAction;
+}
+
+interface BrainEntity {
+  kind: 'entity';
+  id: number;
+  /** short entity type, e.g. 'zombie', 'player' */
+  type: string;
+  player: boolean;
+  hostile: boolean;
+  x: number;
+  y: number;
+  z: number;
+  /** velocity in blocks/tick */
+  vx: number;
+  vy: number;
+  vz: number;
+  yaw: number;
+  /** NaN when unknown */
+  health: number;
+  /** held item name, '' when empty */
+  held: string;
+  dist: number;
+  /** height difference (entity - you) */
+  dy: number;
+  /** offset in your facing frame: blocks in front of / to the right of you */
+  forward: number;
+  right: number;
+  /** horizontal angle from your crosshair in radians, positive = to the right */
+  angle: number;
+  /** speed toward you in blocks/tick */
+  approach: number;
+  /** arrow, trident, fireball, snowball, … */
+  projectile: boolean;
+  /** how far its current path passes from your body (blocks); with closestIn > 0 and a small value, it's coming at you */
+  closest: number;
+  /** ticks until it is closest to you; negative when moving away, NaN when not moving */
+  closestIn: number;
+  /** angle between where it faces and you, radians: 0 = looking straight at you */
+  facingMe: number;
+  /** ticks since it last shot a projectile, NaN when never seen (a skeleton draws its bow ~20-40 ticks after a shot) */
+  sinceShot: number;
+  /** its synced values that differ from its defaults, named as in minecraft-data, e.g. `{ wool: 16 }` (a sheared white sheep), `{ baby: true }`, `{ is_ignited: true }`; undefined when all are default */
+  state?: BrainBlock['state'];
+  /** set on a candidate: what to do with it (see {@link BrainOptions.target}) */
+  action?: BrainAction;
+}
+
+interface BrainSelf {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  /** radians, mineflayer convention */
+  yaw: number;
+  pitch: number;
+  health: number;
+  food: number;
+  onGround: boolean;
+  sprinting: boolean;
+  sneaking: boolean;
+  usingItem: boolean;
+  held: string;
+  offHand: string;
+  /** ticks the current item use has lasted (bow charge, eating, blocking); 0 when not using */
+  useTicks: number;
+  /** inventory item counts by name, e.g. `items.arrow` */
+  items: Record<string, number>;
+}
+
+/** What the brain sees each step. Identical when recording and when running. */
+interface BrainObservation {
+  /** ms timestamp */
+  t: number;
+  self: BrainSelf;
+  /** nearby entities, nearest first */
+  entities: BrainEntity[];
+  /** block at an offset (world axes) from your feet block; beyond the observed cube from the far view (a few seconds old), undefined beyond that */
+  block(dx: number, dy: number, dz: number): BrainBlock | undefined;
+  /**
+   * Blocks in the observed cube that match, nearest first, e.g. fully grown wheat:
+   * `o.findBlocks((b) => b.name === 'wheat' && b.state?.age === 7)`. dx/dy/dz are offsets from your feet block.
+   * With `far`, also those in the far view; there `match` decides per kind of block (dx/dy/dz are NaN).
+   */
+  findBlocks(
+    match: (block: BrainBlock, dx: number, dy: number, dz: number) => boolean,
+    far?: boolean,
+  ): BrainBlockTarget[];
+}
+
+/** Something to focus: an entity, or a block from {@link BrainObservation.findBlocks}. */
+type BrainTarget = BrainEntity | BrainBlockTarget;
+
+/** What the player did during one step (recorded from the JNbot Client). */
+interface BrainInput {
+  /** 1 = forward, -1 = back, 0 = none */
+  forward: number;
+  /** 1 = right, -1 = left, 0 = none */
+  strafe: number;
+  jump: boolean;
+  sprint: boolean;
+  sneak: boolean;
+  /** entity id or block id ('x,y,z') attacked / broken now or within the next 0.5 s (when training); -1 when unknown; null when none */
+  attack: number | string | null;
+  use: boolean;
+  /** entity id or block id right-clicked now or within the next 0.5 s (when training); -1 when unknown; null when none */
+  useOn: number | string | null;
+}
+
+/** Feature values; nested objects are flattened to `a.b`, booleans become 0/1. */
+type BrainFeatures = {
+  [name: string]: number | boolean | null | undefined | BrainFeatures;
+};
+
+/** A learned decision. Built-in heads use the same shape. */
+interface BrainHead {
+  name: string;
+  /** 'class' predicts one of `classes` (0-based), 'binary' a yes/no, 'value' a number */
+  type: 'class' | 'binary' | 'value';
+  classes?: number;
+  /** label for a recorded step; null skips the step. With a target, `input.forward`/`strafe` are toward/around it (the bot faces its target) */
+  label(
+    input: BrainInput,
+    o: BrainObservation,
+    next: BrainObservation,
+  ): number | null;
+  /** execute the predicted value on the bot */
+  apply(bot: Bot, value: number, decision: BrainDecision): void;
+  /** controls movement: paused while the bot walks to its target (see {@link BrainRunOptions.navigate}) */
+  move?: boolean;
+  /** fire a binary head only above this probability, instead of sampling */
+  threshold?: number;
+  /**
+   * Pick randomly by probability (default: the brain's `sample`); false = most likely.
+   * A function decides per step, e.g. sample starting an action but not stopping it.
+   */
+  sample?: boolean | ((o: BrainObservation) => boolean);
+  /** pick the value yourself from the prediction (class probabilities, `[p]` for binary, `[value]`), instead of sample/threshold */
+  choose?(prediction: number[], o: BrainObservation): number;
+  /**
+   * Your own fields this head can't see (set to '', false or 0 for it), e.g. `['held']`
+   * so a "which item" head learns from the situation instead of copying what you hold.
+   */
+  hide?: (keyof BrainSelf)[];
+}
+
+/** Item name test for {@link BrainConstructor.hold}. */
+type BrainHoldCategory = RegExp | ((itemName: string) => boolean);
+
+/** `useItem` is `use` without right-clicking targets: eating, raising a shield, drawing a bow */
+type BrainHeadName =
+  | 'forward'
+  | 'strafe'
+  | 'jump'
+  | 'sprint'
+  | 'sneak'
+  | 'attack'
+  | 'use'
+  | 'useItem'
+  | 'turn';
+
+interface BrainObserveOptions {
+  /** entities further away are ignored (default 32, so bow targets are seen) */
+  entityRadius?: number;
+  /** horizontal radius of the observed block cube, seen every step (default 8) */
+  blockRadius?: number;
+  /** vertical radius of the observed block cube (default 6) */
+  blockHeight?: number;
+  /** horizontal radius of the far view, seen every 3 s, for `o.findBlocks(match, true)` (default 32, 0 = none) */
+  farRadius?: number;
+  /** vertical radius of the far view (default 6) */
+  farHeight?: number;
+}
+
+interface BrainTrainOptions {
+  /** max boosting rounds (default 300) */
+  rounds?: number;
+  learningRate?: number;
+  maxDepth?: number;
+  /** min recorded steps per leaf (default 20) */
+  minLeaf?: number;
+  /** rounds without validation improvement before stopping (default 30) */
+  earlyStop?: number;
+  /**
+   * weight rare actions up so the trees learn when they happen: 0 = off,
+   * 1 = fully balanced (default 0.5). Predicted probabilities stay calibrated,
+   * so the bot still does them about as often as you did.
+   */
+  balance?: number;
+  /** called while training with the share done (0-1) */
+  onProgress?(fraction: number): void;
+}
+
+interface BrainOptions<T extends BrainTarget = BrainTarget> {
+  /** storage name; recordings and the model live under it */
+  name: string;
+  /** decision interval in ms (default 100 = 2 ticks) */
+  stepMs?: number;
+  observe?: BrainObserveOptions;
+  /** fixed-size features of the situation */
+  features(o: BrainObservation): BrainFeatures;
+  /**
+   * Learn what to do and to what: which mob to fight, which crop to harvest.
+   * Candidates are entities and/or blocks (`o.findBlocks`); their number and
+   * order don't matter. Two decisions are learned, in hindsight from what the
+   * player attacks, breaks, right-clicks or aims at within the next 5 s:
+   * - the intent: which of `actions` to do next, or nothing. It sees your
+   *   `features`, per action how many candidates there are with the lowest and
+   *   highest of each of their features (e.g. the youngest crop's `state.age`),
+   *   and what it did last (`memory.last`, seconds `since`, `streak` in a row).
+   * - which candidate: ranked against the others of that action, so every
+   *   thing the player did it to within the 5 s counts (ten plants bone-mealed
+   *   in a row are ten right picks). Candidates are ranked as if you faced them
+   *   (angle 0), as the bot turns to its target.
+   * Every head also sees the chosen target's features as `target.*` (missing
+   * when there is none), e.g. to pick a bow for a mob that is high up.
+   * `attack` breaks a target block, `use` right-clicks it.
+   *
+   * Candidates with an `action` are actions rather than things: one candidate per
+   * thing and action (breaking grown wheat, bone-mealing young wheat), each labelled
+   * only when the player did that action with that item. The bot then does the
+   * action itself once in reach: it holds the item (the `hold` head waits), breaks,
+   * attacks, right-clicks the face, or draws and releases a bow (the `use`/`useItem`
+   * heads wait); `attack` and `use` heads leave such targets alone. A block action
+   * that changes nothing around the block for a while (2 s, breaking 8 s) is skipped for 10 s,
+   * and so is an action's target out of reach that it doesn't get closer to for 6 s.
+   */
+  target?: {
+    candidates(o: BrainObservation): T[];
+    features(o: BrainObservation, target: T): BrainFeatures;
+    /**
+     * the actions candidates carry (the same objects), one intent each; candidates
+     * with another action are ignored. Without it all candidates share one intent.
+     */
+    actions?: BrainAction[];
+    /** the intent also sees what it did last, how long ago and how often in a row (default true) */
+    memory?: boolean;
+  };
+  /** decisions to learn (default: forward, strafe, jump, sprint, attack) */
+  heads?: (BrainHeadName | BrainHead)[];
+  /**
+   * Pick actions randomly by their predicted probability, like the player did
+   * (default true). false always takes the most likely action, which never
+   * picks actions the player only did sometimes (e.g. strafing).
+   */
+  sample?: boolean;
+  train?: BrainTrainOptions;
+}
+
+interface BrainDecision {
+  /** predicted value per head: class index (forward/strafe: 0 = back/left, 1 = none, 2 = forward/right), 0/1 for binary */
+  values: Record<string, number>;
+  /** chosen target, when `target` is configured and the intent isn't "nothing" */
+  target: BrainTarget | null;
+  /** with `target`: the chance of each intent (0 = nothing, k = `target.actions[k - 1]`) and the chosen one */
+  intent?: { chances: number[]; chosen: number };
+  /** while running: the bot is walking to the target and the learned movement heads are paused */
+  navigating?: boolean;
+}
+
+interface BrainRecording {
+  readonly file: string;
+  /** recorded steps so far */
+  readonly steps: number;
+  stop(): Promise<void>;
+}
+
+interface BrainHeadReport {
+  rows: number;
+  rounds: number;
+  trainLoss: number;
+  validLoss: number;
+  /** validation balanced accuracy (mean per-class recall) for class/binary heads */
+  accuracy?: number;
+  /** most useful features, best first */
+  topFeatures: string[];
+}
+
+interface BrainReport {
+  recordings: number;
+  steps: number;
+  heads: Record<string, BrainHeadReport>;
+  /** how close the player usually was when engaging a target; the learned heads take over within it */
+  range?: number;
+}
+
+interface BrainRunOptions {
+  /**
+   * How to aim: 'target' looks at the chosen target (default when `target` is
+   * configured), 'turn' uses the learned turn head, false leaves aiming to you.
+   */
+  look?: 'target' | 'turn' | false;
+  /**
+   * Walk to the target with the pathfinder plugin (around walls, up stairs) and
+   * let the learned heads act once it is within `range` and in sight (default
+   * true when `target` is configured). Targets that can't be reached, or that
+   * see no progress while out of range (getting closer or being hit) for `giveUp` seconds (default 5, 0 = never), are
+   * ignored for 10 s. false = the learned heads always move the bot (e.g. parkour).
+   */
+  navigate?: boolean | { range?: number; giveUp?: number };
+  /** called every step after the decision is applied */
+  onStep?(o: BrainObservation, decision: BrainDecision): void;
+}
+
+interface Brain {
+  readonly name: string;
+  /** Record the player of a JNbot Client until `stop()` is called. */
+  record(client: IMcClient): Promise<BrainRecording>;
+  /** Train on all recordings of this brain and save the model. */
+  train(options?: BrainTrainOptions): Promise<BrainReport>;
+  /** Decide from an observation (loads the saved model on first use). */
+  decide(o: BrainObservation): BrainDecision;
+  /** Control a bot with the trained model. Returns a stop function. */
+  run(bot: Bot, options?: BrainRunOptions): () => void;
+  /** Delete all recordings and the model of this brain. */
+  reset(): void;
+}
+
+interface BrainConstructor {
+  new <T extends BrainTarget = BrainTarget>(options: BrainOptions<T>): Brain;
+  /** Threat summary of a set of entities in direction sectors around you (fixed size, order-free). */
+  swarm(
+    o: BrainObservation,
+    options?: {
+      filter?: (e: BrainEntity) => boolean;
+      sectors?: number;
+      rings?: number[];
+    },
+  ): BrainFeatures;
+  /** Distance to walls, drops and hazards along rays around you, in your facing frame. */
+  rays(
+    o: BrainObservation,
+    options?: { count?: number; length?: number },
+  ): BrainFeatures;
+  /**
+   * Head that learns which item to hold, e.g. `Brain.hold({ sword: /sword/, bow: /bow/, food: /bread|beef/ })`.
+   * It learns which item suits the situation and switches when another one clearly suits better, never mid-use.
+   * Value 0 = keep what's in hand, then one per category in order. Switches via the hotbar.
+   */
+  hold(categories: Record<string, BrainHoldCategory>): BrainHead;
+}
+
+// ─── Plugin declarations ───────────────────────────────────────────────────────────
+
+type ProxyServerConstructor = new (config?: ProxyServerConfig) => ProxyServer;
+type PublicProxyPluginConstructor = new (
+  connection: ProxySession,
+  meta: ProxyPluginMeta,
+) => ProxyPlugin;
+type PacketPipelineConstructor = new () => PacketPipeline;
+type PacketContextConstructor = new <
+  T extends ProxyPacketData | null = ProxyPacketData,
+>(options: {
+  name: string;
+  state: string;
+  direction: PacketDirection;
+  data: T;
+  buffer: Uint8Array;
+  unparsed?: boolean;
+}) => PacketContext<T>;
+
+declare module 'JNbot' {
+  const Bot: BotConstructor;
+  const BotMachine: {
+    new <S extends object = Record<string, unknown>>(
+      tasks?: Task<S>[],
+      options?: BotMachineOptions<S>,
+    ): BotMachine<S>;
+  };
+  /** Learned behaviour: record a player in the JNbot Client, train, run on a bot. */
+  const Brain: BrainConstructor;
+  /** Create a version-independent transparent Minecraft proxy. */
+  const ProxyServer: ProxyServerConstructor;
+  const ProxyPlugin: PublicProxyPluginConstructor;
+  const ProxySession: { readonly prototype: ProxySession };
+  const ProxyParticipant: { readonly prototype: ProxyParticipant };
+  const PluginManager: { readonly prototype: PluginManager };
+  const PacketPipeline: PacketPipelineConstructor;
+  const PacketContext: PacketContextConstructor;
+  const ANY_PACKET: '*';
+  /** c2s packet names by purpose, for `session.grant(bot, PacketGroups.inventory)`. */
+  const PacketGroups: Readonly<Record<ProxyPacketGroup, readonly string[]>>;
+  const DebugPlugin: { readonly prototype: DebugPlugin };
+  const RECORDINGS_PATH: string;
+  /** The host-app script API. */
+  const script: ScriptAPI;
+  /** Create a bot from a profile and join in one call. */
+  const join: (profile: BotProfile, options?: JoinOptions) => Promise<Bot>;
+  export {
+    Bot,
+    BotMachine,
+    Brain,
+    ProxyServer,
+    ProxyPlugin,
+    ProxySession,
+    ProxyParticipant,
+    PluginManager,
+    PacketPipeline,
+    PacketContext,
+    ANY_PACKET,
+    PacketGroups,
+    DebugPlugin,
+    RECORDINGS_PATH,
+    script,
+    join,
+  };
+}
+
+declare module 'jnbot' {
+  export * from 'JNbot';
+}
+
+/** @deprecated use const {BotMachine} = require('JNbot'); instead */
+declare var BotMachine: BotMachine;
+
+/** @deprecated use `BotMachine` instead */
+declare class BotStatemachine {
+  bot: Bot | null;
+  constructor(
+    bot: Bot | null,
+    behaviours: Behaviour[],
+    options?: Record<string, unknown>,
+  );
+  get __joinServerAction(): any;
+  get __joinGamemodeAction(): any;
+}
+
+/** @deprecated use `const { join } = require('JNbot');` or `Bot.join` instead */
+declare const join: (
+  options?: BotProfile,
+  scriptOptions?: JoinOptions,
+) => Promise<Bot>;
+/** @deprecated import { script } from 'JNbot' instead */
+declare const script: ScriptAPI;
+declare const console: ConsoleAPI;
+/** @deprecated use `console.log` instead */
+declare function log(data: unknown, type?: 'info' | 'error' | 'warning' | 'success'): void;
+
+// Plugins run without the DOM library, so declare the AbortSignal shape they use.
+interface AbortSignal {
+  readonly aborted: boolean;
+  addEventListener(type: 'abort', listener: () => void): void;
+}
+
+// Timers available in the plugin sandbox.
+declare function setTimeout(callback: (...args: any[]) => void, ms?: number, ...args: any[]): any;
+declare function setInterval(callback: (...args: any[]) => void, ms?: number, ...args: any[]): any;
+declare function setImmediate(callback: (...args: any[]) => void, ...args: any[]): any;
+declare function clearTimeout(id: any): void;
+declare function clearInterval(id: any): void;
+declare function clearImmediate(id: any): void;
+```
+
+
+[IMPORTANT] Use `BotMachine` for the entire bot task. Avoid creating long functions. Split the task up into smaller steps. This will allow the bot to recover from errors like if some action failed or the bot gets suddenly kicked to hub, BotMachine allows you to deal with these scenarios much easier. For the `when` condition, try to find when the bot should perform the action. For example, if the bot doesn't have a window opened -> do window action. Or if specific window must be opened, we can check it using bot.getWindowTitle(). Avoid doing stuff like state.step = "step1" and then checking for state.step === "step1" in the next task.
