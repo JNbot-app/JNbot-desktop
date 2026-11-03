@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": [
+    "**/*.ts",
+    "**/*.js",
+    "../common/**/*.ts",
+    "../common/**/*.d.ts",
+    "../../test/main/**/*.ts",
+    "../../__mocks__/**/*.ts"
+  ],
+  "exclude": [
+    "../../**/node_modules/**",
+    "../../**/release/**",
+    "../../**/dist/**",
+    "../../**/src/main2/**",
+    "../../**/src/workers/**",
+    "../../**/src/common/types/declarePlugin.d.ts"
+  ],
+  "compilerOptions": {
+    "types": [
+      "node",
+      "jest"
+    ]
+  }
+}

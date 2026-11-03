@@ -1,0 +1,520 @@
+diff --git a/node_modules/mineflayer/lib/plugins/entities.js b/node_modules/mineflayer/lib/plugins/entities.js
+index 696d7e9..325e244 100644
+--- a/node_modules/mineflayer/lib/plugins/entities.js
++++ b/node_modules/mineflayer/lib/plugins/entities.js
+@@ -368,7 +368,6 @@ function inject (bot) {
+ 
+     if (eventName === 'entityHandSwap' && entity.equipment) {
+       [entity.equipment[0], entity.equipment[1]] = [entity.equipment[1], entity.equipment[0]]
+-      entity.heldItem = entity.equipment[0] // Update held item like prismarine-entity does upon equipment updates
+     }
+ 
+     if (eventName) bot.emit(eventName, entity)
+@@ -743,8 +742,9 @@ function inject (bot) {
+     }
+   })
+ 
+-  // attaching to a vehicle
++  // attaching to a vehicle (1.8 only, 1.9+ uses this packet for leashes only)
+   bot._client.on('attach_entity', (packet) => {
++    if (packet.leash !== false) return
+     const passenger = fetchEntity(packet.entityId)
+     const vehicle = packet.vehicleId === -1 ? null : fetchEntity(packet.vehicleId)
+ 
+@@ -770,31 +770,32 @@ function inject (bot) {
+     }
+   })
+ 
++  // the full passenger list of a vehicle, an empty list means everyone dismounted
+   bot._client.on('set_passengers', ({ entityId, passengers }) => {
++    // the vehicle can be unknown when joining while riding, its spawn packet fills it in later
++    const vehicle = fetchEntity(entityId)
+     const passengerEntities = passengers.map((passengerId) => fetchEntity(passengerId))
+-    const vehicle = entityId === -1 ? null : bot.entities[entityId]
+ 
++    for (const passengerEntity of vehicle.passengers) {
++      if (!passengerEntities.includes(passengerEntity)) passengerEntity.vehicle = null
++    }
+     for (const passengerEntity of passengerEntities) {
+       const originalVehicle = passengerEntity.vehicle
+-      if (originalVehicle) {
+-        const index = originalVehicle.passengers.indexOf(passengerEntity)
+-        originalVehicle.passengers.splice(index, 1)
++      if (originalVehicle && originalVehicle !== vehicle) {
++        originalVehicle.passengers.splice(originalVehicle.passengers.indexOf(passengerEntity), 1)
+       }
+       passengerEntity.vehicle = vehicle
+-      if (vehicle) {
+-        vehicle.passengers.push(passengerEntity)
+-      }
+     }
++    vehicle.passengers = passengerEntities
+ 
+     if (passengers.includes(bot.entity.id)) {
+-      const originalVehicle = bot.vehicle
+-      if (entityId === -1) {
+-        bot.vehicle = null
+-        bot.emit('dismount', originalVehicle)
+-      } else {
+-        bot.vehicle = bot.entities[entityId]
++      if (bot.vehicle !== vehicle) {
++        bot.vehicle = vehicle
+         bot.emit('mount')
+       }
++    } else if (bot.vehicle === vehicle) {
++      bot.vehicle = null
++      bot.emit('dismount', vehicle)
+     }
+   })
+ 
+@@ -856,6 +857,17 @@ function inject (bot) {
+     useEntity(target, 0)
+   }
+ 
++  // Before 1.21.3 the vanilla client sends its held vehicle input every tick while riding
++  let vehicleInput = { sideways: 0.0, forward: 0.0, jump: 0 }
++  function steerVehicle (input) {
++    vehicleInput = input
++    bot._client.write('steer_vehicle', { ...input, jump: input.jump | (bot.getControlState('sneak') ? 0x02 : 0) })
++  }
++  if (!bot.supportFeature('newPlayerInputPacket')) {
++    bot.on('physicsTickEnd', () => { if (bot.vehicle) steerVehicle(vehicleInput) })
++    bot.on('mount', () => { vehicleInput = { sideways: 0.0, forward: 0.0, jump: 0 } })
++  }
++
+   function moveVehicle (left, forward) {
+     if (bot.supportFeature('newPlayerInputPacket')) {
+       // docs:
+@@ -870,28 +882,18 @@ function inject (bot) {
+         }
+       })
+     } else {
+-      bot._client.write('steer_vehicle', {
+-        sideways: left,
+-        forward,
+-        jump: 0x01
+-      })
++      steerVehicle({ sideways: left, forward, jump: 0x01 })
+     }
+   }
+ 
+   function dismount () {
+     if (bot.vehicle) {
+       if (bot.supportFeature('newPlayerInputPacket')) {
+-        bot._client.write('player_input', {
+-          inputs: {
+-            jump: true
+-          }
+-        })
++        // hold shift like the vanilla client, release it once dismounted
++        bot._client.write('player_input', { inputs: { shift: true } })
++        bot.once('dismount', () => bot._client.write('player_input', { inputs: { shift: bot.getControlState('sneak') } }))
+       } else {
+-        bot._client.write('steer_vehicle', {
+-          sideways: 0.0,
+-          forward: 0.0,
+-          jump: 0x02
+-        })
++        steerVehicle({ sideways: 0.0, forward: 0.0, jump: 0x02 })
+       }
+     } else {
+       bot.emit('error', new Error('dismount: not mounted'))
+diff --git a/node_modules/mineflayer/lib/plugins/health.js b/node_modules/mineflayer/lib/plugins/health.js
+index 94ff325..9490af3 100644
+--- a/node_modules/mineflayer/lib/plugins/health.js
++++ b/node_modules/mineflayer/lib/plugins/health.js
+@@ -3,22 +3,43 @@ module.exports = inject
+ function inject (bot, options) {
+   bot.isAlive = true
+ 
++  // 1.21.4+ servers ignore block and item interactions until the client has
++  // sent player_loaded (or 60 ticks have passed). Like vanilla it is sent again after
++  // every login (e.g. a proxy moving the bot to another server) and respawn
++  let playerLoaded = false
++  function sendPlayerLoaded () {
++    if (playerLoaded || !bot.supportFeature('sendsPlayerLoadedPacket')) return
++    playerLoaded = true
++    bot._client.write('player_loaded', {})
++  }
++
++  // Spawned once per login/respawn: on the first health update, or like vanilla (which shows the
++  // world once the first position arrives) on the first forced move, as limbo servers never send health
++  let awaitingSpawn = true
++
++  bot._client.on('login', () => {
++    playerLoaded = false
++    awaitingSpawn = true
++  })
++
+   bot._client.on('respawn', (packet) => {
++    playerLoaded = false
++    awaitingSpawn = true
+     bot.isAlive = false
+     bot.emit('respawn')
+   })
+ 
+-  // 1.21.4+ servers ignore block and item interactions until the client has
+-  // sent player_loaded (or 60 ticks have passed)
+   function spawn () {
+-    if (bot.supportFeature('sendsPlayerLoadedPacket')) bot._client.write('player_loaded', {})
++    sendPlayerLoaded()
++    if (!awaitingSpawn) return
++    awaitingSpawn = false
+     bot.emit('spawn')
+   }
+ 
+-  bot._client.once('update_health', (packet) => {
+-    if (packet.health > 0) {
+-      spawn()
+-    }
++  bot.on('forcedMove', () => {
++    if (!awaitingSpawn) return
++    bot.isAlive = true
++    spawn()
+   })
+ 
+   bot._client.on('update_health', (packet) => {
+@@ -33,8 +54,11 @@ function inject (bot, options) {
+       }
+       if (!options.respawn) return
+       bot.respawn()
+-    } else if (bot.health > 0 && !bot.isAlive) {
+-      bot.isAlive = true
++    } else if (bot.health > 0) {
++      if (!bot.isAlive) {
++        bot.isAlive = true
++        awaitingSpawn = true
++      }
+       spawn()
+     }
+   })
+diff --git a/node_modules/mineflayer/lib/plugins/inventory.js b/node_modules/mineflayer/lib/plugins/inventory.js
+index 264b5d6..41d4fd2 100644
+--- a/node_modules/mineflayer/lib/plugins/inventory.js
++++ b/node_modules/mineflayer/lib/plugins/inventory.js
+@@ -28,6 +28,8 @@
+ 
+   let eatingTask = createDoneTask()
+   let sequence = 0
++  // Block prediction sequence (1.19+), shared by every packet that carries one, like the vanilla client
++  bot._nextSequence = () => ++sequence
+
+   let nextActionNumber = 0 // < 1.17
+   let stateId = -1
+@@ -73,22 +75,21 @@
+
+   bot._client.on('entity_status', (packet) => {
+-    if (packet.entityId === bot.entity.id && packet.entityStatus === 9 && !eatingTask.done) {
++    // 9: the bot finished eating; other statuses, or other entities' (a mob dying), don't end its item use
++    if (packet.entityId !== bot.entity.id || packet.entityStatus !== 9) return
++    if (!eatingTask.done) {
+       eatingTask.finish()
+     }
+     bot.usingHeldItem = false
+   })
+
+   let previousHeldItem = null
+   bot.on('heldItemChanged', (heldItem) => {
+     // we only disable the item if the item type or count changes
+-    if (
+-      heldItem?.type === previousHeldItem?.type && heldItem?.count === previousHeldItem?.count
+-    ) {
+-      previousHeldItem = heldItem
+-      return
+-    }
++    const same = heldItem?.type === previousHeldItem?.type && heldItem?.count === previousHeldItem?.count
++    previousHeldItem = heldItem
++    if (same) return
+     if (!eatingTask.done) {
+       eatingTask.finish()
+     }
+     bot.usingHeldItem = false
+   })
+@@ -119,42 +120,41 @@
+ 
+   function activateItem (offHand = false) {
+     bot.usingHeldItem = true
+-    sequence++
++    const yaw = toNotchianYaw(bot.entity.yaw)
++    const pitch = toNotchianPitch(bot.entity.pitch)
+ 
+     if (bot.supportFeature('useItemWithBlockPlace')) {
++      // vanilla 1.8 uses position -1 -1 -1, face 255 and a zero cursor
+       bot._client.write('block_place', {
+-        location: new Vec3(-1, 255, -1),
++        location: new Vec3(-1, -1, -1),
+         direction: -1,
+         heldItem: Item.toNotch(bot.heldItem),
+-        cursorX: -1,
+-        cursorY: -1,
+-        cursorZ: -1
++        cursorX: 0,
++        cursorY: 0,
++        cursorZ: 0
+       })
+     } else if (bot.supportFeature('useItemWithOwnPacket')) {
++      // 1.19 - 1.20.6 sync the rotation with a move packet first, 1.21+ sends it in use_item
++      if (bot.registry.version['>=']('1.19') && bot.registry.version['<']('1.21')) {
++        const { x, y, z } = bot.entity.position
++        bot._client.write('position_look', { x, y, z, yaw, pitch, onGround: bot.entity.onGround })
++      }
+       bot._client.write('use_item', {
+         hand: offHand ? 1 : 0,
+-        sequence,
+-        rotation: {
+-          x: toNotchianYaw(bot.entity.yaw),
+-          y: toNotchianPitch(bot.entity.pitch)
+-        }
++        sequence: bot._nextSequence(),
++        rotation: { x: yaw, y: pitch }
+       })
+     }
+   }
+ 
+   function deactivateItem () {
+-    const body = {
++    // vanilla releases with position 0 0 0 and face down (0) on every version
++    bot._client.write('block_dig', {
+       status: 5,
+       location: new Vec3(0, 0, 0),
+-      face: 5
+-    }
+-
+-    if (bot.supportFeature('useItemWithOwnPacket')) {
+-      body.face = 0
+-      body.sequence = 0
+-    }
+-
+-    bot._client.write('block_dig', body)
++      face: 0,
++      sequence: 0
++    })
+ 
+     bot.usingHeldItem = false
+   }
+diff --git a/node_modules/mineflayer/lib/plugins/physics.js b/node_modules/mineflayer/lib/plugins/physics.js
+index cecae69..4b88533 100644
+--- a/node_modules/mineflayer/lib/plugins/physics.js
++++ b/node_modules/mineflayer/lib/plugins/physics.js
+@@ -6,6 +6,7 @@ const { performance } = require('perf_hooks')
+ const { createDoneTask, createTask } = require('../promise_utils')
+ 
+ const { Physics, PlayerState } = require('prismarine-physics')
++const AABB = require('prismarine-physics/lib/aabb')
+ 
+ module.exports = inject
+ 
+@@ -20,7 +21,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+   const physics = Physics(bot.registry, world)
+ 
+   const positionUpdateSentEveryTick = bot.supportFeature('positionUpdateSentEveryTick')
+-
++  const hasConfigurationState = bot.supportFeature('hasConfigurationState')
+   bot.jumpQueued = false
+   bot.jumpTicks = 0 // autojump cooldown
+ 
+@@ -76,8 +77,25 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+   }
+ 
+   function tickPhysics (now) {
++    if (bot._client.state !== 'play') return
+     if (!bot.entity?.position || !Number.isFinite(bot.entity.position.x)) return // entity not ready
+     if (bot.blockAt(bot.entity.position) == null) return // check if chunk is unloaded
++    if (bot.vehicle) {
++      if (shouldUsePhysics) {
++        // Vanilla removes entities that fell out of the world, which drops the rider where it is
++        if (itemVehicle && itemVehicle.pos.y < bot.game.minY - 64) {
++          const vehicle = bot.vehicle
++          bot.vehicle = null
++          bot.entity.velocity.set(0, 0, 0)
++          bot.emit('dismount', vehicle)
++          updatePosition(now)
++        } else {
++          updateRiding()
++        }
++        bot.emit('physicsTickEnd')
++      }
++      return
++    }
+     if (bot.physicsEnabled && shouldUsePhysics) {
+       physics.simulatePlayer(new PlayerState(bot, controlState), world).apply(bot)
+       bot.emit('physicsTick')
+@@ -85,6 +103,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+     }
+     if (shouldUsePhysics) {
+       updatePosition(now)
++      bot.emit('physicsTickEnd')
+     }
+   }
+ 
+@@ -153,12 +172,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+     return false
+   }
+ 
+-  function updatePosition (now) {
+-    // Only send updates for 20 ticks after death
+-    if (isEntityRemoved()) return
+-    // Don't send position with invalid coordinates (NaN after death)
+-    if (!Number.isFinite(bot.entity.position.x)) return
+-
++  function nextLook () {
+     // Increment the yaw in baby steps so that notchian clients (not the server) can keep up.
+     const dYaw = deltaYaw(bot.entity.yaw, lastSentYaw)
+     const dPitch = bot.entity.pitch - (lastSentPitch || 0)
+@@ -169,13 +183,103 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+     lastSentYaw += math.clamp(-maxDeltaYaw, dYaw, maxDeltaYaw)
+     lastSentPitch += math.clamp(-maxDeltaPitch, dPitch, maxDeltaPitch)
+ 
+-    const yaw = Math.fround(conv.toNotchianYaw(lastSentYaw))
+-    const pitch = Math.fround(conv.toNotchianPitch(lastSentPitch))
++    return {
++      yaw: Math.fround(conv.toNotchianYaw(lastSentYaw)),
++      pitch: Math.fround(conv.toNotchianPitch(lastSentPitch))
++    }
++  }
++
++  // Height of the rider above the vehicle, taken from the server's rider position (x/z always match the vehicle)
++  let riderOffsetY = null
++
++  // Item vehicles are simulated client-side like vanilla: anti-bots mount the player on a dropped
++  // item and check where the rider ends up. `server` is the last server position, a server move
++  // snaps the item back to it.
++  const ITEM_HALF_WIDTH = 0.125
++  const ITEM_RIDER_OFFSET = 0.25 * 0.75 - 0.35 // vehicle mounted offset (height * 0.75) + player y offset
++  let itemVehicle = null
++
++  function itemCollisionBoxes (queryBB) {
++    const boxes = []
++    const cursor = new Vec3(0, 0, 0)
++    for (cursor.y = Math.floor(queryBB.minY) - 1; cursor.y <= Math.floor(queryBB.maxY); cursor.y++) {
++      for (cursor.z = Math.floor(queryBB.minZ); cursor.z <= Math.floor(queryBB.maxZ); cursor.z++) {
++        for (cursor.x = Math.floor(queryBB.minX); cursor.x <= Math.floor(queryBB.maxX); cursor.x++) {
++          const block = world.getBlock(cursor)
++          if (!block) continue
++          for (const shape of block.shapes) {
++            boxes.push(new AABB(...shape).offset(block.position.x, block.position.y, block.position.z))
++          }
++        }
++      }
++    }
++    return boxes
++  }
++
++  // ItemEntity.tick: gravity, collisions (landing stops the fall), drag and ground friction
++  function tickItemVehicle (vehicle) {
++    const { pos, server, motion } = itemVehicle
++    if (!server.equals(vehicle.position)) {
++      server.update(vehicle.position)
++      pos.update(vehicle.position)
++    }
++    motion.y -= 0.04
++    const bb = new AABB(-ITEM_HALF_WIDTH, 0, -ITEM_HALF_WIDTH, ITEM_HALF_WIDTH, 0.25, ITEM_HALF_WIDTH).offset(pos.x, pos.y, pos.z)
++    const boxes = itemCollisionBoxes(bb.clone().extend(motion.x, motion.y, motion.z))
++    let { x: dx, y: dy, z: dz } = motion
++    for (const box of boxes) dy = box.computeOffsetY(bb, dy)
++    bb.offset(0, dy, 0)
++    for (const box of boxes) dx = box.computeOffsetX(bb, dx)
++    bb.offset(dx, 0, 0)
++    for (const box of boxes) dz = box.computeOffsetZ(bb, dz)
++    bb.offset(0, 0, dz)
++    pos.set(bb.minX + ITEM_HALF_WIDTH, bb.minY, bb.minZ + ITEM_HALF_WIDTH)
++
++    const onGround = dy !== motion.y && motion.y < 0
++    if (dx !== motion.x) motion.x = 0
++    if (dy !== motion.y) motion.y = 0
++    if (dz !== motion.z) motion.z = 0
++    const friction = onGround ? 0.6 * 0.98 : 0.98
++    motion.x *= friction
++    motion.y *= 0.98
++    motion.z *= friction
++  }
++
++  // Like the vanilla client: while riding the vehicle carries the bot, so no physics or position
++  // packets, only the rotation every tick (the server needs it to track the rider, e.g. to send the vehicle on join)
++  function updateRiding () {
++    if (isEntityRemoved()) return
++    const vehicle = bot.vehicle
++    if (itemVehicle) {
++      tickItemVehicle(vehicle)
++      bot.entity.position.set(itemVehicle.pos.x, itemVehicle.pos.y + ITEM_RIDER_OFFSET, itemVehicle.pos.z)
++    } else if (vehicle.name) { // unnamed = the vehicle's spawn packet didn't arrive yet
++      riderOffsetY ??= bot.entity.position.y - vehicle.position.y
++      bot.entity.position.set(vehicle.position.x, vehicle.position.y + riderOffsetY, vehicle.position.z)
++    }
++    bot.entity.onGround = false
++    bot.entity.velocity.set(0, 0, 0)
++    // Vanilla doesn't count these as reported rotations, so the first move after dismounting includes the look
++    const { yaw, pitch } = nextLook()
++    bot._client.write('look', { yaw, pitch, onGround: false, flags: { onGround: false, hasHorizontalCollision: undefined } })
++  }
++
++  function updatePosition (now) {
++    // Only send updates for 20 ticks after death
++    if (isEntityRemoved()) return
++    // Don't send position with invalid coordinates (NaN after death)
++    if (!Number.isFinite(bot.entity.position.x)) return
++
++    const { yaw, pitch } = nextLook()
+     const position = bot.entity.position
+     const onGround = bot.entity.onGround
+ 
+     // Only send a position update if necessary, select the appropriate packet
+-    const positionUpdated = lastSent.x !== position.x || lastSent.y !== position.y || lastSent.z !== position.z ||
++    // Like vanilla, moves under 0.03 blocks aren't reported until the next forced update
++    const dx = position.x - lastSent.x
++    const dy = position.y - lastSent.y
++    const dz = position.z - lastSent.z
++    const positionUpdated = dx * dx + dy * dy + dz * dz > 9.0E-4 ||
+       // Send a position update every second, even if no other update was made
+       // This function rounds to the nearest 50ms (or PHYSICS_INTERVAL_MS) and checks if a second has passed.
+       (Math.round((now - lastSent.time) / PHYSICS_INTERVAL_MS) * PHYSICS_INTERVAL_MS) >= 1000
+@@ -474,7 +578,14 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+   }
+ 
+   let respawnTimer = 0
+-  bot.on('mount', () => { shouldUsePhysics = false })
++  bot.on('mount', () => {
++    riderOffsetY = null
++    // Items spawn with an upward motion of 0.2 (anti-bots mount the rider right after spawning it)
++    const position = bot.vehicle?.name === 'item' && bot.vehicle.position
++    itemVehicle = position ? { pos: position.clone(), server: position.clone(), motion: new Vec3(0, 0.2, 0) } : null
++  })
++  bot.on('dismount', () => { itemVehicle = null })
++  bot.on('forcedMove', () => { riderOffsetY = null })
+   bot.on('death', () => {
+     shouldUsePhysics = false
+     respawnTimer = Date.now()
+@@ -487,5 +598,9 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+       doPhysicsTimer = setInterval(doPhysics, PHYSICS_INTERVAL_MS)
+     }
+   })
++
++  if (hasConfigurationState) {
++    bot._client.on('start_configuration', () => { shouldUsePhysics = false })
++  }
+   bot.on('end', cleanup)
+ }
+diff --git a/node_modules/mineflayer/lib/plugins/resource_pack.js b/node_modules/mineflayer/lib/plugins/resource_pack.js
+index fc70ce3..e57e99c 100644
+--- a/node_modules/mineflayer/lib/plugins/resource_pack.js
++++ b/node_modules/mineflayer/lib/plugins/resource_pack.js
+@@ -21,7 +21,8 @@ function inject (bot) {
+     activeResourcePacks[uuid] = data.url
+ 
+     bot.emit('resourcePack', data.url, uuid)
+-  })
++    if (bot._client.state === 'configuration') acceptResourcePack()  
++})
+ 
+   bot._client.on('remove_resource_pack', (data) => { // Doesn't emit  anything because it is removing rather than adding
+     // if uuid isn't provided remove all packs
+@@ -46,7 +47,8 @@ function inject (bot) {
+       bot.emit('resourcePack', data.url, data.hash)
+       latestHash = data.hash
+     }
+-  })
++  if (bot._client.state === 'configuration') acceptResourcePack()  
++})
+ 
+   function acceptResourcePack () {
+     if (bot.supportFeature('resourcePackUsesHash')) {

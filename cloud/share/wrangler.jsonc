@@ -1,0 +1,36 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "share",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-08-02",
+	"workers_dev": true,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "jnbot-share",
+			"database_id": "687b8165-db49-43b7-a601-c090f4e3b04d",
+			"migrations_dir": "migrations"
+		}
+	],
+	// Same keys as OFFICIAL_ED25519_PUBLIC_KEYS in src/main/src/functions/signing.ts.
+	"vars": {
+		"OFFICIAL_PUBLIC_KEYS": "MCowBQYDK2VwAyEAHpiP3IOzZr3aDZi2-e5t8bwO6KrWuZUHyyqla6Y3XHA"
+	},
+	"ratelimits": [
+		// Per-IP limit on create/update/delete/report requests.
+		{
+			"name": "WRITE_LIMITER",
+			"namespace_id": "1001",
+			"simple": { "limit": 10, "period": 60 }
+		},
+		// Per-IP limit on reads, so one client cannot burn the daily quota.
+		{
+			"name": "READ_LIMITER",
+			"namespace_id": "1002",
+			"simple": { "limit": 300, "period": 60 }
+		}
+	],
+	"observability": {
+		"enabled": true
+	}
+}

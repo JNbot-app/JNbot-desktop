@@ -1,0 +1,13 @@
+{
+  "edges": [],
+  "nodes": [
+    {
+      "id": "1",
+      "position": { "x": 0, "y": 0 },
+      "data": { "label": "Start", "color": "#00439C", "options": {} },
+      "type": "start",
+      "sourcePosition": "right",
+      "deletable": false
+    }
+  ]
+}

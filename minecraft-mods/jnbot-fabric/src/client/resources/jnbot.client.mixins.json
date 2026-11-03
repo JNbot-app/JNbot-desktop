@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "package": "com.jnbot.client.mixin",
+  "compatibilityLevel": "${java}",
+  "client": [
+    "InGameHudMixin",
+    "ClientConnectionAutomationMixin",
+    "ClientPlayerEntityAutomationMixin",
+    "ClientPlayerInteractionManagerMixin",
+    "MinecraftClientAutomationMixin",
+    "PacketDecoderRawMixin",
+    "ServerListMixin",
+    "JoinMultiplayerScreenAccessor",
+    "JoinMultiplayerScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

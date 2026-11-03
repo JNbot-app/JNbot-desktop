@@ -1,0 +1,45 @@
+diff --git a/node_modules/werift/lib/ice/src/dns/lookup.js b/node_modules/werift/lib/ice/src/dns/lookup.js
+index 64e831d..8b101ab 100644
+--- a/node_modules/werift/lib/ice/src/dns/lookup.js
++++ b/node_modules/werift/lib/ice/src/dns/lookup.js
+@@ -19,25 +19,29 @@ class DnsLookup {
+             writable: true,
+             value: new Map()
+         });
+-        const lookupWorkerFunction = () => {
++        // NOTE: patched (patch-package) to a plain string literal instead of a
++        // stringified function. When this module is bundled with esbuild
++        // `keepNames`, the inner arrow functions of a stringified function get
++        // wrapped in the `__name` helper, which is undefined inside the worker's
++        // isolated eval scope (ReferenceError: o is not defined). esbuild never
++        // rewrites string contents, so a literal is immune.
++        const lookupEval = `
+             const worker_thread = global.require("worker_threads");
+             const { lookup } = global.require("dns");
+             const dnsLookup = (host) => lookup(host, (err, address, family) => {
+                 const res = {
+-                    err: err?.message,
+-                    address,
+-                    family,
+-                    host,
++                    err: err && err.message,
++                    address: address,
++                    family: family,
++                    host: host,
+                 };
+-                worker_thread.parentPort?.postMessage(res);
++                if (worker_thread.parentPort) worker_thread.parentPort.postMessage(res);
+                 process.exit();
+             });
+-            worker_thread.parentPort?.on("message", (message) => {
+-                const { host } = message;
+-                dnsLookup(host);
++            if (worker_thread.parentPort) worker_thread.parentPort.on("message", (message) => {
++                dnsLookup(message.host);
+             });
+-        };
+-        const lookupEval = `(${lookupWorkerFunction})()`;
++        `;
+         this.thread = new worker_threads_1.default.Worker(lookupEval, {
+             eval: true,
+         });

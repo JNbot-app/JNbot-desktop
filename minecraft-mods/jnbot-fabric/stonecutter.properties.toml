@@ -1,0 +1,12 @@
+mod.id = "jnbot"
+mod.version = "0.1.3"
+
+deps.fabric_loader = "0.18.4"
+loomx.loom_version = "1.19.3"
+
+["1.21.11"]
+deps.fabric_api = "0.141.6+1.21.11"
+
+["26.3"]
+deps.fabric_loader = "0.20.1"
+deps.fabric_api = "0.165.0+26.3"

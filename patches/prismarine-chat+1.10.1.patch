@@ -1,0 +1,13 @@
+diff --git a/node_modules/prismarine-chat/index.js b/node_modules/prismarine-chat/index.js
+index 469e90f..f5c8a46 100644
+--- a/node_modules/prismarine-chat/index.js
++++ b/node_modules/prismarine-chat/index.js
+@@ -96,6 +96,8 @@ function loader (registryOrVersion) {
+       // HOWEVER! If there is a translate property, there may not be a with property
+       if (typeof json.text === 'string' || typeof json.text === 'number') {
+         this.text = json.text
++      } else if (typeof json[''] === 'string' || typeof json[''] === 'number') {
++        this.text = json['']
+       } else if (typeof json.translate === 'string') {
+         this.translate = json.translate
+         if (typeof json.with === 'object') {

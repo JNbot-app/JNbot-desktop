@@ -1,0 +1,79 @@
+# Logs
+logs
+*.log
+.env
+
+# Runtime data
+pids
+*.pid
+*.seed
+
+# Coverage directory used by tools like istanbul
+coverage
+.eslintcache
+
+# Dependency directory
+# https://www.npmjs.org/doc/misc/npm-faq.html#should-i-check-my-node_modules-folder-into-git
+node_modules
+
+# OSX
+.DS_Store
+
+release/app/dist
+release/build
+release/mobile-backend
+
+.idea
+npm-debug.log.*
+
+# Local tooling / scratch files
+.claude/
+.env.*
+src/updates.txt
+scripts/JNbot-updater/
+.impeccable/
+.scratch/
+.trunk/
+.wrangler/
+.github/*
+!.github/workflows/
+!.github/dependabot.yml
+!.github/ISSUE_TEMPLATE/
+!.github/pull_request_template.md
+*.code-workspace
+.trigger-preview.tsx
+qodana*
+licenses.json
+*.css.d.ts
+*.sass.d.ts
+*.scss.d.ts
+
+.vscode
+
+./extra/*
+
+*.jar
+!minecraft-mods/jnbot-fabric/gradle/wrapper/gradle-wrapper.jar
+*.bat
+!gradlew.bat
+
+# Profile-script signing key (private). Do NOT commit.
+scripts/keys/profileScripts.private.pem
+scripts/keys/plugins.ed25519.private.pem
+scripts/marketplace-config.local.mjs
+
+esbuild/meta.json
+native/needle/build/
+native/needle/engine/
+assets/needle/*/*.node
+assets/needle/*/*.dylib
+
+assets/needle/worker.cjs
+assets/needle/*/build.json
+assets/needle/*/*.so
+assets/needle/*/*.dll
+
+native/needle/*
+!native/needle/CMakeLists.txt
+!native/needle/vendor/
+assets/needle/notices/

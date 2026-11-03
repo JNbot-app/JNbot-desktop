@@ -1,0 +1,49 @@
+.bot-panel {
+  container-type: inline-size;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bot-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  transition: opacity 0.15s;
+}
+
+.bot-panel-nav {
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+/* Items are equal-width (block), so the padding is only a minimum. */
+.bot-panel-nav .ant-segmented-item-label {
+  padding-inline: 4px;
+}
+
+.bot-panel-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Visually hidden (still read by screen readers) until there is room. */
+.bot-panel-nav-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@container (min-width: 760px) {
+  .bot-panel-nav-label {
+    position: static;
+    width: auto;
+    height: auto;
+    clip-path: none;
+  }
+}

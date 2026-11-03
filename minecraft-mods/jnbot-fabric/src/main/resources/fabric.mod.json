@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "jnbot",
+  "version": "${version}",
+  "name": "JNbot",
+  "description": "JNbot client and managed-server integration.",
+  "authors": ["JNbot"],
+  "contact": {
+    "homepage": "https://jnbot.netlify.app/",
+    "sources": "https://jnbot.netlify.app/"
+  },
+  "license": "ARR",
+  "environment": "*",
+  "entrypoints": {
+    "server": [
+      "com.jnbot.server.JnbotServer"
+    ],
+    "client": [
+      "com.jnbot.client.JnbotClient"
+    ]
+  },
+  "mixins": [
+    "jnbot.client.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "${minecraft}",
+    "fabric-api": "*"
+  }
+}

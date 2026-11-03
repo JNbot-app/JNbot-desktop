@@ -1,0 +1,121 @@
+import { theme } from 'antd';
+import { ThemeConfig } from 'antd/es/config-provider';
+
+/**
+ * Neutral dark theme with charcoal surfaces, cool gray text, and a restrained
+ * violet accent inspired by the dashboard reference palette.
+ */
+export const sculkTheme: ThemeConfig = {
+  algorithm: theme.darkAlgorithm,
+  token: {
+    fontFamily: "'Exo 2', sans-serif",
+    borderRadius: 8,
+    colorPrimary: '#665cff',
+    colorPrimaryBg: 'rgba(102, 92, 255, 0.14)',
+    colorPrimaryBorder: 'rgba(102, 92, 255, 0.38)',
+    colorPrimaryHover: '#7a72ff',
+    colorPrimaryActive: '#554ce5',
+    colorLink: '#817aff',
+    colorLinkHover: '#9a94ff',
+    colorLinkActive: '#665cff',
+    colorTextBase: '#f1f3f3',
+    colorTextSecondary: '#a2abad',
+    colorTextTertiary: '#737e80',
+    colorTextLightSolid: '#ffffff',
+    colorBgBase: '#090b0c',
+    colorBgContainer: '#15191a',
+    colorBgElevated: '#1c2122',
+    colorBgLayout: '#0d1011',
+    colorBorder: '#2a3031',
+    colorBorderSecondary: '#202627',
+    colorBorderDisabled: 'rgba(255, 255, 255, 0.08)',
+    colorBgContainerDisabled: 'rgba(255, 255, 255, 0.03)',
+    colorInfo: '#817aff',
+    colorSuccess: '#61c995',
+    colorWarning: '#d9ad63',
+    colorError: '#e27676',
+    boxShadow: '0 24px 52px rgba(0, 0, 0, 0.42)',
+    boxShadowSecondary: '0 12px 30px rgba(0, 0, 0, 0.32)',
+    colorFillSecondary: 'rgba(255, 255, 255, 0.05)',
+  },
+  components: {
+    Layout: {
+      bodyBg: '#090b0c',
+      headerBg: '#0d1011',
+      footerBg: '#0d1011',
+      siderBg: '#15191a',
+      headerHeight: 48,
+    },
+    Menu: {
+      itemBg: '#15191a',
+      itemSelectedBg: 'rgba(255, 255, 255, 0.09)',
+      itemHoverBg: 'rgba(255, 255, 255, 0.06)',
+      itemColor: '#a2abad',
+      itemSelectedColor: '#f1f3f3',
+      itemActiveBg: 'rgba(102, 92, 255, 0.14)',
+      darkPopupBg: '#15191a',
+      darkSubMenuItemBg: '#15191a',
+    },
+    Card: {
+      colorBgContainer: '#15191a',
+      colorBorderSecondary: '#202627',
+      boxShadow: '0 16px 32px rgba(0, 0, 0, 0.28)',
+    },
+    Button: {
+      colorPrimary: '#665cff',
+      colorPrimaryHover: '#7a72ff',
+      colorPrimaryActive: '#554ce5',
+      primaryColor: '#ffffff',
+      colorText: '#f1f3f3',
+      colorTextDisabled: 'rgba(241, 243, 243, 0.35)',
+      colorBorder: '#2a3031',
+      defaultBg: '#1c2122',
+      defaultHoverBg: '#252b2c',
+      defaultColor: '#f1f3f3',
+      defaultBorderColor: '#2a3031',
+      borderColorDisabled: 'rgba(255, 255, 255, 0.08)',
+      defaultBgDisabled: 'rgba(255, 255, 255, 0.03)',
+    },
+    Input: {
+      colorBgContainer: '#1c2122',
+      colorBorder: '#2a3031',
+      colorBgBase: '#090b0c',
+      colorText: '#f1f3f3',
+      colorTextPlaceholder: '#737e80',
+    },
+    Modal: {
+      contentBg: '#15191a',
+      headerBg: '#15191a',
+      titleColor: '#f1f3f3',
+      footerBg: '#15191a',
+    },
+    Tabs: {
+      itemColor: '#a2abad',
+      itemHoverColor: '#f1f3f3',
+      itemSelectedColor: '#817aff',
+      inkBarColor: '#665cff',
+    },
+    Table: {
+      headerBg: '#1c2122',
+      headerColor: '#d8dddd',
+      headerSortActiveBg: '#252b2c',
+      rowHoverBg: 'rgba(255, 255, 255, 0.05)',
+    },
+    Dropdown: {
+      controlItemBgHover: 'rgba(255, 255, 255, 0.06)',
+      controlItemBgActive: 'rgba(102, 92, 255, 0.14)',
+      colorPrimary: '#817aff',
+    },
+    Calendar: {
+      itemActiveBg: 'rgba(102, 92, 255, 0.14)',
+      fullBg: '#15191a',
+    },
+    Drawer: {
+      colorBgElevated: '#15191a',
+    },
+    Segmented: {
+      itemSelectedBg: '#252b2c',
+      itemActiveBg: '#1c2122',
+    },
+  },
+};

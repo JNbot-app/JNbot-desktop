@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": [
+    "scripts/**/*.ts",
+    "scripts/**/*.js",
+    "scripts/**/*.mjs",
+    "esbuild/**/*.js",
+    "native/*/*.js",
+    "jest.config.js",
+    "src/renderer/vite*.ts",
+    "examples/**/*.js",
+    "native/**/*.cjs",
+    "assets/**/*.cjs",
+    ".eslintrc.js"
+  ],
+  "exclude": [
+    "**/node_modules/**",
+    "**/release/**",
+    "**/dist/**",
+    "**/src/main2/**",
+    "**/src/workers/**",
+    "**/src/common/types/declarePlugin.d.ts",
+    "scripts/JNbot-updater/**"
+  ],
+  "compilerOptions": {
+    "types": [
+      "node"
+    ]
+  }
+}

@@ -1,0 +1,222 @@
+{
+  "20": {
+    "message": "Invalid variable name only alphanumeric characters and underscores are allowed.",
+    "type": "error"
+  },
+  "21": {
+    "message": "You most likely ran into an infinite loop",
+    "type": "error"
+  },
+  "22": {
+    "message": "Variable names cannot start with __",
+    "type": "error"
+  },
+  "23": {
+    "message": "Variables can only exist out of letters, number and underscores",
+    "type": "error"
+  },
+  "99": {
+    "message": "Id of element not found.",
+    "type": "error"
+  },
+  "100": {
+    "message": "No start component found, add Statements > Start macro",
+    "type": "error"
+  },
+  "101": {
+    "message": "Bot not found, check if you added the 'Join server' component",
+    "type": "error"
+  },
+  "102": {
+    "message": "Alt not found",
+    "type": "error"
+  },
+  "103": {
+    "message": "Gamemode not found",
+    "type": "error"
+  },
+  "104": {
+    "message": "Username not found",
+    "type": "error"
+  },
+  "105": {
+    "message": "Expression not found",
+    "type": "error"
+  },
+  "106": {
+    "message": "Operator not found",
+    "type": "error"
+  },
+  "107": {
+    "message": "Amount not found",
+    "type": "error"
+  },
+  "108": {
+    "message": "Variable name not found",
+    "type": "error"
+  },
+  "109": {
+    "message": "Variable value not found",
+    "type": "error"
+  },
+  "110": {
+    "message": "Message not found",
+    "type": "error"
+  },
+  "111": {
+    "message": "Item name not found",
+    "type": "error"
+  },
+  "112": {
+    "message": "You must select an option",
+    "type": "error"
+  },
+  "113": {
+    "message": "Mob type not found",
+    "type": "error"
+  },
+  "120": {
+    "message": "Incorrect operator",
+    "type": "error"
+  },
+  "121": {
+    "message": "Argument must be a number",
+    "type": "error"
+  },
+  "122": {
+    "message": "Invalid movement type",
+    "type": "error"
+  },
+  "123": {
+    "message": "Invalid discord webhook link",
+    "type": "error"
+  },
+  "124": {
+    "message": "Invalid looping type",
+    "type": "error"
+  },
+  "125": {
+    "message": "Hotbar slot must be a number from 0 to 8",
+    "type": "error"
+  },
+  "126": {
+    "message": "Invalid goal type",
+    "type": "error"
+  },
+  "127": {
+    "message": "Player is not online",
+    "type": "error"
+  },
+  "128": {
+    "message": "You cannot follow yourself",
+    "type": "warning"
+  },
+  "129": {
+    "message": "Goal not found",
+    "type": "error"
+  },
+  "130": {
+    "message": "Max must be a bigger than min",
+    "type": "error"
+  },
+  "131": {
+    "message": "function name not found",
+    "type": "error"
+  },
+  "132": {
+    "message": "Invalid trigger type",
+    "type": "error"
+  },
+  "133": {
+    "message": "Title is too long",
+    "type": "error"
+  },
+  "134": {
+    "message": "Message is too long",
+    "type": "error"
+  },
+  "135": {
+    "message": "Invalid minecraft version",
+    "type": "error"
+  },
+  "136": {
+    "message": "Invalid transfer mode",
+    "type": "error"
+  },
+  "137": {
+    "message": "Plugin not found",
+    "type": "error"
+  },
+  "138": {
+    "message": "Script name must be one of 'gkit collector', 'gkit upgrader', 'opener', 'altScanner', 'afk', 'playerTracker', 'kit collector'",
+    "type": "error"
+  },
+  "139": {
+    "message": "Action script not found",
+    "type": "error"
+  },
+  "140": {
+    "message": "Action script code not found",
+    "type": "error"
+  },
+  "141": {
+    "message": "Script is not an action",
+    "type": "error"
+  },
+  "142": {
+    "message": "Something went wrong while running action script",
+    "type": "error"
+  },
+  "143": {
+    "message": "Title not found",
+    "type": "error"
+  },
+  "144":{
+    "message": "Body is too long",
+    "type": "error"
+  },
+  "145":{
+    "message": "Buttons must be an array",
+    "type": "error"
+  },
+  "146":{
+    "message": "Too many buttons (max 5)",
+    "type": "error"
+  },
+  "147":{
+    "message":"Button text is too long (max 19 characters)",
+    "type": "error"
+  },
+  "200": {
+    "message": "Multiple start components have been detected. You may only use 1 start component.",
+    "type": "warning"
+  },
+  "201": {
+    "message": "Message can not be longer than 100 characters",
+    "type": "warning"
+  },
+  "202": {
+    "message": "Inventory slot not found.",
+    "type": "warning"
+  },
+  "203": {
+    "message": "Inventory slot is empty.",
+    "type": "warning"
+  },
+  "204": {
+    "message": "No block found at that position or block is too far.",
+    "type": "warning"
+  },
+  "205": {
+    "message": "You can't place a block because there's no reference block found. bot can't place a block in mid-air",
+    "type": "warning"
+  },
+  "206": {
+    "message": "Entity not found within a 4 block radius",
+    "type": "warning"
+  },
+  "207": {
+    "message": "Player is too far away",
+    "type": "warning"
+  }
+}
