@@ -137,4 +137,5 @@ it('creates a named chain with the chosen settings and reuses the settings panel
   );
   // Shown in the chain list and above the steps.
   expect(await screen.findAllByText('Claims every kit')).toHaveLength(2);
-});
+  // Renders the full side panel twice; slow when the whole suite runs in parallel.
+}, 60_000);

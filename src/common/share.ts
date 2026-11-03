@@ -58,24 +58,23 @@ export const SHARE_KIND_LABELS: Record<ShareKind, string> = {
   trigger: 'Trigger',
 };
 
-/** Section name, what a kind is and what installing one does, for people new to JNbot. */
-export const SHARE_KIND_INFO: Record<ShareKind, { plural: string; blurb: string; afterInstall: string }> = {
+/** Section name and what a kind is, for people new to JNbot. */
+export const SHARE_KIND_INFO: Record<ShareKind, { plural: string; blurb: string }> = {
   plugin: {
     plural: 'Plugins',
-    afterInstall: 'It shows up under Plugins. Start it from a bot, or add it to a chain or trigger.',
+    blurb: 'Scripts that give your bots new tasks.',
   },
   bundle: {
     plural: 'Bundles',
-    afterInstall: 'All plugins land in one folder under Plugins.',
+    blurb: 'Several plugins shared together as one install.',
   },
   profile: {
     plural: 'Profiles',
-    afterInstall: 'Switch to it from the profile picker. Your own settings, alts and plugin options are not touched.',
+    blurb: 'Server setups with their plugins and settings ready to go.',
   },
   chain: {
     plural: 'Chains',
     blurb: 'Plugins that run one after another on your alts.',
-    afterInstall: 'It is added to the chains of your current profile. Pick which alts run it, then start it.',
   },
   trigger: {
     plural: 'Triggers',
