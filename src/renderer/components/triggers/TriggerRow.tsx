@@ -1,6 +1,11 @@
 import React from 'react';
-import { Button, Flex, Switch, Tag, Typography, theme } from 'antd';
-import { EditOutlined, ShareAltOutlined } from '@ant-design/icons';
+import { Button, Dropdown, Flex, Switch, Tag, Typography, theme } from 'antd';
+import {
+  EditOutlined,
+  MoreOutlined,
+  ShareAltOutlined,
+  SyncOutlined,
+} from '@ant-design/icons';
 import {
   describeTrigger,
   TRIGGER_ACTION_TYPES,
@@ -13,6 +18,7 @@ import {
   useSettingsStore,
 } from '../../redux/settings';
 import { openShareModal } from '../share/useShareTarget';
+import { useShareUpdateAction } from '../share/useShareUpdateAction';
 import {
   TRIGGER_ACTION_ICONS,
   TRIGGER_EVENT_ICONS,
@@ -48,6 +54,7 @@ export default function TriggerRow({
 }: Props) {
   const { token } = theme.useToken();
   const openTrigger = useOpenTrigger();
+  const shareUpdate = useShareUpdateAction('trigger', trigger.id);
   const title = describeTrigger(trigger);
 
   return (
@@ -88,7 +95,7 @@ export default function TriggerRow({
           {trigger.actions.map((action, index) => (
             <Tag
               key={index}
-              bordered={false}
+              variant="filled"
               icon={TRIGGER_ACTION_ICONS[action.type]}
             >
               {TRIGGER_ACTION_TYPES[action.type].name}
@@ -103,19 +110,41 @@ export default function TriggerRow({
         aria-label={`Edit ${title}`}
         onClick={() => openTrigger(trigger)}
       />
-      <Button
-        type="text"
-        icon={<ShareAltOutlined />}
-        aria-label={`Share ${title}`}
-        onClick={() =>
-          openShareModal({
-            kind: 'trigger',
-            ref: trigger.id,
-            profileKey: selectActiveServerId(useSettingsStore.getState()),
-            title,
-          })
-        }
-      />
+      <Dropdown
+        trigger={['click']}
+        menu={{
+          items: [
+            {
+              key: 'share',
+              label: 'Share',
+              icon: <ShareAltOutlined />,
+              onClick: () =>
+                openShareModal({
+                  kind: 'trigger',
+                  ref: trigger.id,
+                  profileKey: selectActiveServerId(useSettingsStore.getState()),
+                  title,
+                }),
+            },
+            ...(shareUpdate
+              ? [
+                  {
+                    key: 'share-update',
+                    label: shareUpdate.label,
+                    icon: <SyncOutlined />,
+                    onClick: shareUpdate.run,
+                  },
+                ]
+              : []),
+          ],
+        }}
+      >
+        <Button
+          type="text"
+          icon={<MoreOutlined />}
+          aria-label={`More actions for ${title}`}
+        />
+      </Dropdown>
       <Switch
         size="small"
         aria-label={`${trigger.enabled ? 'Disable' : 'Enable'} ${title}`}

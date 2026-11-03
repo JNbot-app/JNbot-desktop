@@ -7,6 +7,7 @@ import {
   PlayCircleOutlined,
   StopOutlined,
   ShareAltOutlined,
+  SyncOutlined,
   MoreOutlined,
 } from '@ant-design/icons';
 import {
@@ -19,6 +20,7 @@ import {
 import type { Chain } from '../../../../main/src/types';
 import { chainPluginId } from '../../../../common/chains';
 import { openShareModal } from '../../share/useShareTarget';
+import { useShareUpdateAction } from '../../share/useShareUpdateAction';
 import useAppApi from '../../../hooks/useAppApi';
 
 import Card from '../../Card';
@@ -40,6 +42,7 @@ const ScriptChain: FC<{
   // Options live flat in settings.scripts[id] — the slot <ScriptSettings> uses.
   const options = useSettingsStore((state) => state.settings.scripts?.[selectedChainId]);
   const chainName = options?.name ?? chain?.name ?? 'Chain';
+  const shareUpdate = useShareUpdateAction('chain', selectedChainId);
   const pluginId = chainPluginId(selectedChainId);
   const running = scripts.isScriptActiveById(pluginId);
 
@@ -99,6 +102,9 @@ const ScriptChain: FC<{
                   icon: <ShareAltOutlined />,
                   onClick: () => openShareModal({ kind: 'chain', ref: chain.id, profileKey, title: chainName }),
                 },
+                ...(shareUpdate
+                  ? [{ key: 'share-update', label: shareUpdate.label, icon: <SyncOutlined />, onClick: shareUpdate.run }]
+                  : []),
                 { type: 'divider' },
                 { key: 'delete', label: 'Delete chain', icon: <DeleteOutlined />, danger: true, onClick: confirmDelete },
               ],
@@ -122,7 +128,7 @@ const ScriptChain: FC<{
         {options?.description && <Typography.Text type="secondary">{options.description}</Typography.Text>}
         <Flex gap={8} align="center" wrap>
           {options?.gamemode && options.gamemode !== 'any' && (
-            <Tag bordered={false} style={{ marginInlineEnd: 0 }}>
+            <Tag variant="filled" style={{ marginInlineEnd: 0 }}>
               Gamemode: {options.gamemode}
             </Tag>
           )}

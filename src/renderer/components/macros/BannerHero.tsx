@@ -7,8 +7,10 @@ const BannerHero: React.FC<{
   accent?: string;
   /** Shown instead of the image when there is none or it fails to load. */
   fallback?: React.ReactNode;
+  /** Zooms the image in slightly, e.g. while the card is hovered. */
+  zoomed?: boolean;
   children?: React.ReactNode;
-}> = ({ src, height, accent, fallback, children }) => {
+}> = ({ src, height, accent, fallback, zoomed, children }) => {
   const { token } = theme.useToken();
   const [broken, setBroken] = useState(false);
   const useImage = !!src && !broken;
@@ -41,6 +43,8 @@ const BannerHero: React.FC<{
             height: '100%',
             objectFit: 'cover',
             display: 'block',
+            transform: zoomed ? 'scale(1.08)' : 'none',
+            transition: `transform ${token.motionDurationSlow} ${token.motionEaseOut}`,
           }}
         />
       )}

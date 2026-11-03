@@ -28,8 +28,8 @@ const PUBLISHER_STATES = {
   },
   new: {
     icon: <ExclamationCircleOutlined />,
-    label: 'New publisher',
-    tone: 'colorWarning',
+    label: 'Unverified publisher',
+    tone: 'colorError',
   },
 } as const;
 
@@ -37,21 +37,22 @@ const PUBLISHER_STATES = {
 const ShareHeader: React.FC<{
   overview: ShareOverview;
   installState: ShareInstallState;
-}> = ({ overview, installState }) => {
+  reviewed: boolean;
+}> = ({ overview, installState, reviewed }) => {
   const { token } = theme.useToken();
   const { kind, publisher, color } = overview;
   const media = kind === 'plugin' || kind === 'bundle';
   const accent = color ?? token.colorPrimary;
-  const state =
-    PUBLISHER_STATES[
-      publisher.official
-        ? 'official'
-        : publisher.own
-          ? 'own'
-          : publisher.trusted
-            ? 'trusted'
-            : 'new'
-    ];
+  const stateKey = publisher.official
+    ? 'official'
+    : publisher.own
+      ? 'own'
+      : publisher.trusted
+        ? 'trusted'
+        : reviewed
+          ? null
+          : 'new';
+  const state = stateKey && PUBLISHER_STATES[stateKey];
 
   const title = (
     <Flex vertical gap={2} style={{ minWidth: 0 }}>
@@ -74,11 +75,13 @@ const ShareHeader: React.FC<{
             {publisher.name}
           </Typography.Text>
         </Tooltip>
-        <Typography.Text
-          style={{ fontSize: 'inherit', color: token[state.tone] }}
-        >
-          {state.icon} {state.label}
-        </Typography.Text>
+        {state && (
+          <Typography.Text
+            style={{ fontSize: 'inherit', color: token[state.tone] }}
+          >
+            {state.icon} {state.label}
+          </Typography.Text>
+        )}
       </Flex>
     </Flex>
   );

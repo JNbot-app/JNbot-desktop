@@ -85,7 +85,7 @@ const ConnectionDetails = ({
             <QRCode
               value={currentUrl}
               size={qrSize}
-              bordered={false}
+              variant="filled"
               status={currentUrl ? 'active' : 'loading'}
             />
           </div>

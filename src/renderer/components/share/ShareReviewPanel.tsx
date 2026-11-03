@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Empty, Flex, Spin, Typography, theme } from 'antd';
-import { CodeOutlined, FlagOutlined } from '@ant-design/icons';
+import { CodeOutlined, FlagOutlined, WarningFilled } from '@ant-design/icons';
 import {
   entryOverview,
   parseShareId,
@@ -14,7 +14,7 @@ import {
 } from '../../../common/share';
 import useAppApi from '../../hooks/useAppApi';
 import { selectActiveServerId, useSettingsStore } from '../../redux/settings';
-import { useShares } from '../../redux/shares';
+import { initShares, useShares } from '../../redux/shares';
 import { usePanelContext } from '../other/botSideBar/SidePanelContextProvider';
 import type { SharePanelData } from '../other/botSideBar/panelTabs';
 import type { PluginChoice } from './SharePluginRow';
@@ -73,6 +73,7 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
   };
 
   useEffect(() => {
+    initShares();
     if (!entry) void load();
   }, []);
 
@@ -102,6 +103,10 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
     appVersion,
     overview.publisher.own,
   );
+  const { official, own, trusted } = overview.publisher;
+  // Marketplace entries always carry an official approval.
+  const reviewed = !!entry || !!preview?.reviewed;
+  const unverifiedPublisher = !official && !own && !trusted && !reviewed;
   const closePanel = () => setPanel((panel) => ({ ...panel, active: false }));
 
   const showCode = async () => {
@@ -171,7 +176,11 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
 
   return (
     <Flex vertical gap={token.marginLG} style={{ minHeight: '100%' }}>
-      <ShareHeader overview={overview} installState={installState} />
+      <ShareHeader
+        overview={overview}
+        installState={installState}
+        reviewed={reviewed}
+      />
       <ShareContents overview={overview} />
 
       {checking && preview ? (
@@ -228,8 +237,15 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
                 install it.
               </Typography.Text>
             )}
+            {unverifiedPublisher && installState !== 'installed' && (
+              <Typography.Text type="danger">
+                <WarningFilled /> <strong>Only install from people you trust.</strong>{' '}
+                This publisher is unverified, and installing can run code on your
+                computer.
+              </Typography.Text>
+            )}
             <Flex gap={token.marginXS} align="center">
-              {(entry || preview?.reviewed) && !overview.publisher.own && (
+              {reviewed && !overview.publisher.own && (
                 <Button
                   type="text"
                   size="small"

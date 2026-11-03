@@ -241,7 +241,7 @@ const ShareContents: React.FC<{ overview: ShareOverview }> = ({ overview }) => {
                 'Gamemodes',
                 <Flex wrap gap={4}>
                   {gamemodes.map((mode) => (
-                    <Tag key={mode} bordered={false} style={{ margin: 0 }}>
+                    <Tag key={mode} variant="filled" style={{ margin: 0 }}>
                       {mode}
                     </Tag>
                   ))}

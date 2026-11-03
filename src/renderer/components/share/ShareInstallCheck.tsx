@@ -71,7 +71,7 @@ const ShareInstallCheck: React.FC<{
           ))}
         </Flex>
       )}
-      {!publisher.trusted && plugins.length > 0 && (
+      {!publisher.trusted && !preview.reviewed && plugins.length > 0 && (
         <Flex vertical gap={token.marginXXS}>
           <Typography.Text type="warning">
             You have not installed anything from {publisher.name} before. Only
