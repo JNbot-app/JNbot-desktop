@@ -6,7 +6,7 @@
  * through IPC.
  *
  * When running `npm run build` or `npm run build:main`, this file is compiled to
- * `./src/main.js` using webpack. This gives us some performance wins.
+ * `release/app/dist/main/main.js` using esbuild. This gives us some performance wins.
  */
 
 
@@ -140,9 +140,7 @@ const createWindow = async () => {
     backgroundColor: '#141414',
     transparent: isMac,
     webPreferences: {
-      preload: app.isPackaged
-        ? path.join(__dirname, 'preload.js')
-        : path.join(__dirname, 'preload.js'), // '../../.erb/dll/preload.js'),
+      preload: path.join(__dirname, 'preload.js'),
     },
     ...(process.platform === 'darwin'
       ? {

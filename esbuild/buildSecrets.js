@@ -14,4 +14,4 @@ const secrets = {
   turnCredential: process.env.JNBOT_TURN_CREDENTIAL ?? '',
 };
 
-module.exports = { __JNBOT_SECRETS__: JSON.stringify(secrets) };
+module.exports = { JNBOT_BUILD_SECRETS: JSON.stringify(secrets) };

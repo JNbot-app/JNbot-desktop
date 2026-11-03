@@ -14,7 +14,6 @@
     "../../**/node_modules/**",
     "../../**/release/**",
     "../../**/dist/**",
-    "../../**/.erb/dll/**",
     "../../**/src/main2/**",
     "../../**/src/workers/**",
     "../../**/src/common/types/declarePlugin.d.ts",

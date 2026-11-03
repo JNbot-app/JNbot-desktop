@@ -7,10 +7,10 @@ type BuildSecrets = {
   turnCredential: string;
 };
 
-declare const __JNBOT_SECRETS__: BuildSecrets | undefined;
+declare const JNBOT_BUILD_SECRETS: BuildSecrets | undefined;
 
 export const buildSecrets: Partial<BuildSecrets> =
-  typeof __JNBOT_SECRETS__ === 'undefined' ? {} : __JNBOT_SECRETS__;
+  typeof JNBOT_BUILD_SECRETS === 'undefined' ? {} : JNBOT_BUILD_SECRETS;
 
 export const turnServers = (urls: string[]) => {
   const { turnUsername: username, turnCredential: credential } = buildSecrets;
