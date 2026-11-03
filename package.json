@@ -334,7 +334,7 @@
     "gradient-string": "^3.0.0",
     "history": "^5.2.0",
     "immer": "^9.0.21",
-    "ink": "^5.1.1",
+    "ink": "^8.0.0",
     "just-clone": "^5.0.1",
     "lodash": "^4.17.21",
     "lowdb": "^3.0.0",
