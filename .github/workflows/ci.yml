@@ -17,11 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           path: app
       # The mobile client contract check compares against the sibling checkout.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: JNbot-app/JNbot-mobile
           path: jnbot-mobile
