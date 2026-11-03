@@ -77,3 +77,6 @@ native/needle/*
 !native/needle/CMakeLists.txt
 !native/needle/vendor/
 assets/needle/notices/
+
+# Local docs
+/docs/
