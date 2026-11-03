@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/usserwout/JNbot-updater/releases/latest">Download</a> ·
-  <a href="docs/plugin-authoring.md">Plugin docs</a> ·
+  <a href="src/common/types/plugin-authoring.md">Plugin docs</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -22,7 +22,7 @@
 - **Bots** – run and manage multiple Minecraft bots from one dashboard.
 - **Scripts & macros** – built-in server-specific scripts plus your own.
 - **Profiles** – per-server configuration, action slots and scripts.
-- **Plugins** – extend JNbot with signed plugins ([authoring guide](docs/plugin-authoring.md)).
+- **Plugins** – extend JNbot with signed plugins ([authoring guide](src/common/types/plugin-authoring.md)).
 - **Triggers** – react to in-game events, e.g. with Discord webhook notifications.
 - **Recording & learned bots** – record gameplay and train bots to imitate it.
 - **Remote access** – control JNbot from the mobile app, a browser or the CLI.

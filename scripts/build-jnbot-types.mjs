@@ -53,8 +53,8 @@ const PKG_DTS = path.resolve(appRoot, '../@jnbot-types/index.d.ts');
 const APP_CONST = path.join(appRoot, 'src/common/pluginApiTypesSource.ts');
 const GUIDE_CONST = path.join(appRoot, 'src/common/pluginAuthoringGuideSource.ts');
 const MCP_REFERENCE_CONST = path.join(appRoot, 'src/common/pluginMcpReferenceSource.ts');
-const GUIDE_SRC = path.join(appRoot, 'docs/plugin-authoring.md');
-const EXAMPLES_SRC = path.join(appRoot, 'docs/plugin-examples.md');
+const GUIDE_SRC = path.join(appRoot, 'src/common/types/plugin-authoring.md');
+const EXAMPLES_SRC = path.join(appRoot, 'src/common/types/plugin-examples.md');
 const LLM_OUT = path.join(appRoot, 'assets/llm-all.txt');
 const EXTERNAL_OUTPUTS = [
   path.resolve(appRoot, '../websitev3/public/llm/llm-all.txt'),
