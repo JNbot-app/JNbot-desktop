@@ -1,8 +1,12 @@
 import { createHash } from 'node:crypto';
 import {
   MARKET_REFRESH_INTERVAL,
+  MAX_DETAIL_TITLE_LENGTH,
+  MAX_DETAIL_VALUE_LENGTH,
   MAX_REVISION_LOOKUP,
   MAX_SHARE_BYTES,
+  MAX_SHARE_DESCRIPTION_LENGTH,
+  MAX_SHARE_TITLE_LENGTH,
   SERVER_ID_PATTERN,
   SHARE_ENVELOPE_FORMAT,
   SHARE_ENVELOPE_VERSION,
@@ -20,6 +24,7 @@ import {
   type MarketEntry,
   type OwnedShare,
   type ShareCreateInput,
+  type ShareDetailSection,
   type ShareInstallInput,
   type ShareKind,
   type ShareListing,
@@ -96,6 +101,13 @@ function withoutVolatile(value: unknown): unknown {
 /** Digest of what a share contains, ignoring signatures and timestamps. */
 const contentDigest = (envelope: Omit<Envelope, 'signature'>) =>
   createHash('sha256').update(canonicalJson(withoutVolatile(envelope))).digest('hex');
+
+/** Details as the listing carries them; the preview shows them in full. */
+const listingDetails = (details: ShareDetailSection[]): ShareDetailSection[] =>
+  details.map(({ title, rows }) => ({
+    title: title.slice(0, MAX_DETAIL_TITLE_LENGTH),
+    rows: rows.map((row) => ({ ...row, value: row.value.slice(0, MAX_DETAIL_VALUE_LENGTH) })),
+  }));
 
 const servers = (value: unknown): string[] =>
   Array.isArray(value) ? [...new Set(value.filter((id): id is string => SERVER_ID_PATTERN.test(String(id))))] : [];
@@ -231,6 +243,8 @@ export default class ShareService {
       kind: input.kind,
       meta: {
         ...built.meta,
+        title: built.meta.title.slice(0, MAX_SHARE_TITLE_LENGTH),
+        description: built.meta.description.slice(0, MAX_SHARE_DESCRIPTION_LENGTH),
         createdAt: new Date().toISOString(),
         minAppVersion: this.appVersion,
         servers: input.servers,
@@ -250,7 +264,7 @@ export default class ShareService {
       description: meta.description,
       items: meta.items,
       ...(meta.stripped?.length ? { stripped: meta.stripped } : {}),
-      details: handler.describe?.(envelope) ?? [],
+      details: listingDetails(handler.describe?.(envelope) ?? []),
       minAppVersion: meta.minAppVersion,
       servers: meta.servers,
       publisherName: envelope.signature.publisherName,
@@ -339,7 +353,7 @@ export default class ShareService {
       visibility,
       status: visibility === 'public' ? 'pending' : 'none',
       note: null,
-      pending: visibility === 'public' && owned.status === 'live',
+      pending: visibility === 'public' && (owned.status === 'live' || !!owned.pending),
     };
     this.persist();
     return this.file.owned[id];
@@ -530,8 +544,9 @@ export default class ShareService {
       shareRequest('POST', `/api/s/${id}/install`).catch(() => {});
     }
     // One install per local item: a share that replaced it takes it over.
+    // Bundles only add to their folder, so several can share one.
     for (const [otherKey, other] of Object.entries(this.file.installed)) {
-      if (other.kind === kind && other.localRef === localRef && other.profileKey === profileKey) {
+      if (kind !== 'bundle' && other.kind === kind && other.localRef === localRef && other.profileKey === profileKey) {
         delete this.file.installed[otherKey];
       }
     }
@@ -635,8 +650,9 @@ export default class ShareService {
 
   /**
    * Installs updates of marketplace items, whose revisions an official key
-   * approved. Private links, and updates that would replace a plugin that did
-   * not come from this publisher, keep the Update button.
+   * approved. Private links, updates that would replace a plugin that did not
+   * come from this publisher, and chains or triggers with a plugin update (which
+   * is your call) keep the Update button.
    */
   private autoUpdate(): Promise<void> {
     this.updating ??= this.installUpdates().finally(() => {
@@ -656,6 +672,7 @@ export default class ShareService {
         const safe = preview.plugins.every(
           (plugin) =>
             plugin.state !== 'unsupported' &&
+            plugin.state !== 'update' &&
             plugin.verification !== 'invalid' &&
             (plugin.state !== 'conflict' ||
               pluginSecurity().getProvenance(plugin.pluginId)?.importSource?.ownerId === plugin.ownerId),

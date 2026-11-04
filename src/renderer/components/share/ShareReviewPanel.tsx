@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Empty, Flex, Spin, Typography, theme } from 'antd';
 import { CodeOutlined, FlagOutlined, WarningFilled } from '@ant-design/icons';
 import {
+  defaultPluginAction,
   entryOverview,
   parseShareId,
   previewBlocked,
@@ -10,6 +11,7 @@ import {
   shareInstallKey,
   shareInstallState,
   type ShareInstallInput,
+  type SharePluginAction,
   type SharePreview,
 } from '../../../common/share';
 import useAppApi from '../../hooks/useAppApi';
@@ -17,7 +19,6 @@ import { selectActiveServerId, useSettingsStore } from '../../redux/settings';
 import { initShares, useShares } from '../../redux/shares';
 import { usePanelContext } from '../other/botSideBar/SidePanelContextProvider';
 import type { SharePanelData } from '../other/botSideBar/panelTabs';
-import type { PluginChoice } from './SharePluginRow';
 import ShareContents from './ShareContents';
 import ShareHeader from './ShareHeader';
 import ShareInstallCheck, { choiceKey } from './ShareInstallCheck';
@@ -58,7 +59,7 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
   const [busy, setBusy] = useState<'code' | 'install' | null>(null);
   // Links and reviews show the code right away; catalog entries once asked for.
   const [checking, setChecking] = useState(!entry);
-  const [choices, setChoices] = useState<Record<string, PluginChoice>>({});
+  const [choices, setChoices] = useState<Record<string, SharePluginAction>>({});
   const [trustPublisher, setTrustPublisher] = useState(false);
   const checkRef = useRef<HTMLDivElement>(null);
 
@@ -166,7 +167,7 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
         ownerId: plugin.ownerId,
         pluginId: plugin.pluginId,
         revision: plugin.revision,
-        action: choices[choiceKey(plugin)] ?? 'replace',
+        action: choices[choiceKey(plugin)] ?? defaultPluginAction(plugin),
         // The user reviewed the plugins and their publishers in this panel.
         acceptUnverified: true,
       })),

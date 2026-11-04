@@ -24,8 +24,11 @@ import type Macros_ from '../Macros';
 import type { PortablePlugin, PortablePluginPreview } from '../Macros';
 import type ProfileTransfer from '../ProfileTransfer';
 import type Settings_ from '../Settings';
+import type { ProfileScript } from '../../../../common/profileScripts';
+import generateUID from '../../../UID';
 import { getPlatform } from '../../platform';
-import { pluginSecurity } from '../signing';
+import { deobfuscateCodeFromBase64 } from '../scriptObfuscate';
+import { pluginContentDigest, pluginSecurity, publisherFingerprint } from '../signing';
 
 export interface ShareContext {
   settings: Settings_;
@@ -103,41 +106,85 @@ export function previewRow(preview: PortablePluginPreview): SharePluginPreview {
   };
 }
 
-/** Plugin ids of the scripts these profiles ship with; those come with the profile, never with a share. */
-const profileScriptIds = (ctx: ShareContext, profileKeys: string[]) =>
-  new Set(
-    profileKeys.flatMap((key) => (ctx.settings.JNdata?.data?.[key]?.scripts ?? []).map((script) => script.pluginId)),
-  );
+const profileScripts = (ctx: ShareContext, profileKey: string): ProfileScript[] =>
+  ctx.settings.JNdata?.data?.[profileKey]?.scripts ?? [];
 
-/** Library plugins to bundle, leaving out the scripts of `profileKey`. */
-function exportPlugins(pluginIds: Iterable<string>, ctx: ShareContext, profileKey?: string): PortablePlugin[] {
-  const profileScripts = profileScriptIds(ctx, profileKey ? [profileKey] : []);
-  return [...new Set(pluginIds)]
-    .filter((pluginId) => !profileScripts.has(pluginId) && ctx.macros.findPlugin(pluginId))
-    .map((pluginId) => ctx.macros.exportPortablePlugin(pluginId, { sign: true }));
+/** Package of a script that may only exist inside its profile. */
+async function exportProfileScript(script: ProfileScript, ctx: ShareContext): Promise<PortablePlugin | null> {
+  const exported = await ctx.settings.profiles.scripts?.bundleForExport(script);
+  if (!exported) return null;
+  const { bundle, signature } = exported;
+  const code = deobfuscateCodeFromBase64(bundle.codeObf) as MacroCode;
+  return {
+    version: 1,
+    source: { ownerId: generateUID(), pluginId: bundle.info.pluginId },
+    revision: pluginContentDigest(bundle.info, code),
+    exportedAt: Date.now(),
+    bundle: { format: 'jnbot-plugin', version: 2, info: bundle.info, code, signature },
+  };
 }
 
 /**
- * Bundled plugins a chain or trigger still needs: the ones neither the
- * profiles nor the plugin library already have.
+ * Plugins to bundle: scripts of `profileKey` too, so the share also works on
+ * profiles that do not have them.
  */
-function missingPlugins(envelope: Envelope, ctx: ShareContext, profileKeys: string[]): PortablePlugin[] {
-  const present = profileScriptIds(ctx, profileKeys);
+async function exportPlugins(
+  pluginIds: Iterable<string>,
+  ctx: ShareContext,
+  profileKey?: string,
+): Promise<PortablePlugin[]> {
+  const scripts = profileKey ? profileScripts(ctx, profileKey) : [];
+  const plugins = await Promise.all(
+    [...new Set(pluginIds)].map(async (pluginId) => {
+      const script = scripts.find((item) => item.pluginId === pluginId);
+      const exported = script && (await exportProfileScript(script, ctx));
+      if (exported) return exported;
+      return ctx.macros.findPlugin(pluginId) ? ctx.macros.exportPortablePlugin(pluginId, { sign: true }) : null;
+    }),
+  );
+  return plugins.filter((item): item is PortablePlugin => !!item);
+}
+
+/** A different version of a plugin you imported from this same publisher. */
+function isPluginUpdate({ source, revision, bundle }: PortablePlugin): boolean {
+  const publicKey = bundle.signature?.publicKey;
+  const provenance = pluginSecurity().getProvenance(source.pluginId);
+  return (
+    !!publicKey &&
+    !!provenance?.importSource &&
+    provenance.importSource.revision !== revision &&
+    provenance.fingerprint === publisherFingerprint(publicKey)
+  );
+}
+
+/**
+ * Bundled plugins a chain or trigger installs: only what neither the profiles
+ * nor the plugin library have. Plugin updates are offered, never assumed (see
+ * {@link defaultPluginAction}); anything else you already have stays as it is.
+ */
+function wantedPlugins(envelope: Envelope, ctx: ShareContext, profileKeys: string[]): PortablePlugin[] {
+  const inProfiles = new Set(profileKeys.flatMap((key) => profileScripts(ctx, key).map((script) => script.pluginId)));
   return envelope.plugins.filter(
-    ({ source }) => !present.has(source.pluginId) && !ctx.macros.findPlugin(source.pluginId),
+    (item) =>
+      !inProfiles.has(item.source.pluginId) && (!ctx.macros.findPlugin(item.source.pluginId) || isPluginUpdate(item)),
   );
 }
 
 /** Review rows for the plugins a chain or trigger would add to `profileKey`. */
-const previewMissing = (envelope: Envelope, ctx: ShareContext, profileKey?: string) =>
+const previewWanted = (envelope: Envelope, ctx: ShareContext, profileKey?: string): SharePluginPreview[] =>
   ctx.macros
     .previewPortablePlugins(
-      missingPlugins(envelope, ctx, profileKey ? [profileKey] : envelope.meta.servers),
+      wantedPlugins(envelope, ctx, profileKey ? [profileKey] : envelope.meta.servers),
       pluginOptions(),
     )
-    .map(previewRow);
+    .map(previewRow)
+    .filter((row) => row.state !== 'identical')
+    .map((row) => (row.state === 'conflict' ? { ...row, state: 'update' as const } : row));
 
-/** Install the given plugins (all bundled ones by default); maps shared plugin ids to local ids. */
+/**
+ * Install the given plugins (all bundled ones by default); maps shared plugin
+ * ids to local ids. Plugins of `plugins` that were skipped are left out.
+ */
 async function installPlugins(
   envelope: Envelope,
   input: ShareInstallInput,
@@ -151,6 +198,7 @@ async function installPlugins(
     throw new Error(result.failed.map((item) => item.error).join('\n'));
   }
   for (const item of result.installed) ids.set(item.sourcePluginId, item.installedPluginId);
+  for (const item of result.skipped) if (!item.upToDate) ids.delete(item.pluginId);
   return ids;
 }
 
@@ -158,6 +206,8 @@ function profileSettings(ctx: ShareContext, profileKey?: string) {
   if (!profileKey) throw new Error('A profile is required.');
   return ctx.settings.getProfileSettings(profileKey);
 }
+
+const NOTHING_INSTALLED = 'Nothing was installed.';
 
 const isText = (value: unknown, max = 200): value is string =>
   typeof value === 'string' && value.length <= max;
@@ -169,7 +219,7 @@ const pluginName = (envelope: Envelope, pluginId: string) =>
 
 const plugin: ShareKindHandler = {
   async build(pluginId, ctx) {
-    const plugins = exportPlugins([pluginId], ctx);
+    const plugins = await exportPlugins([pluginId], ctx);
     if (!plugins.length) throw new Error('Plugin not found.');
     const { info } = plugins[0].bundle;
     return {
@@ -182,6 +232,7 @@ const plugin: ShareKindHandler = {
   async install(envelope, input, ctx) {
     if (envelope.plugins.length !== 1) throw new Error('Invalid plugin share.');
     const ids = await installPlugins(envelope, input, ctx);
+    if (!ids.size) throw new Error(NOTHING_INSTALLED);
     return ids.get(envelope.plugins[0].source.pluginId)!;
   },
 };
@@ -191,7 +242,7 @@ const bundle: ShareKindHandler = {
     const pluginIds = Object.entries(ctx.settings.shared.pluginMetadata ?? {})
       .filter(([, metadata]) => metadata?.folder === folder)
       .map(([pluginId]) => pluginId);
-    const plugins = exportPlugins(pluginIds, ctx);
+    const plugins = await exportPlugins(pluginIds, ctx);
     if (!plugins.length) throw new Error('This folder has no plugins to share.');
     const cover = plugins.find((item) => item.bundle.info.banner)?.bundle.info ?? plugins[0].bundle.info;
     return {
@@ -219,6 +270,7 @@ const bundle: ShareKindHandler = {
   async install(envelope, input, ctx) {
     const folder = input.existingRef ?? envelope.meta.title.trim().slice(0, 100);
     const ids = await installPlugins(envelope, input, ctx);
+    if (!ids.size) throw new Error(NOTHING_INSTALLED);
     const pluginMetadata = { ...ctx.settings.shared.pluginMetadata };
     for (const pluginId of ids.values()) {
       if (ctx.macros.findPlugin(pluginId)) pluginMetadata[pluginId] = { ...pluginMetadata[pluginId], folder };
@@ -288,11 +340,13 @@ const profile: ShareKindHandler = {
     if (!portable?.data || typeof portable.data !== 'object' || !isText(portable.data.name)) {
       throw new Error('Invalid profile share.');
     }
-    // A profile installs under its own id and replaces a local profile with
-    // that id, so old local copies turn into the installed one and keep their
-    // settings. Local profiles get random ids, so they do not collide by accident.
-    const id = input.existingRef ?? (SERVER_ID_PATTERN.test(portable.id) ? portable.id : `shared-${input.id}`);
     const official = pluginSecurity().isOfficialPublicKey(envelope.signature.publicKey);
+    // An official profile installs under its own id and replaces a local
+    // profile with that id, so old local copies turn into the installed one and
+    // keep their settings. Others cannot claim a profile you already have.
+    const taken = official ? undefined : ctx.settings.profiles.get(portable.id);
+    const claimable = SERVER_ID_PATTERN.test(portable.id) && (!taken || taken.share?.id === input.id);
+    const id = input.existingRef ?? (claimable ? portable.id : `shared-${input.id}`);
     const materialized = await ctx.settings.profiles.materializeSyncedProfile({
       ...structuredClone(portable),
       id,
@@ -350,10 +404,10 @@ const chain: ShareKindHandler = {
         gamemode: options.gamemode ?? null,
         steps: source.chains.map(normalizeChainStep),
       } satisfies SharedChain,
-      plugins: exportPlugins(source.chains.map((step) => step.scriptId), ctx, profileKey),
+      plugins: await exportPlugins(source.chains.map((step) => step.scriptId), ctx, profileKey),
     };
   },
-  preview: previewMissing,
+  preview: previewWanted,
   describe(envelope) {
     const payload = envelope.payload as Partial<SharedChain> | undefined;
     const steps = Array.isArray(payload?.steps) ? payload.steps : [];
@@ -388,7 +442,7 @@ const chain: ShareKindHandler = {
       throw new Error('Invalid chain share.');
     }
     const scripts = profileSettings(ctx, input.profileKey).scripts ?? {};
-    const ids = await installPlugins(envelope, input, ctx, missingPlugins(envelope, ctx, [input.profileKey!]));
+    const ids = await installPlugins(envelope, input, ctx, wantedPlugins(envelope, ctx, [input.profileKey!]));
     const id = input.existingRef ?? randomUUID();
     const chainSteps = (steps as ChainStep[]).map((step) => ({
       ...normalizeChainStep(step),
@@ -473,14 +527,14 @@ const trigger: ShareKindHandler = {
         stripped,
       },
       payload: { triggers: [{ ...rest, actions: source.actions.map(sanitizeAction) }] },
-      plugins: exportPlugins(
+      plugins: await exportPlugins(
         source.actions.flatMap((action) => (action.type === 'scriptAction' ? [action.id] : [])),
         ctx,
         profileKey,
       ),
     };
   },
-  preview: previewMissing,
+  preview: previewWanted,
   describe(envelope) {
     const incoming = (envelope.payload as { triggers?: Trigger[] })?.triggers;
     return (Array.isArray(incoming) ? incoming : []).map((item) => {
@@ -496,7 +550,7 @@ const trigger: ShareKindHandler = {
             label: actions.length > 1 ? `Action ${index + 1}` : 'Action',
             value: actionText(action, envelope),
           })),
-          { label: 'Runs on', value: 'All bots — disabled until you turn it on' },
+          { label: 'Runs on', value: 'All bots — on as soon as it is installed' },
         ],
       };
     });
@@ -509,7 +563,7 @@ const trigger: ShareKindHandler = {
     }
     const current: Trigger[] = profileSettings(ctx, input.profileKey).triggers ?? [];
     const previous = current.find((existing) => existing.id === input.existingRef);
-    const ids = await installPlugins(envelope, input, ctx, missingPlugins(envelope, ctx, [input.profileKey!]));
+    const ids = await installPlugins(envelope, input, ctx, wantedPlugins(envelope, ctx, [input.profileKey!]));
     // An update keeps your own state, alts, tags, webhooks and log folders.
     const next: Trigger = {
       id: previous?.id ?? randomUUID(),

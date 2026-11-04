@@ -154,7 +154,8 @@ export type PluginImportResult = {
     installedPluginId: string;
     outcome: 'installed' | 'replaced' | 'duplicated';
   }>;
-  skipped: Array<{ pluginId: string; reason: string }>;
+  /** `upToDate`: this exact version is already installed. */
+  skipped: Array<{ pluginId: string; reason: string; upToDate?: boolean }>;
   failed: Array<{ pluginId: string; error: string }>;
 };
 

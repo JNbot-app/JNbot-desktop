@@ -61,8 +61,13 @@ export function toRecord(row: RecordRow): ShareRecord {
   };
 }
 
-export async function getRecord(env: Env, id: string, revision = SERVED): Promise<ShareRecord | null> {
-  const row = await env.DB.prepare(recordQuery(revision, 's.id = ?')).bind(id).first<RecordRow>();
+/** What a link serves: not rejected submissions or takedowns, which have nothing live. */
+export async function getRecord(env: Env, id: string): Promise<ShareRecord | null> {
+  const row = await env.DB.prepare(
+    recordQuery(SERVED, `s.id = ? AND NOT (s.status = 'rejected' AND s.live_revision IS NULL)`),
+  )
+    .bind(id)
+    .first<RecordRow>();
   return row ? toRecord(row) : null;
 }
 

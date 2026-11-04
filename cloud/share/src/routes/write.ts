@@ -180,12 +180,14 @@ export async function updateShare(request: Request, env: Env, row: ShareRow, pat
   const now = Date.now();
   // A link that becomes public was never reviewed, so nothing stays live.
   const live = isPublic ? (row.visibility === 'public' ? row.live_revision : null) : upload.revision;
+  // The listed name stays the reviewed one until this revision is approved.
+  const ownerName = isPublic && live ? row.owner_name : upload.listing.publisherName;
   await env.DB.batch([
     insertRevision(env, row.id, upload, now),
     env.DB.prepare(
       `UPDATE shares SET owner_name = ?, visibility = ?, status = ?, note = NULL, live_revision = ?, latest_revision = ?, updated_at = ?
        WHERE id = ?`,
-    ).bind(upload.listing.publisherName, upload.visibility, isPublic ? 'pending' : 'none', live, upload.revision, now, row.id),
+    ).bind(ownerName, upload.visibility, isPublic ? 'pending' : 'none', live, upload.revision, now, row.id),
     pruneRevisions(env, row.id, [live, upload.revision]),
     ...(isListed(row) && !isPublic ? [bumpMarket(env)] : []),
   ]);

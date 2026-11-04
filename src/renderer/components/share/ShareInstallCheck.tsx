@@ -1,6 +1,11 @@
 import { Checkbox, Flex, Result, Typography, theme } from 'antd';
-import { previewNeedsCheck, type SharePreview } from '../../../common/share';
-import SharePluginRow, { type PluginChoice } from './SharePluginRow';
+import {
+  defaultPluginAction,
+  previewNeedsCheck,
+  type SharePluginAction,
+  type SharePreview,
+} from '../../../common/share';
+import SharePluginRow from './SharePluginRow';
 
 export const choiceKey = (plugin: { ownerId: string; pluginId: string }) =>
   `${plugin.ownerId}:${plugin.pluginId}`;
@@ -8,8 +13,8 @@ export const choiceKey = (plugin: { ownerId: string; pluginId: string }) =>
 /** The downloaded code, conflicts with what you have, and the publisher trust choice. */
 const ShareInstallCheck: React.FC<{
   preview: SharePreview;
-  choices: Record<string, PluginChoice>;
-  onChoice: (key: string, choice: PluginChoice) => void;
+  choices: Record<string, SharePluginAction>;
+  onChoice: (key: string, choice: SharePluginAction) => void;
   trustPublisher: boolean;
   onTrustPublisher: (trust: boolean) => void;
 }> = ({ preview, choices, onChoice, trustPublisher, onTrustPublisher }) => {
@@ -60,7 +65,7 @@ const ShareInstallCheck: React.FC<{
             >
               <SharePluginRow
                 plugin={plugin}
-                choice={choices[choiceKey(plugin)] ?? 'replace'}
+                choice={choices[choiceKey(plugin)] ?? defaultPluginAction(plugin)}
                 onChoice={
                   preview.kind === 'profile'
                     ? undefined

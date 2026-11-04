@@ -982,7 +982,7 @@ class Macros_ {
           continue;
         }
         if (preview.state === 'identical') {
-          result.skipped.push({ pluginId: item.source.pluginId, reason: 'Already up to date.' });
+          result.skipped.push({ pluginId: item.source.pluginId, reason: 'Already up to date.', upToDate: true });
           continue;
         }
         if (!decision || decision.action === 'skip') {
