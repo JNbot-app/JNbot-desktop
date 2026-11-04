@@ -66,7 +66,7 @@ const Dashboard: React.FC = () => {
                 </Col>
               </Row>
 
-              <SectionHeading>Kits</SectionHeading>
+              <SectionHeading>Schedule</SectionHeading>
               <Row gutter={[16, 16]}>
                 <Col span={halfSpan}>
                   <GkitTimeline />

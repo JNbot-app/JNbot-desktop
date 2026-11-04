@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, Dropdown, Flex, Switch, Tag, Typography, theme } from 'antd';
 import {
+  DeleteOutlined,
   EditOutlined,
   MoreOutlined,
   ShareAltOutlined,
@@ -13,6 +14,7 @@ import {
 } from '../../../common/triggers';
 import type { AltTag } from '../../../main/src/types';
 import {
+  deleteTrigger,
   saveTrigger,
   selectActiveServerId,
   useSettingsStore,
@@ -136,6 +138,13 @@ export default function TriggerRow({
                   },
                 ]
               : []),
+            {
+              key: 'delete',
+              label: 'Delete',
+              icon: <DeleteOutlined />,
+              danger: true,
+              onClick: () => deleteTrigger(trigger.id),
+            },
           ],
         }}
       >
