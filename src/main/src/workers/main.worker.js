@@ -137,7 +137,6 @@ const SCRIPTS = {
   // altScanner: () => require('./scripts/altScannerV2'),
   // 'kit collector': () => require('./scripts/kitCollectorV2'),
   // 'book sorter': () => require('./scripts/bookSorter'),
-  botActions: () => require('./scripts/botActions'),
   discordBot: () => require('./scripts/discord/discordBot').default,
   chain: () => require('./scripts/chains/runChain').default,
   jnbotproxy: () => require('./scripts/JNbotProxy/startProxy').default,
