@@ -523,8 +523,8 @@ export class Messenger {
     return false;
   }
 
-  protected onSubscribe(message: MessageEnvelope): void {}
-  protected onUnsubscribe(message: MessageEnvelope): void {}
+  protected onSubscribe(_message: MessageEnvelope): void {}
+  protected onUnsubscribe(_message: MessageEnvelope): void {}
 
   private nextCorrelationId(): string {
     this.sequence += 1;

@@ -72,16 +72,19 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
     return result;
   };
 
+  // Runs once on mount; load() is not memoized, so depending on it would refetch on every render.
+  /* oxlint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     initShares();
     if (!entry) void load();
   }, []);
 
+  /* oxlint-enable react-hooks/exhaustive-deps */
   const showCheck = checking && !!preview;
   useEffect(() => {
     if (showCheck && entry)
       checkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [showCheck]);
+  }, [showCheck, entry]);
 
   const overview = preview
     ? previewOverview(preview)

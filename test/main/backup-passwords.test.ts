@@ -1,5 +1,3 @@
-import path from 'path';
-import fs from 'fs';
 import {
   freshUserData,
   bootElectron,

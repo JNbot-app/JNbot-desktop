@@ -1,7 +1,5 @@
-const { once } = require('events')
- const BotStatemachine = require('./statemachines/BotStatemachine');
 
-async function joinGamemode(bot, gamemode, options = {}) {
+async function joinGamemode(_bot, _gamemode, _options = {}) {
   throw new Error('joinGamemode is deprecated and should not be used directly!');
   // // if (global.appSettings.server === "pikanetwork") return joinGamemodePika(bot, gamemode, options);
   // return new Promise((resolve)=>{
@@ -22,10 +20,6 @@ async function joinGamemode(bot, gamemode, options = {}) {
   //   });
   //   botState.start()
   // })
-}
-
-function sleep(x) {
-  return new Promise(resolve => setTimeout(resolve, x))
 }
 
 module.exports = joinGamemode;

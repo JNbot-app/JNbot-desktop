@@ -233,13 +233,13 @@ const ShareContents: React.FC<{ overview: ShareOverview }> = ({ overview }) => {
             facts={[
               [
                 'Server',
-                <Typography.Text copyable>
+                <Typography.Text key="server" copyable>
                   {detailValue(details, 'Server') ?? '—'}
                 </Typography.Text>,
               ],
               !!gamemodes.length && [
                 'Gamemodes',
-                <Flex wrap gap={4}>
+                <Flex key="gamemodes" wrap gap={4}>
                   {gamemodes.map((mode) => (
                     <Tag key={mode} variant="filled" style={{ margin: 0 }}>
                       {mode}

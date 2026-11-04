@@ -8,7 +8,6 @@ import {
   Segmented,
   Space,
   Tag,
-  Tooltip,
   Typography,
   theme,
 } from 'antd';

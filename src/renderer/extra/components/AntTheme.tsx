@@ -1,5 +1,5 @@
 import { ConfigProvider, ThemeConfig } from "antd"
-import { FC, PropsWithChildren, useEffect, useMemo } from "react"
+import { FC, PropsWithChildren, useMemo } from "react"
 
 
 import { lightTheme } from "../../themes/lightTheme"
@@ -57,7 +57,7 @@ const ThemeProvider: FC<PropsWithChildren> = ({ children }) => {
       theme = {...theme, token: {...theme.token, motion: !reduceMotion}}
     }
     return theme
-  }, [reduceMotion, theme])
+  }, [reduceMotion, theme, selectedTheme])
 
 
   return (

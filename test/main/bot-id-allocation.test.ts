@@ -71,13 +71,13 @@ describe('bot ID allocation recycling', () => {
     // Set counter to 8190 so next allocations cross the 8191 boundary
     Atomics.store(sharedArray, 0, 8190);
 
-    const joinServer = require('../../src/main/src/workers/bot/join');
+    require('../../src/main/src/workers/bot/join');
 
     // Allocation at 8190 -> (8190 % 8191) + 1 = 8191
     // Next allocation at 8191 -> (8191 % 8191) + 1 = 1
     // Next allocation at 8192 -> (8192 % 8191) + 1 = 2
     // None should throw RangeError
-    const botController = require('../../src/main/src/workers/lib/botController').default;
+    require('../../src/main/src/workers/lib/botController');
 
     // Simulate joining past 8191
     expect(() => {

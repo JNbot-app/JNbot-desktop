@@ -165,7 +165,7 @@ if not defined skipVersionCheck (
   )
 )
 
-node "%~dp0cli\cli.mjs" %*
+node "%~dp0cli\\cli.mjs" %*
 `
   );
   

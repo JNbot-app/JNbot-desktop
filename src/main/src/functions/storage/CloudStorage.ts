@@ -30,7 +30,6 @@ const EMBEDDED_SECRET = buildSecrets.b2Secret;
 
 // ── Crypto constants ──────────────────────────────────────────────────────────
 const BACKUP_VERSION = 4; // current envelope: HKDF-SHA256 + AES-256-GCM
-const BACKUP_VERSION_V3 = 3; // legacy envelope: PBKDF2-SHA512 + AES-256-GCM
 const BACKUP_FILENAME = 'backup.v3.enc.json'; // kept stable across v3/v4 — the envelope's `version` field is authoritative
 const AES_ALGO = 'aes-256-gcm';
 const AES_KEY_LEN = 32; // bytes
@@ -490,8 +489,6 @@ class CloudStorage {
           }, CLOUD_REQUEST_TIMEOUT_MS);
         }),
       ]);
-    } catch (error) {
-      throw error;
     } finally {
       if (timeout) clearTimeout(timeout);
     }

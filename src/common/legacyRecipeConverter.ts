@@ -177,7 +177,7 @@ export function convertLegacyCanvas(
     Extract<RecipeStep, { kind: 'action' }>
   >();
 
-  const parseTargets = (targets: string[], context: string): RecipeStep[] => {
+  const parseTargets = (targets: string[], _context: string): RecipeStep[] => {
     if (!targets.length) return [];
     if (targets.length === 1) return parseSequence(targets[0]);
     const eventTargets = targets.filter((id) =>

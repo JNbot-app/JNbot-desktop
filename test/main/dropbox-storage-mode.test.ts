@@ -193,7 +193,7 @@ test('empty Dropbox store opens fresh without copying Local, and disconnect pres
 test('existing Dropbox files remain in memory without a working directory', async () => {
   const shared = JSON.stringify({ alts: [{ username: 'Dropbox' }], devices: [], pluginMetadata: {}, version: 3 });
   const plugins = Object.fromEntries(Array.from({ length: 150 }, (_, index) => [`macros/plugin-${index}.js`, `plugin ${index}`]));
-  const { device, service, calls } = fixture({ 'shared.json': shared, ...plugins });
+  const { service, calls } = fixture({ 'shared.json': shared, ...plugins });
   await service.completeLogin('code', service.beginLogin().verifier);
   await service.select('dropbox');
   const root = await service.prepareStartup();

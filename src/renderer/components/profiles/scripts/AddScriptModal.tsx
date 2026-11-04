@@ -78,7 +78,7 @@ const AddScriptModal: FC<Props> = ({
       .filter((m) =>
         !q ? true : (m.name + (m.description ?? '')).toLowerCase().includes(q),
       );
-  }, [macros, pluginQuery, typeFilter]);
+  }, [macros, pluginQuery, typeFilter, pluginOnly]);
 
   const close = () => {
     setPluginQuery('');

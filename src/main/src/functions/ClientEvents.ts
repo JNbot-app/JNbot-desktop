@@ -2,7 +2,6 @@ import type { BrainLearnSettings } from '../../../common/brainSpec';
 import {
   MacroInfo,
   MacroCode,
-  Db,
   Device,
   ScriptOptions,
   Alt,
@@ -955,11 +954,11 @@ class ClientEvents_ {
     return this.profileIdRequired();
   }
 
-  STOP(instanceId: number | { minecraftInstanceId: string }) {
+  STOP(_instanceId: number | { minecraftInstanceId: string }) {
     return this.profileIdRequired();
   }
 
-  STOP_ALL(target: number | string) {
+  STOP_ALL(_target: number | string) {
     return this.profileIdRequired();
   }
 
@@ -968,7 +967,7 @@ class ClientEvents_ {
   }
 
   async START_SCRIPT(
-    scriptData: ScriptDataType & { scriptOptions?: ScriptOptions },
+    _scriptData: ScriptDataType & { scriptOptions?: ScriptOptions },
   ) {
     return this.profileIdRequired();
   }
@@ -982,7 +981,7 @@ class ClientEvents_ {
     app.quit();
   }
 
-  RESTART_ALL(instanceId: number) {
+  RESTART_ALL(_instanceId: number) {
     return this.profileIdRequired();
   }
 
@@ -1085,17 +1084,17 @@ class ClientEvents_ {
     return this.profileIdRequired();
   }
 
-  CLEAR_CONSOLE(scriptName: string | undefined) {
+  CLEAR_CONSOLE(_scriptName: string | undefined) {
     return this.profileIdRequired();
   }
 
   async SERVER_STATUS_UPDATE(
-    opt: { server?: string } | undefined = {},
+    _opt: { server?: string } | undefined = {},
   ): Promise<{ ips: string[] }> {
     return this.profileIdRequired();
   }
 
-  async SERVER_STATUS(_: undefined, e: any): Promise<{ ips: string[] }> {
+  async SERVER_STATUS(_: undefined, _e: any): Promise<{ ips: string[] }> {
     return this.profileIdRequired();
   }
 
@@ -1125,7 +1124,7 @@ class ClientEvents_ {
     return this.macros.saveInfo(macroInfo);
   }
 
-  DELETE_MACRO(plugin: MacroInfo | string) {
+  DELETE_MACRO(_plugin: MacroInfo | string) {
     throw new Error('profileId is required for DELETE_MACRO');
   }
 
@@ -1133,7 +1132,7 @@ class ClientEvents_ {
     return this.macros.duplicate(pluginId);
   }
 
-  UPDATE_PLUGIN_DATA(pluginData: PluginData) {
+  UPDATE_PLUGIN_DATA(_pluginData: PluginData) {
     return this.profileIdRequired();
   }
 
@@ -1479,11 +1478,11 @@ class ClientEvents_ {
     return this.scriptHandler.automationService.sessionStatuses();
   }
 
-  SET_SETTINGS(o: { settings: SettingsObj; updateClient?: boolean }) {
+  SET_SETTINGS(_o: { settings: SettingsObj; updateClient?: boolean }) {
     return this.profileIdRequired();
   }
 
-  SET_APPSETTINGS(o: { appSettings: AppSettings; updateClient?: boolean }) {
+  SET_APPSETTINGS(_o: { appSettings: AppSettings; updateClient?: boolean }) {
     return this.profileIdRequired();
   }
 
@@ -1495,7 +1494,7 @@ class ClientEvents_ {
     this.windowHandler.openExternal(url, { target: 'browser' });
   }
 
-  BOT_ACTION(data: {
+  BOT_ACTION(_data: {
     botId: number;
     action: string;
     data?: any;
@@ -1504,7 +1503,7 @@ class ClientEvents_ {
     return this.profileIdRequired();
   }
 
-  async LAUNCH_MINECRAFT(options: LaunchMinecraftOptions) {
+  async LAUNCH_MINECRAFT(_options: LaunchMinecraftOptions) {
     return this.profileIdRequired();
   }
 
@@ -1577,7 +1576,7 @@ class ClientEvents_ {
     return { ok };
   }
 
-  MC_LOGIN_MICROSOFT(username?: string) {
+  MC_LOGIN_MICROSOFT(_username?: string) {
     return this.profileIdRequired();
   }
 

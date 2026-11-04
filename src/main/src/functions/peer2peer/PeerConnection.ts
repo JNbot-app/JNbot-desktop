@@ -13,10 +13,7 @@ import {
 } from '../../messaging/bootstrap';
 
 const UID = generateUID();
-let url = 'https://jnbot-app.netlify.app/';
-
-if (process.env.NODE_ENV === 'development' && false)
-  url = 'http://localhost:1212/';
+const url = 'https://jnbot-app.netlify.app/';
 
 class PeerConnection implements Socket {
   private webrtc: WebRTC_nodejs;

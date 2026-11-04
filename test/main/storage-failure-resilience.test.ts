@@ -255,9 +255,6 @@ describe('Storage and Disk Failure Resilience', () => {
 
   describe('Console Logging Resilience', () => {
     it('openStream handles disk write failure / read-only directory without throwing', () => {
-      const mockConsoleHandler: any = {
-        stringify: (m: any) => String(m),
-      };
       const mockSettings = {
         script_console_logging: true,
         logging_dir: path.join(tmpDir, 'readonly-logs'),

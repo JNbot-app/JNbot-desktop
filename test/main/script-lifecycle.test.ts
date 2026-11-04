@@ -1,6 +1,6 @@
 import Script_ from '../../src/main/src/functions/Script';
 import { workerDataPath, workerEntryPath } from '../../src/main/src/functions/workerPaths';
-import { backendMessaging } from '../../src/main/src/messaging';
+import '../../src/main/src/messaging';
 import { workerScriptAddress } from '../../src/common/messaging';
 
 jest.mock('../../src/main/src/messaging', () => ({

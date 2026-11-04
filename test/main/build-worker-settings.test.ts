@@ -9,7 +9,7 @@ describe('buildWorkerSettings', () => {
         reminders: [{ id: 'rem-1' }],
         profileKey: key,
       })),
-      getAltsWithDataForProfile: jest.fn((key: string) => [
+      getAltsWithDataForProfile: jest.fn(() => [
         { username: 'Alt1', data: { premium: true } },
       ]),
       shared: {

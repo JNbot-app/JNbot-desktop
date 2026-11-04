@@ -29,8 +29,8 @@ const RecipeActionInput: React.FC<{
   useEffect(() => {
     if (definition.control !== 'scriptAction' || actions) return;
     let active = true;
-    void loadActions().then((next) => {
-      if (active) setActions(next);
+    void loadActions().then((loaded) => {
+      if (active) setActions(loaded);
     });
     return () => {
       active = false;

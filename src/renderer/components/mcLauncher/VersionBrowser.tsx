@@ -136,7 +136,7 @@ const VersionBrowser: React.FC<VersionBrowserProps> = ({
     });
 
     return filtered.sort((a, b) => compareMinecraftIdsDesc(a.id, b.id));
-  }, [groups, openGroupKey, normalVersions]);
+  }, [openGroupKey, normalVersions]);
 
   const openGroupByLauncher = useMemo(() => {
     const map = new Map<MinecraftLauncherTypes, VersionItem[]>();

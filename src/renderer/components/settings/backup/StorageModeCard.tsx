@@ -26,7 +26,6 @@ import {
   DisconnectOutlined,
 } from '@ant-design/icons';
 import useAppApi from 'renderer/hooks/useAppApi';
-import { withAlpha } from 'renderer/components/intro/introUtils';
 
 const { Text, Title } = Typography;
 

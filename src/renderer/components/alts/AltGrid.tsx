@@ -242,7 +242,7 @@ const AltGrid: React.FC = () => {
       if (result.length === 0) result.push('0 seconds');
       return result.slice(0, 2).join(', ');
     },
-    [stats],
+    [],
   );
 
   const deleteBulkAlts = () => {
@@ -443,6 +443,7 @@ const AltGrid: React.FC = () => {
       tagsByUsername,
       activeTagId,
       openAccountProfile,
+      sortUsernames,
     ],
   );
 

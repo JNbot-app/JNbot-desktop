@@ -93,6 +93,7 @@ export const useSafeInterval = (callback: () => void, delay: number | null, deps
         intervalRef.current = null;
       }
     };
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [delay, ...deps]);
 };
 
@@ -118,6 +119,7 @@ export const useSafeTimeout = (callback: () => void, delay: number | null, deps:
         timeoutRef.current = null;
       }
     };
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [delay, ...deps]);
 };
 
@@ -127,10 +129,12 @@ export const useSafeTimeout = (callback: () => void, delay: number | null, deps:
 export const useSafeIPCListener = (event: string, handler: (...args: any[]) => void, deps: any[] = []) => {
   useEffect(() => {
     if (typeof window !== 'undefined' && window.ipcRenderer) {
+      // oxlint-disable-next-line react-hooks/exhaustive-deps
       const removeListener = window.ipcRenderer.on(event, handler);
       return removeListener;
     }
     return () => {}; // Return empty cleanup function if no IPC
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [event, ...deps]);
 };
 

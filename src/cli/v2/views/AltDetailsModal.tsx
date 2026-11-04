@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { clipText } from '../components/Header';
 
 interface AltDetailsModalProps {
   alt: {
@@ -23,7 +22,6 @@ interface AltDetailsModalProps {
 export const AltDetailsModal: React.FC<AltDetailsModalProps> = ({
   alt,
   serverName,
-  width,
   onEdit,
   onRemove,
   onClose,

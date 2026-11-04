@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Tabs, Typography } from 'antd';
 import type { TabsProps } from 'antd';
 import { MdDns, MdStorage } from 'react-icons/md';
@@ -95,13 +95,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const profileName =
     activeServerMeta?.name ?? activeServerMeta?.id ?? 'this profile';
 
-  const changeSetting = ({ key, value }: { key: string; value: any }) => {
-    if (key === 'theme') setTheme(value);
-    else if (key === 'locale') setLanguage(value);
-    else if (key === 'server') return switchServer(value);
+  const changeSetting = useCallback(
+    ({ key, value }: { key: string; value: any }) => {
+      if (key === 'theme') setTheme(value);
+      else if (key === 'locale') setLanguage(value);
+      else if (key === 'server') return switchServer(value);
 
-    updateAppSetting(key, value);
-  };
+      updateAppSetting(key, value);
+    },
+    [setTheme, setLanguage],
+  );
 
   const items: TabsProps['items'] = useMemo(() => {
     const schemaTabs: TabsProps['items'] = settingsSchema.map((tab) => ({
@@ -156,7 +159,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
     copy.push(storageTab);
     return copy;
-  }, [settingsSchema, appSettings, profileName, onClose]);
+  }, [settingsSchema, appSettings, profileName, onClose, changeSetting]);
 
   return (
     <Modal

@@ -34,6 +34,10 @@ export function useResolveScript(
     error: null,
   });
 
+  const sourceId = script ? sourceKey(script.source) : '';
+
+  // Re-resolve only when the identity fields below change, not on script object identity.
+  /* oxlint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (!script) {
       setView((v) => ({ ...v, loading: false }));
@@ -84,10 +88,11 @@ export function useResolveScript(
     };
   }, [
     script?.id,
-    script ? sourceKey(script.source) : '',
+    sourceId,
     script?.checksum,
     script?.signature,
   ]);
 
+  /* oxlint-enable react-hooks/exhaustive-deps */
   return view;
 }

@@ -63,9 +63,9 @@ function ModelView({ pluginId }: { pluginId: string }) {
   useEffect(() => {
     window.ipcRenderer
       .get<BrainModelView>('GET_BRAIN_MODEL', { pluginId })
-      .then((next) => {
-        setView(next);
-        setHead(Object.keys(next.heads)[0]);
+      .then((model) => {
+        setView(model);
+        setHead(Object.keys(model.heads)[0]);
       })
       .catch((error) => message.error(String(error)));
   }, [message, pluginId]);

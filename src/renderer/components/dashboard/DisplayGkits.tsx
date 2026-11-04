@@ -1,9 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   useSettingsStore,
   selectAlts,
-  selectScripts,
 } from '../../redux/settings';
 import { Typography, Button } from 'antd';
 import { MdFormatListBulleted } from 'react-icons/md';

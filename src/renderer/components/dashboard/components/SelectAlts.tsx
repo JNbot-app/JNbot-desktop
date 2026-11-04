@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Select, Input, Form, Typography } from 'antd';
+import { Select, Input, Form } from 'antd';
 import {
   useSettingsStore,
   selectSettings,
@@ -26,8 +26,6 @@ const SelectAlts: React.FC<SelectAltsProps> = ({
   disableClearable = false,
   error,
 }) => {
-  if (!scriptName || !name) return null;
-
   const settings = useSettingsStore(selectSettings);
   const _alts = useSettingsStore(selectAlts);
   const [alts, setAlts] = useState<string[]>([]);
@@ -35,6 +33,8 @@ const SelectAlts: React.FC<SelectAltsProps> = ({
   useEffect(() => {
     setAlts([..._alts.map((alt: any) => alt.username), '']);
   }, [_alts]);
+
+  if (!scriptName || !name) return null;
 
   const handleChange = (value: string) => {
     updateScriptSettings({

@@ -105,8 +105,6 @@ export function defaultRecordingConfig(inputs?: AutomationInput[]): PluginOption
   return [{ name: 'Replay Settings', options }];
 }
 
-const NO_MACROS = false && process.env.NODE_ENV !== 'development';
-
 let localMacroCache: MacroInfo[] | undefined | null;
 
 type LegacyMacroInfo = MacroInfo & {
@@ -407,7 +405,7 @@ class Macros_ {
     if (!fs.existsSync(this.macros_path)) {
       fs.mkdirSync(this.macros_path, { recursive: true });
     }
-    const files = NO_MACROS ? [] : fs.readdirSync(this.macros_path);
+    const files = fs.readdirSync(this.macros_path);
     // An info file `_<id>.json` lists a plugin when a matching code file
     // exists in any supported form (component/legacy `.json`, recording
     // `.recording.json`, or `.js`/`.ts`).

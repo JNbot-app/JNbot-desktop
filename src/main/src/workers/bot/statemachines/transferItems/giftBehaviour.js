@@ -1,4 +1,3 @@
-const StateMachine = require('../Statemachine');
 const { hasTradeableItem } = require('./transferUtil');
 
 const giftBehaviour = [
@@ -58,7 +57,7 @@ const giftBehaviour = [
   },
   {
     name: 'Depositing items',
-    when: ({bot, state}) =>
+    when: ({bot}) =>
       bot.getWindowTitle().includes(bot.transferItems.config.giftDepositWindowTitle),
     run: async ({bot, state}) => {
       let slots = [];

@@ -60,7 +60,7 @@ const Recording = () => {
         }
         setRecording(parseContent(data));
       });
-  }, [id]);
+  }, [id, navigate]);
 
   const formatTime = useMemo(
     () => (ms: number) => {

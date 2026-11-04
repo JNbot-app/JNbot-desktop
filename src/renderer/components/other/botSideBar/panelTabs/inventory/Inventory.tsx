@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Spin, Typography, theme } from 'antd';
 import PlayerInventory from './PlayerInventory';
 import InventoryRow from './InventoryRow';
@@ -57,7 +57,7 @@ const Inventory: React.FC<InventoryProps> = ({ botId }) => {
     }
   };
 
-  const handleKeyDown = (event: KeyboardEvent) => {
+  const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (
       event.target instanceof HTMLInputElement ||
       event.target instanceof HTMLTextAreaElement
@@ -91,7 +91,7 @@ const Inventory: React.FC<InventoryProps> = ({ botId }) => {
       }
       return;
     }
-  };
+  }, [botId]);
 
   useEffect(() => {
     setInventory(null);
@@ -117,7 +117,7 @@ const Inventory: React.FC<InventoryProps> = ({ botId }) => {
       window.removeEventListener('keydown', handleKeyDown);
       unsub();
     };
-  }, [botId]);
+  }, [botId, handleKeyDown]);
 
   const onHoverSlotChange = (slot: number | null) => {
     hoveredSlotRef.current = slot;

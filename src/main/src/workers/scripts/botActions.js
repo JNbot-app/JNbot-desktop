@@ -102,7 +102,6 @@ class BotActions {
       if (this.scriptSettings.email)
         bot.chat('/email ' + this.scriptSettings.email);
 
-      const server = global.appSettings.server || 'jartexnetwork';
       workerData.settings.alts.push({
         username: this.scriptSettings.username,
         jartexnetwork: {
@@ -144,22 +143,20 @@ class BotActions {
     }, 100);
   }
 
-  changePassword(username) {
-    return new Promise(async (resolve) => {
-      const alt = workerData.settings.alts?.find(
-        (x) => x.username === username,
-      );
-      const oldPassword = await getOrAskPassword(username);
-      if (!oldPassword) {
-        global.log(`No password found for ${username}`, 'error');
-        return resolve();
-      }
+  async changePassword(username) {
+    const alt = workerData.settings.alts?.find((x) => x.username === username);
+    const oldPassword = await getOrAskPassword(username);
+    if (!oldPassword) {
+      global.log(`No password found for ${username}`, 'error');
+      return;
+    }
+    return new Promise((resolve) => {
       const statemachine = new BotStatemachine(
         null,
         [
           {
             name: 'Resetting password',
-            shouldTrigger: (bot) => true,
+            shouldTrigger: () => true,
             action: async (bot) => {
               await bot.waitForTicks(20);
 

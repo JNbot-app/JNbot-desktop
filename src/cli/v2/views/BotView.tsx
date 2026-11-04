@@ -15,7 +15,6 @@ import {
   botCloseWindow,
   runBotControl,
 } from '../actions';
-import { getServerMeta } from '../../../common/serverInfo';
 
 interface BotViewProps {
   runtime: CliRuntime;
@@ -26,7 +25,6 @@ interface BotViewProps {
   onExitView: () => void;
 }
 
-const CLEAN_ANSI = /\x1b\[[0-9;]*m/g;
 
 export const BotView: React.FC<BotViewProps> = ({
   runtime,

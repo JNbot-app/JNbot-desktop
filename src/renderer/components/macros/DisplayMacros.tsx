@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Button, Empty, Input, Segmented, Spin, theme } from 'antd';
 import {
   AppstoreOutlined,
@@ -7,7 +6,6 @@ import {
   LoadingOutlined,
   PlusOutlined,
   SearchOutlined,
-  ShopOutlined,
 } from '@ant-design/icons';
 import {
   useSettingsStore,
@@ -28,7 +26,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 const Toolbar: React.FC<{ onCreate: () => void }> = ({ onCreate }) => {
   const ui = useSettingsStore(selectPluginsUi);
   const actions = usePluginActions();
-  const navigate = useNavigate();
   return (
     <div
       style={{

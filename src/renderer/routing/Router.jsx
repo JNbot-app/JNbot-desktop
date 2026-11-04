@@ -9,7 +9,6 @@ import {
   useLocation,
 } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
-import Footer from '../components/Footer';
 import Prompt from '../components/other/Prompt';
 import Popup from '../components/other/Popup';
 import SystemNotifications from '../components/other/SystemNotifications';

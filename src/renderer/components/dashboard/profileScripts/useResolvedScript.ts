@@ -37,6 +37,9 @@ export function useResolvedScript(
     return { info: cached, loading: !cached, error: null };
   });
 
+  /* oxlint-disable react-hooks/exhaustive-deps */
+  // Refetch only when the cache key or profile changes, not on script object identity.
+  /* oxlint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (infoOverride) {
       infoCache.set(key, infoOverride);
@@ -76,6 +79,8 @@ export function useResolvedScript(
       cancelled = true;
     };
   }, [key, profileId, infoOverride]);
+
+  /* oxlint-enable react-hooks/exhaustive-deps */  /* oxlint-enable react-hooks/exhaustive-deps */
 
   return state;
 }

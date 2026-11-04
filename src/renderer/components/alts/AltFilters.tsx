@@ -89,6 +89,17 @@ interface AltFiltersProps {
   onChange: (value: AdvancedFilters) => void;
 }
 
+// Options are scoped to the chosen gamemode, or the union across all of them.
+const collectScoped = (source: Map<string, Set<string>>, gamemode?: string | null) => {
+  const set = new Set<string>();
+  if (gamemode) {
+    source.get(gamemode)?.forEach((v) => set.add(v));
+  } else {
+    source.forEach((s) => s.forEach((v) => set.add(v)));
+  }
+  return [...set].sort().map((v) => ({ label: v, value: v }));
+};
+
 const FieldLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Typography.Text
     strong
@@ -137,23 +148,12 @@ const AltFilters: React.FC<AltFiltersProps> = ({ alts, value, onChange }) => {
     };
   }, [alts]);
 
-  // Options are scoped to the chosen gamemode, or the union across all of them.
-  const collectScoped = (source: Map<string, Set<string>>) => {
-    const set = new Set<string>();
-    if (value.gamemode) {
-      source.get(value.gamemode)?.forEach((v) => set.add(v));
-    } else {
-      source.forEach((s) => s.forEach((v) => set.add(v)));
-    }
-    return [...set].sort().map((v) => ({ label: v, value: v }));
-  };
-
   const gkitOptions = useMemo(
-    () => collectScoped(gkitsByGamemode),
+    () => collectScoped(gkitsByGamemode, value.gamemode),
     [gkitsByGamemode, value.gamemode],
   );
   const rankOptions = useMemo(
-    () => collectScoped(ranksByGamemode),
+    () => collectScoped(ranksByGamemode, value.gamemode),
     [ranksByGamemode, value.gamemode],
   );
 

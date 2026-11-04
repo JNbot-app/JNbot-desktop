@@ -2,7 +2,6 @@ import React from 'react';
 import {
   Button,
   Dropdown,
-  Progress,
   Skeleton,
   Space,
   Tooltip,
@@ -10,7 +9,6 @@ import {
   theme as antTheme,
 } from 'antd';
 import {
-  CaretDownOutlined,
   LogoutOutlined,
   StopOutlined,
   UnlockOutlined,
@@ -19,62 +17,16 @@ import {
 import { useSettingsStore, selectScripts } from '../../redux/settings';
 import Image from '../Image';
 import botActionHandler from './botActionHandler';
-import useBotInfo from './useBotInfo';
 import { BotInfo } from './types';
 
 interface BotHeaderProps {
   selectedBot: BotInfo;
 }
 
-interface StatBarProps {
-  label: string;
-  value: string;
-  percent: number;
-  color: string;
-}
-
-const StatBar: React.FC<StatBarProps> = ({ label, value, percent, color }) => (
-  <div style={{ minWidth: 0 }}>
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'baseline',
-        fontSize: 11,
-        letterSpacing: 0.6,
-        marginBottom: 4,
-      }}
-    >
-      <Typography.Text
-        type="secondary"
-        style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.8 }}
-      >
-        {label}
-      </Typography.Text>
-      <Typography.Text
-        style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}
-      >
-        {value}
-      </Typography.Text>
-    </div>
-    <Progress
-      percent={percent}
-      showInfo={false}
-      strokeColor={color}
-      railColor="rgba(255,255,255,0.06)"
-      strokeLinecap="round"
-      size={['100%', 6]}
-    />
-  </div>
-);
-
 const BotHeader: React.FC<BotHeaderProps> = ({ selectedBot }) => {
   const scripts = useSettingsStore(selectScripts);
-  const info = useBotInfo(selectedBot.botId);
   const { token } = antTheme.useToken();
 
-  const healthPct = clampPct(info.health, 20);
-  const hungerPct = clampPct(info.hunger, 20);
 
   return (
     <div
@@ -181,10 +133,5 @@ const BotHeader: React.FC<BotHeaderProps> = ({ selectedBot }) => {
     </div>
   );
 };
-
-function clampPct(value: number | undefined, max: number): number {
-  if (typeof value !== 'number') return 0;
-  return Math.min(100, Math.max(0, (value / max) * 100));
-}
 
 export default BotHeader;

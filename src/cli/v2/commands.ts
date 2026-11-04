@@ -260,9 +260,8 @@ export function createProgram(session?: EmbeddedCommandSession): Command {
     run((runtime) => exportProfile(runtime, id, file)));
 
   const settings = program.command('settings').description('Read or update the active profile settings');
-  settings.command('get [path]').action((settingPathOrCommand, maybeCommand) => {
+  settings.command('get [path]').action((settingPathOrCommand) => {
     const settingPath = typeof settingPathOrCommand === 'string' ? settingPathOrCommand : undefined;
-    const command = maybeCommand ?? settingPathOrCommand;
     return run((runtime) => settingGet(runtime, settingPath));
   });
   settings.command('set <path> <jsonValue>').action((settingPath, value) => run((runtime) => settingSet(runtime, settingPath, value)));

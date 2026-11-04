@@ -1,8 +1,6 @@
 import * as z from 'zod/v4';
-import type { McpBotTarget } from '../../../../common/mcp';
 import type { ClientPermissions } from '../../../../common/clientPermissions';
 import { pluginOptionSchemaArgument } from '../../../../common/pluginOptions';
-import { PLUGIN_AUTHORING_GUIDE } from '../../../../common/pluginAuthoringGuideSource';
 import { JNBOT_REFERENCE_SECTION_IDS } from '../../../../common/pluginMcpReferenceSource';
 import type McpManager from './McpManager';
 

@@ -284,7 +284,7 @@ function buildJoinTasks(): Task<JoinTargets>[] {
 
     {
       name: 'Bailing out (stuck)',
-      when: ({ state: state }) => (state.__join_stuck_counter ?? 0) > MAX_STUCK,
+      when: ({ state }) => (state.__join_stuck_counter ?? 0) > MAX_STUCK,
       run: ({ bot, state, machine }) => {
         state.__join_error = `${bot.username} could not reach ${state.joinOptions.gamemode}.`;
         global.log(state.__join_error, 'error');

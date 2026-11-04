@@ -52,7 +52,7 @@ class DeviceHandler extends EventEmitter {
 
     this.peerConnection = new PeerConnection(settings, clientEvents);
 
-    this.peerConnection.on('peer:connection', (data, socket) => {
+    this.peerConnection.on('peer:connection', (data, _socket) => {
       const peers =
         this.connectedPeers.get(data.device.id) ?? new Set<string>();
       if (data.peerId) peers.add(data.peerId);

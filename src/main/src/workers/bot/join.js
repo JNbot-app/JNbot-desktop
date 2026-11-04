@@ -7,8 +7,6 @@ const assert = require('assert');
 const addPathFinder = require('./pathFinderPlugin');
 const transferItems = require('./itemTransferV2');
 const { workerData } = require('worker_threads');
-const injectPacketDebugger = require('./extensions/packetDebugger.js');
-const nbt = require('prismarine-nbt');
 const { parseRawNbt } = require('./extensions/nbtParser');
 const botController = require('../lib/botController').default;
 const workerScript = require('../lib/workerScript').default;
@@ -28,7 +26,6 @@ const realisticMotionExtension = require('./extensions/realisticMotionExtension.
 const mouseExtension = require('./extensions/mouseExtension.js');
 const abilitiesExtension = require('./extensions/abilitiesExtension.js');
 const packetThreadExtension = require('./extensions/packetThreadExtension.js');
-let disabledPlugins = {};
 
 /** Built-in plugins applied to every bot. Built once so we don't recreate it
  *  on every join. The profile's bot extension is appended LAST at join time
@@ -74,12 +71,6 @@ async function joinServer(options = {}, scriptOptions = {}) {
 
     // proxy: {  url: "http://username:password@ip:port" }
   } = scriptOptions;
-
-  function debug(msg) {
-    if (verbose) {
-      global.log(msg);
-    }
-  }
 
   assert('username' in options, 'username is required');
 
@@ -159,7 +150,6 @@ async function joinServer(options = {}, scriptOptions = {}) {
     paused: false,
   });
 
-  let tried = 0;
   while (result.retry) {
     // Skipped / aborted before (or between) attempts: drop the placeholder bot
     // from the UI and stop — no point waiting in the join queue for it.

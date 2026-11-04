@@ -1,4 +1,3 @@
-const StateMachine = require('../Statemachine');
 const { hasTradeableItem } = require('./transferUtil');
 
 function hasAcceptedTrade({bot, state}) {
@@ -38,20 +37,6 @@ function tradeIsFull(bot, state) {
   return true;
 }
 
-function clickOnKey(bot, n, slot) {
-  return new Promise((resolve) => {
-    let i = 0;
-    let interval = setInterval(() => {
-      if (i >= n || !bot?.currentWindow) {
-        clearInterval(interval);
-        return resolve();
-      }
-      bot.clickWindow?.(slot, 0, 0);
-      i++;
-    });
-  });
-}
-
 function countTripwires(bot, startSlot) {
   if(!bot.currentWindow) return 0;
   let count = 0;
@@ -70,12 +55,13 @@ function sleep(x) {
 }
 
 function once(bot, eventName, timeout) {
-  return new Promise(async (r) => {
+  return new Promise((r) => {
     const end = (...args) => r(args);
     bot.once(eventName, end);
-    await bot.waitForTicks(timeout);
-    bot.removeListener(eventName, end);
-    r(true);
+    bot.waitForTicks(timeout).then(() => {
+      bot.removeListener(eventName, end);
+      r(true);
+    });
   });
 }
 
@@ -103,7 +89,7 @@ const tradeWithKeysBehaviour = [
   },
   {
     name: 'Mapping inventory slots',
-    when: ({bot, state}) =>
+    when: ({ state }) =>
       isNaN(state.__acceptSlot) ||
       isNaN(state.__keySlot) ||
       isNaN(state.__keyTypes),

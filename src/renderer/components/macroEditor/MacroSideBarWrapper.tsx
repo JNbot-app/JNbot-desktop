@@ -65,7 +65,7 @@ const MacroSidebarWrapper: React.FC = () => {
       }
       setMacroInfo(data.info);
     });
-  }, []);
+  }, [params.id, navigate, snackbar]);
 
   return (
     <Layout style={{ minHeight: '100vh' }}>

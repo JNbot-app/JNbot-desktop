@@ -64,8 +64,7 @@ const inject = (bot) => {
       keys = ['vote,10', 'rare,5', 'ultra,2', 'god,1'], // How many items it should click on each key  ("<keyType>,<amount>")
       forceTradeKeys = true, // Whether to force trade keys even when no other items are in player inventory
       timeout = null,
-      shiftClick = true, // Whether to shift click items into window (windowBehaviour only)
-      transferConfig = {}
+      shiftClick = true // Whether to shift click items into window (windowBehaviour only)
     } = options;
 
     assert(Array.isArray(ignore), 'Ignore must be an array');
@@ -74,7 +73,7 @@ const inject = (bot) => {
     ignore = new Set(ignore);
     filter = new Set(filter);
 
-    return new Promise(async (resolve) => {
+    return new Promise((resolve) => {
       function filterItems(item) {
         // Skip item if: item is null
         //              item is in ignore list

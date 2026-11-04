@@ -72,29 +72,10 @@ const CodeEditor: FC<CodeEditorProps> = ({
           editorRef.current?.revealLineInCenterIfOutsideViewport(line);
         },
       ),
-    [macroInfo.pluginId],
+    [macroInfo.pluginId, editorRef],
   );
 
-  useEffect(() => {
-    if (!macroInfo.pluginId) return;
-    const saveInterval = setInterval(() => saveScript(), 30000);
-    return () => {
-      clearInterval(saveInterval);
-      saveScript(true);
-    };
-  }, [macroInfo]);
-
-  const handleEditorChange: OnChange = (value) => {
-    editorDetails.current.needUpdate = true;
-    codeRef.current = value ?? '';
-    const model = editorRef.current?.getModel();
-    if (hasRuntimeMarker.current && model) {
-      hasRuntimeMarker.current = false;
-      monaco.editor.setModelMarkers(model, 'runtime', []);
-    }
-  };
-
-  const saveScript = (forced = false) => {
+  const saveScript = useCallback((forced = false) => {
     const { needUpdate, loaded, lastUpdated } = editorDetails.current;
     if (
       needUpdate &&
@@ -108,6 +89,25 @@ const CodeEditor: FC<CodeEditorProps> = ({
         pluginId: macroInfo.pluginId,
         code: { code: codeRef.current },
       });
+    }
+  }, [macroInfo.pluginId, codeRef, editorDetails]);
+
+  useEffect(() => {
+    if (!macroInfo.pluginId) return;
+    const saveInterval = setInterval(() => saveScript(), 30000);
+    return () => {
+      clearInterval(saveInterval);
+      saveScript(true);
+    };
+  }, [macroInfo, saveScript]);
+
+  const handleEditorChange: OnChange = (value) => {
+    editorDetails.current.needUpdate = true;
+    codeRef.current = value ?? '';
+    const model = editorRef.current?.getModel();
+    if (hasRuntimeMarker.current && model) {
+      hasRuntimeMarker.current = false;
+      monaco.editor.setModelMarkers(model, 'runtime', []);
     }
   };
 
@@ -136,7 +136,7 @@ const CodeEditor: FC<CodeEditorProps> = ({
         typescript.typescriptDefaults.addExtraLib(lib, libName),
       ];
     },
-    [macroInfo.scriptType],
+    [macroInfo.scriptType, editorRef, saveScript],
   );
 
   const editorLanguage =

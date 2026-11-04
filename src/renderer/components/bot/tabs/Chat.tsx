@@ -32,11 +32,12 @@ const Chat: React.FC<ChatProps> = ({ selectedBot, small }) => {
   const { token } = antTheme.useToken();
   const onChatClick = useChatClickHandler((text) => chatBarRef.current?.suggest(text));
 
+  const botId = selectedBot?.botId;
   useEffect(() => {
-    if (!selectedBot) return;
+    if (!botId) return;
     const push = (line: ChatLine) => chat.current.push({ id: nextId.current++, line });
     const unsub = botEvents.subscribe(
-      selectedBot.botId,
+      botId,
       'chat',
       (msg: ChatData) => {
         if ('messages' in msg && Array.isArray(msg.messages)) {
@@ -51,7 +52,7 @@ const Chat: React.FC<ChatProps> = ({ selectedBot, small }) => {
     );
     botActionHandler('chatPacket');
     return () => unsub();
-  }, [selectedBot?.botId]);
+  }, [botId]);
 
   const scrollToBottom = () => {
     const el = chatboxRef.current;

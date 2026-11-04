@@ -12,7 +12,6 @@ describe('Console and ConsoleHandler', () => {
   let tmpDir: string;
   let mockScriptHandler: any;
   let mockAppSettings: any;
-  let consoleHandler: ConsoleHandler;
   let consoleInstance: Console;
 
   beforeEach(() => {
@@ -34,7 +33,7 @@ describe('Console and ConsoleHandler', () => {
       })),
     };
 
-    consoleHandler = new ConsoleHandler(mockScriptHandler, 1, 'jartexnetwork');
+    new ConsoleHandler(mockScriptHandler, 1, 'jartexnetwork');
     consoleInstance = new Console(() => mockAppSettings);
   });
 

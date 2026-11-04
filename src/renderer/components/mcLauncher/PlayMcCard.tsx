@@ -4,7 +4,6 @@ import {
   Select,
   Space,
   Typography,
-  Button,
   theme as antTheme,
 } from 'antd';
 import {
@@ -112,12 +111,15 @@ const PlayMcCard: React.FC = () => {
     message,
   });
 
+  // Runs when accounts or selectedAccount change; the account updater is a new closure each render.
+  /* oxlint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (accounts.length > 0 && !selectedAccount) {
       updateSelectedAccount(accounts[0].username);
     }
   }, [accounts, selectedAccount]);
 
+  /* oxlint-enable react-hooks/exhaustive-deps */
   return (
     <>
       <Card

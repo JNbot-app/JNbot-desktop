@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Text, useApp, useInput, useStdout } from 'ink';
+import { Box, useApp, useInput, useStdout } from 'ink';
 import {
   deleteAlt,
   remoteAccessUrl,
@@ -83,6 +83,8 @@ export function CliApp({
 
   const width = stdout?.columns ?? 80;
   const height = stdout?.rows ?? 24;
+  // The snapshot is intentionally refreshed on every tick (`now`).
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
   const snapshot = useMemo(() => cliSnapshot(runtime), [runtime, now]);
   const profiles = runtime.handler.settings.getAvailableProfiles();
   const activeProfileKey = runtime.handler.getBootstrapRuntime().profileKey;
@@ -512,6 +514,7 @@ export function CliApp({
       }
       if (key.return && profiles[selectedProfile])
         showResult(
+          // eslint-disable-next-line react-hooks/rules-of-hooks -- CLI command, not a hook
           await useProfile(runtime, profiles[selectedProfile].server),
           `Using ${profiles[selectedProfile].data.name ?? profiles[selectedProfile].server}.`,
         );

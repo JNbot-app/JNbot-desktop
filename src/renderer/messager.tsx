@@ -170,7 +170,7 @@ function SocketHandler(): null {
     return () => {
       current = false;
     };
-  }, [selectedProfileKey]);
+  }, [selectedProfileKey, message]);
 
   useEffect(() => {
     const removeListeners: Array<() => void> = [];

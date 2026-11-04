@@ -1,5 +1,5 @@
 import React, { FC } from 'react';
-import { Tooltip, Switch, Typography, Form } from 'antd';
+import { Tooltip, Switch, Form } from 'antd';
 import {
   ScriptSettingProps,
   ScriptSettingsProps_Switch,

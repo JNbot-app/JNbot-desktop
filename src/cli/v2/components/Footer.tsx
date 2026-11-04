@@ -8,7 +8,6 @@ interface FooterProps {
 }
 
 export const Footer: React.FC<FooterProps> = ({
-  screen,
   width,
   paletteOpen = false,
 }) => {

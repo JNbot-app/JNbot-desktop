@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import { useSettingsStore, selectAppSettings } from '../../../redux/settings';
 
 interface RecordingPacket {

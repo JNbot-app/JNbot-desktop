@@ -38,6 +38,8 @@ import type { MacroInfo, MacroScriptType } from '../../../../main/src/types';
 
 const { Text } = Typography;
 
+const NO_MACROS: MacroInfo[] = [];
+
 interface MacrosState {
   loaded: boolean;
   list: MacroInfo[];
@@ -87,7 +89,7 @@ const ProfileActionPicker: FC<Props> = ({
   const { token } = theme.useToken();
   const navigate = useNavigate();
   const macros =
-    (useSettingsStore(selectMacros) as MacrosState | undefined)?.list ?? [];
+    (useSettingsStore(selectMacros) as MacrosState | undefined)?.list ?? NO_MACROS;
 
   const candidates = useMemo(
     () =>
