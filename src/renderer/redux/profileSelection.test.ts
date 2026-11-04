@@ -39,4 +39,12 @@ describe('profile selection persistence', () => {
     persistSelectedProfileKey('pikanetwork');
     expect(getSelectedProfileKey('donutsmp')).toBe('pikanetwork');
   });
+
+  it('tries the backend profile again in a new session', () => {
+    persistSelectedProfileKey('donutsmp');
+    clearSelectedProfileKey();
+    window.sessionStorage.clear();
+
+    expect(getSelectedProfileKey('jartexnetwork')).toBe('jartexnetwork');
+  });
 });

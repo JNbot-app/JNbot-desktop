@@ -115,6 +115,8 @@ class ClientEvents_ {
   readonly accessControl: AccessControl;
   readonly profileTransfer: ProfileTransfer;
   readonly shares: ShareService;
+  /** Settles once legacy servers had their chance to become official profiles. */
+  private readonly officialProfilesAdopted: Promise<void>;
   readonly instanceTransfer: InstanceTransferService;
   readonly mobileInstanceTransfer = new MobileInstanceTransferReceiver();
 
@@ -135,7 +137,7 @@ class ClientEvents_ {
       { settings, macros, profileTransfer: this.profileTransfer },
       (state) => global.send('shares', state),
     );
-    this.shares
+    this.officialProfilesAdopted = this.shares
       .adoptOfficialProfiles()
       .catch((error) => console.warn('Linking profiles to the marketplace failed', error));
     settings.on('profile:loaded', (profileKey: string) =>
@@ -202,6 +204,9 @@ class ClientEvents_ {
 
   async enableProfile(profileKey: string, originAddress?: Address) {
     this.accessControl.assertProfile(originAddress, profileKey);
+    // A migrating server has no profile until its marketplace install finishes.
+    if (this.settings.legacyServers.includes(profileKey))
+      await this.officialProfilesAdopted;
     const runtime = this.scriptHandler.enableProfile(profileKey);
     void this.scriptHandler.updateActiveIps(runtime.profileId).catch((error) =>
       console.warn('Failed to refresh active IPs', error),

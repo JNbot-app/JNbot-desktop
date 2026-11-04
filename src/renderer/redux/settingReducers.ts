@@ -311,8 +311,8 @@ export const updateAppSetting = (key: string, value: unknown) => {
  */
 export const switchServer = (id: string) => {
   if (!id) return;
-  const appSettings = useSettingsStore.getState().appSettings;
-  if (appSettings.server === id) return;
+  const { appSettings, selectedProfileKey } = useSettingsStore.getState();
+  if (selectedProfileKey === id) return;
   const nextAppSettings = { ...appSettings, server: id as ServerTypes };
   persistSelectedProfileKey(id);
   window.ipcRenderer.action('SET_DEFAULT_PROFILE', id);
