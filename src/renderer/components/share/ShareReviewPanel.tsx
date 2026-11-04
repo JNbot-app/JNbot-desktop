@@ -22,7 +22,7 @@ import ShareContents from './ShareContents';
 import ShareHeader from './ShareHeader';
 import ShareInstallCheck, { choiceKey } from './ShareInstallCheck';
 import shareRequest from './shareRequest';
-import { useOpenInstalled } from './useInstallShare';
+import { activateInstalled, useOpenInstalled } from './useInstallShare';
 import ShareReviewActions from './ShareReviewActions';
 import promptText from './promptText';
 
@@ -138,7 +138,7 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
   const confirmInstall = async () => {
     if (install && installState === 'installed') {
       closePanel();
-      openInstalled(install.localRef);
+      openInstalled(overview.kind, install.localRef);
       return;
     }
     setBusy('install');
@@ -149,7 +149,7 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
       `${overview.title} ${installState === 'none' ? 'installed' : 'updated'}`,
     );
     closePanel();
-    openInstalled(overview.kind, result.localRef);
+    activateInstalled(overview.kind, result.localRef);
   };
 
   /** Downloads the share if needed; shows the check first when something needs a look. */
