@@ -519,7 +519,6 @@ const SidebarContent: React.FC<{ children: React.ReactNode }> = ({
           <Content
             ref={contentRef}
             style={{
-              // Dock the side panel flush to the window's right edge.
               padding: '24px 8px',
               height: '100vh',
               overflow: 'auto',
