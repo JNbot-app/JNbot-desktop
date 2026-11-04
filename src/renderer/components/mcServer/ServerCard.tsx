@@ -1,6 +1,5 @@
 import React, { memo, type KeyboardEvent, type MouseEvent } from 'react';
 import {
-  Badge,
   Button,
   Card,
   Dropdown,
@@ -38,18 +37,17 @@ interface ServerCardProps extends ServerActions {
 const stateConfig: Record<
   MinecraftServerSummary['state'],
   {
-    status: 'default' | 'processing' | 'success' | 'warning' | 'error';
     tagColor: string;
     label: string;
   }
 > = {
-  installing: { status: 'processing', tagColor: 'processing', label: 'Installing' },
-  stopped: { status: 'default', tagColor: 'default', label: 'Stopped' },
-  starting: { status: 'processing', tagColor: 'processing', label: 'Starting' },
-  online: { status: 'success', tagColor: 'success', label: 'Online' },
-  stopping: { status: 'warning', tagColor: 'warning', label: 'Stopping' },
-  offline: { status: 'default', tagColor: 'default', label: 'Offline' },
-  error: { status: 'error', tagColor: 'error', label: 'Error' },
+  installing: { tagColor: 'processing', label: 'Installing' },
+  stopped: { tagColor: 'default', label: 'Stopped' },
+  starting: { tagColor: 'processing', label: 'Starting' },
+  online: { tagColor: 'success', label: 'Online' },
+  stopping: { tagColor: 'warning', label: 'Stopping' },
+  offline: { tagColor: 'default', label: 'Offline' },
+  error: { tagColor: 'error', label: 'Error' },
 };
 
 const sourceInfo = (source: MinecraftServerSummary['source']) => {
@@ -185,20 +183,17 @@ const ServerCard: React.FC<ServerCardProps> = memo(
               {source.icon}
             </div>
             <div style={{ minWidth: 0 }}>
-              <Flex align="center" gap={token.marginXXS}>
-                <Badge status={config.status} />
-                <Text
-                  strong
-                  ellipsis={{ tooltip: server.name }}
-                  style={{
-                    fontSize: token.fontSizeLG - 1,
-                    lineHeight: '22px',
-                    display: 'block',
-                  }}
-                >
-                  {server.name}
-                </Text>
-              </Flex>
+              <Text
+                strong
+                ellipsis={{ tooltip: server.name }}
+                style={{
+                  fontSize: token.fontSizeLG - 1,
+                  lineHeight: '22px',
+                  display: 'block',
+                }}
+              >
+                {server.name}
+              </Text>
               <Text
                 type="secondary"
                 style={{ fontSize: token.fontSizeSM - 1, display: 'block' }}

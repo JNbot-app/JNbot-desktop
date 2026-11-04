@@ -31,19 +31,6 @@ const iconFor = (p: MacroInfo) =>
     <ApiOutlined />
   );
 
-const Badges: React.FC<{ p: MacroInfo; running: boolean }> = memo(
-  ({ p, running }) => (
-    <>
-      {running && <Tag color="success">Running</Tag>}
-      {p.scriptType === 'action' && <Tag color="purple">Action</Tag>}
-      {p.language === 'js' && <Tag color="gold">JS</Tag>}
-      {p.language === 'ts' && <Tag color="geekblue">TS</Tag>}
-      {p.language === 'recording' && <Tag color="cyan">Recording</Tag>}
-     
-    </>
-  ),
-);
-
 type Props = {
   plugin: MacroInfo;
   viewMode: 'grid' | 'list';
@@ -175,7 +162,7 @@ const PluginCard: React.FC<Props> = ({ plugin, viewMode, updateAvailable }) => {
             {plugin.description || 'No description'}
           </Typography.Text>
         </div>
-        <Badges p={plugin} running={running} />
+        {running && <Tag color="success">Running</Tag>}
         {ActionBtns}
       </div>
     );
@@ -354,7 +341,7 @@ const PluginCard: React.FC<Props> = ({ plugin, viewMode, updateAvailable }) => {
               minWidth: 0,
             }}
           >
-            <Badges p={plugin} running={running} />
+            {running && <Tag color="success">Running</Tag>}
           </div>
         )}
         {ActionBtns}

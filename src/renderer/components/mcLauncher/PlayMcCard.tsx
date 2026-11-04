@@ -141,7 +141,7 @@ const PlayMcCard: React.FC = () => {
                 letterSpacing: '0.5px',
               }}
             >
-              Minecraft Launcher
+              Play Minecraft
             </Typography.Title>
             <AccountSelector
               accounts={accounts}

@@ -41,26 +41,24 @@ const Triggers = () => {
 
   return (
     <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-      <Flex align="flex-start" justify="space-between" gap={16} wrap>
-        <div>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            Triggers
-          </Typography.Title>
+      <Card
+        styles={{ body: { padding: 0 }, header: { fontWeight: 'normal' } }}
+        title={
           <Typography.Text type="secondary">
             React to bot events automatically. Triggers run on every matching
             bot while it is online.
           </Typography.Text>
-        </div>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => openTrigger()}
-        >
-          Add trigger
-        </Button>
-      </Flex>
-
-      <Card styles={{ body: { padding: 0 } }}>
+        }
+        extra={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => openTrigger()}
+          >
+            Add trigger
+          </Button>
+        }
+      >
         {triggers.length ? (
           triggers.map((trigger) => {
             const online = trigger.enabled

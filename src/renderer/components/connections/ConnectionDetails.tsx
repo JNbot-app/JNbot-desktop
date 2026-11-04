@@ -16,6 +16,7 @@ import {
   CopyOutlined,
   GlobalOutlined,
   MobileOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import type { Device, DeviceObj, JNbotServerStatus } from '../../../main/src/types';
 import useAppApi from '../../hooks/useAppApi';
@@ -165,18 +166,21 @@ const ConnectionDetails = ({
           />
 
           {showSecurityNotice && (
-            <div
+            <Flex
+              align="center"
+              gap={token.marginXS}
               style={{
-                background: token.colorFillAlter,
-                border: `1px solid ${token.colorBorderSecondary}`,
+                background: token.colorWarningBg,
+                border: `1px solid ${token.colorWarningBorder}`,
                 padding: `${token.paddingXS}px ${token.paddingSM}px`,
                 borderRadius: token.borderRadiusSM,
               }}
             >
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <WarningOutlined style={{ color: token.colorWarning }} />
+              <Text style={{ fontSize: 13 }}>
                 Anyone with this link can control JNbot. Only share it with devices you trust.
               </Text>
-            </div>
+            </Flex>
           )}
         </Flex>
       </Col>

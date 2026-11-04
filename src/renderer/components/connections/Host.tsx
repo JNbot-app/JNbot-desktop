@@ -126,7 +126,6 @@ const Host = () => {
             {isRunning ? (
               <Button
                 danger
-                type="primary"
                 icon={<PoweroffOutlined />}
                 loading={loading}
                 onClick={stop}

@@ -14,6 +14,19 @@
   src: url('./assets/Minecraftia-Regular.ttf') format('truetype');
 }
 
+body {
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Digits line up in columns and don't jitter while counting */
+.ant-table-cell,
+.ant-statistic-content,
+.ant-progress-text,
+.ant-tag {
+  font-variant-numeric: tabular-nums;
+}
+
 body,
 html {
   margin: 0;
@@ -273,7 +286,16 @@ html {
 
 .settings-tabs .ant-tabs-tabpane {
   overflow-y: auto;
-  padding: 8px 24px 24px;
+  padding: 20px 28px 24px;
+}
+
+.settings-section-title.ant-typography {
+  margin: 0 0 4px;
+  padding-right: 32px;
+}
+
+.settings-section-title--spaced.ant-typography {
+  margin-bottom: 16px;
 }
 
 .settings-list-row {
@@ -309,7 +331,7 @@ html {
 }
 
 .settings-list-item-control {
-  flex: 0 1 320px;
+  flex: 0 0 min(320px, 48%);
   width: min(320px, 48%);
   min-width: 180px;
 }
@@ -426,10 +448,6 @@ html {
 
 .card {
   padding: 1rem;
-}
-
-* :not(.editor-text *) {
-  font-family: 'IBM Plex Sans', sans-serif;
 }
 
 .MuiAutocomplete-root fieldset:hover {

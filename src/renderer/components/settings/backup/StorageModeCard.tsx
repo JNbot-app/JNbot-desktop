@@ -3,9 +3,10 @@ import {
   Avatar,
   Button,
   Card,
+  Dropdown,
   Flex,
   Input,
-  Modal,
+  Radio,
   Space,
   Spin,
   Tag,
@@ -20,6 +21,8 @@ import {
   SyncOutlined,
   UserOutlined,
   WarningOutlined,
+  MoreOutlined,
+  PlusOutlined,
   DisconnectOutlined,
 } from '@ant-design/icons';
 import useAppApi from 'renderer/hooks/useAppApi';
@@ -34,6 +37,54 @@ type Status = {
   accounts: { id: string; email?: string; name?: string }[];
   writes?: { saving: boolean; lastSavedAt?: number; lastError?: string };
   startupError?: string;
+};
+
+const StorageOption: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  active: boolean;
+  onSelect?: () => void;
+  action?: React.ReactNode;
+}> = ({ icon, title, description, active, onSelect, action }) => {
+  const { token } = theme.useToken();
+  const selectable = !active && !!onSelect;
+
+  return (
+    <div
+      role="radio"
+      aria-checked={active}
+      onClick={selectable ? onSelect : undefined}
+      style={{
+        flex: '1 1 260px',
+        minWidth: 240,
+        padding: token.padding,
+        borderRadius: token.borderRadiusLG,
+        background: active ? token.colorPrimaryBg : token.colorBgContainer,
+        border: `1px solid ${active ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
+        cursor: selectable ? 'pointer' : 'default',
+        transition: `all ${token.motionDurationMid}`,
+      }}
+    >
+      <Flex align="center" gap={token.marginSM}>
+        <Avatar
+          size={36}
+          shape="square"
+          icon={icon}
+          style={{ background: token.colorFillSecondary, color: token.colorText, flexShrink: 0 }}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Text strong style={{ display: 'block' }}>{title}</Text>
+          <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>{description}</Text>
+        </div>
+        {active ? (
+          <CheckCircleFilled style={{ color: token.colorSuccess, fontSize: token.fontSizeLG }} />
+        ) : (
+          action ?? <Radio checked={false} disabled={!onSelect} />
+        )}
+      </Flex>
+    </div>
+  );
 };
 
 const StorageModeCard: React.FC = () => {
@@ -166,6 +217,20 @@ const StorageModeCard: React.FC = () => {
   const isDropboxActive = status?.mode === 'dropbox';
   const displayError =
     error || status?.startupError || status?.writes?.lastError;
+  const accounts = status?.accounts ?? [];
+  const accountName = (account: Status['accounts'][number]) =>
+    account.name || account.email || account.id;
+
+  const syncStatus = status?.writes?.saving ? (
+    <Space size={6}>
+      <Spin size="small" />
+      <Text type="secondary">Saving changes…</Text>
+    </Space>
+  ) : status?.writes?.lastSavedAt ? (
+    <Text type="secondary">
+      Last synced {new Date(status.writes.lastSavedAt).toLocaleTimeString()}
+    </Text>
+  ) : null;
 
   return (
     <Card
@@ -179,281 +244,190 @@ const StorageModeCard: React.FC = () => {
           padding: token.paddingLG,
           display: 'flex',
           flexDirection: 'column',
-          gap: token.marginMD,
+          gap: token.marginLG,
         },
       }}
     >
       <div>
         <Title level={5} style={{ margin: 0 }}>
-          Active Storage Location
+          Storage location
         </Title>
-        <Text type="secondary" style={{ fontSize: 13 }}>
+        <Text type="secondary">
           Choose where your live profiles, accounts, and plugins are stored.
         </Text>
       </div>
 
-      <Flex gap={token.marginMD} wrap="wrap">
-        {/* Local Device Option Card */}
-        <div
-          onClick={!isLocalActive && !busy ? () => select('local') : undefined}
-          style={{
-            flex: '1 1 260px',
-            minWidth: 240,
-            padding: `${token.padding}px ${token.paddingLG}px`,
-            borderRadius: token.borderRadiusLG,
-            background: token.colorBgContainer,
-            border: `1px solid ${token.colorBorderSecondary}`,
-            cursor: !isLocalActive ? 'pointer' : 'default',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          <Flex
-            align="center"
-            justify="space-between"
-            style={{ marginBottom: 8 }}
-          >
-            <Space align="center" size={token.marginSM}>
-              <Avatar
-                size={36}
-                shape="square"
-                icon={<DesktopOutlined />}
-                style={{
-                  background: token.colorFillSecondary,
-                  color: token.colorText,
-                }}
-              />
-              <div>
-                <Text strong style={{ display: 'block', fontSize: 14 }}>
-                  Device Storage
-                </Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  Stored locally on this computer
-                </Text>
-              </div>
-            </Space>
-            {isLocalActive ? (
-              <Tag
-                color="success"
-                icon={<CheckCircleFilled />}
-                style={{ margin: 0 }}
-              >
-                ACTIVE
-              </Tag>
-            ) : (
-              <Button
-                size="small"
-                disabled={busy}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  select('local');
-                }}
-              >
-                Use Device
-              </Button>
-            )}
-          </Flex>
-        </div>
-
-        {/* Dropbox Option Card */}
-        <div
-          onClick={
-            !isDropboxActive && status?.connected && !busy
-              ? () => select('dropbox')
-              : undefined
+      <Flex gap={token.marginSM} wrap="wrap">
+        <StorageOption
+          icon={<DesktopOutlined />}
+          title="Device storage"
+          description="Stored locally on this computer"
+          active={isLocalActive}
+          onSelect={!busy ? () => select('local') : undefined}
+        />
+        <StorageOption
+          icon={<CloudSyncOutlined />}
+          title="Dropbox sync"
+          description="Continuous sync across devices"
+          active={isDropboxActive}
+          onSelect={
+            status?.connected && !busy ? () => select('dropbox') : undefined
           }
-          style={{
-            flex: '1 1 260px',
-            minWidth: 240,
-            padding: `${token.padding}px ${token.paddingLG}px`,
-            borderRadius: token.borderRadiusLG,
-            background: token.colorBgContainer,
-            border: `1px solid ${token.colorBorderSecondary}`,
-            cursor:
-              !isDropboxActive && status?.connected ? 'pointer' : 'default',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          <Flex align="center" justify="space-between" style={{ marginBottom: 8 }}>
-            <Space align="center" size={token.marginSM}>
-              <Avatar
-                size={36}
-                shape="square"
-                icon={<CloudSyncOutlined />}
-                style={{
-                  background:token.colorFillSecondary,
-                  color:  token.colorText,
-                }}
-              />
-              <div>
-                <Text strong style={{ display: 'block', fontSize: 14 }}>
-                  Dropbox Sync
-                </Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  Continuous sync across devices
-                </Text>
-              </div>
-            </Space>
-            {isDropboxActive ? (
-              <Tag
-                color="success"
-                icon={<CheckCircleFilled />}
-                style={{ margin: 0 }}
-              >
-                ACTIVE
-              </Tag>
-            ) : status?.connected ? (
-              <Button
-                size="small"
-                type="primary"
-                ghost
-                disabled={busy}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  select('dropbox');
-                }}
-              >
-                Use Dropbox
-              </Button>
-            ) : (
+          action={
+            status?.connected ? undefined : (
               <Button
                 size="small"
                 loading={busy}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void beginLogin();
-                }}
+                onClick={() => void beginLogin()}
               >
                 Connect
               </Button>
-            )}
-          </Flex>
-        </div>
+            )
+          }
+        />
       </Flex>
 
-      {status?.connected && (
-        <Flex justify="space-between" align="center" wrap="wrap" gap={token.marginSM}>
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            {isDropboxActive
-              ? 'Copy your Dropbox data to Device Storage.'
-              : 'Copy your device data to Dropbox.'}
-          </Text>
-          <Button size="small" icon={<SwapOutlined />} disabled={busy || !!verifier} onClick={transfer}>
-            {isDropboxActive ? 'Copy to device' : 'Copy to Dropbox'}
-          </Button>
-        </Flex>
-      )}
-
-      {/* Dropbox Login Form if auth is in progress */}
       {verifier && (
-        <div
+        <Flex
+          gap={token.marginXS}
+          align="center"
           style={{
             padding: token.paddingSM,
             borderRadius: token.borderRadius,
-            background: token.colorFillSecondary,
+            background: token.colorFillQuaternary,
             border: `1px dashed ${token.colorBorderSecondary}`,
           }}
         >
-          <Flex gap={8} align="center">
-            <Input
-              size="middle"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="Paste Dropbox authorization code"
-              style={{ flex: 1 }}
-            />
-            <Button
-              type="primary"
-              disabled={!code.trim()}
-              loading={busy}
-              onClick={() => void completeLogin()}
-            >
-              Finish sign-in
-            </Button>
-            <Button onClick={() => setVerifier('')}>Cancel</Button>
-          </Flex>
-        </div>
-      )}
-
-      {/* Active Dropbox Status & Actions Bar */}
-      {isDropboxActive && (
-        <Flex
-          justify="space-between"
-          align="center"
-          wrap="wrap"
-          gap={token.marginSM}
-          style={{
-            padding: `${token.paddingXS}px ${token.paddingMD}px`,
-            borderRadius: token.borderRadius,
-            background: token.colorFillQuaternary,
-            border: `1px solid ${token.colorBorderSecondary}`,
-          }}
-        >
-          <Space size={token.marginMD} wrap>
-            {status?.account && (
-              <Space size={6}>
-                <Avatar size={20} icon={<UserOutlined />} />
-                <Text style={{ fontSize: 13 }}>
-                  {status.account.name ||
-                    status.account.email ||
-                    status.account.id}
-                </Text>
-              </Space>
-            )}
-            {status?.writes?.saving ? (
-              <Space size={6}>
-                <Spin size="small" />
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  Saving changes…
-                </Text>
-              </Space>
-            ) : status?.writes?.lastSavedAt ? (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                Last synced {new Date(status.writes.lastSavedAt).toLocaleTimeString()}
-              </Text>
-            ) : null}
-          </Space>
-
-          <Space size={token.marginXS}>
-            <Button
-              size="small"
-              icon={<SyncOutlined />}
-              loading={busy}
-              onClick={() => void saveNow()}
-            >
-              Save now
-            </Button>
-          </Space>
+          <Input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="Paste Dropbox authorization code"
+            style={{ flex: 1 }}
+          />
+          <Button
+            type="primary"
+            disabled={!code.trim()}
+            loading={busy}
+            onClick={() => void completeLogin()}
+          >
+            Finish sign-in
+          </Button>
+          <Button onClick={() => setVerifier('')}>Cancel</Button>
         </Flex>
       )}
 
-      <Flex justify="space-between" align="center">
-        <Text strong>Dropbox accounts</Text>
-        <Button size="small" disabled={busy || !!verifier} onClick={() => void beginLogin()}>Add account</Button>
-      </Flex>
-      {(status?.accounts ?? []).map((account) => {
-        const active = isDropboxActive && status?.account?.id === account.id;
-        return (
-          <Flex key={account.id} justify="space-between" align="center" wrap="wrap" gap={token.marginSM}>
-            <Space size={6}>
-              <Avatar size={20} icon={<UserOutlined />} />
-              <Text>{account.name || account.email || account.id}</Text>
-              {active && <Tag color="success">ACTIVE</Tag>}
-            </Space>
-            <Space size={token.marginXS}>
-              {!active && <Button size="small" disabled={busy} onClick={() => select('dropbox', account.id)}>Use</Button>}
-              {!active && <Button size="small" type="text" danger icon={<DisconnectOutlined />} disabled={busy} onClick={() => disconnect(account.id)}>Unlink</Button>}
-            </Space>
+      {accounts.length > 0 && (
+        <Flex vertical gap={token.marginXS}>
+          <Flex justify="space-between" align="center">
+            <Text strong>Dropbox accounts</Text>
+            <Button
+              size="small"
+              type="text"
+              icon={<PlusOutlined />}
+              disabled={busy || !!verifier}
+              onClick={() => void beginLogin()}
+            >
+              Add account
+            </Button>
           </Flex>
-        );
-      })}
+          <div
+            style={{
+              borderRadius: token.borderRadiusLG,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              background: token.colorBgContainer,
+            }}
+          >
+            {accounts.map((account, index) => {
+              const active =
+                isDropboxActive && status?.account?.id === account.id;
+              return (
+                <Flex
+                  key={account.id}
+                  justify="space-between"
+                  align="center"
+                  gap={token.marginSM}
+                  style={{
+                    padding: `${token.paddingSM}px ${token.padding}px`,
+                    borderTop:
+                      index > 0
+                        ? `1px solid ${token.colorBorderSecondary}`
+                        : undefined,
+                  }}
+                >
+                  <Space size={token.marginXS}>
+                    <Avatar size={24} icon={<UserOutlined />} />
+                    <Text strong>{accountName(account)}</Text>
+                    {active && <Tag color="success" style={{ margin: 0 }}>Active</Tag>}
+                  </Space>
+                  {active ? (
+                    <Space size={token.marginSM}>
+                      {syncStatus}
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<SyncOutlined />}
+                        loading={busy}
+                        onClick={() => void saveNow()}
+                      >
+                        Save now
+                      </Button>
+                    </Space>
+                  ) : (
+                    <Dropdown
+                      trigger={['click']}
+                      disabled={busy}
+                      menu={{
+                        items: [
+                          { key: 'use', label: 'Use this account' },
+                          {
+                            key: 'unlink',
+                            label: 'Unlink',
+                            danger: true,
+                            icon: <DisconnectOutlined />,
+                          },
+                        ],
+                        onClick: ({ key }) =>
+                          key === 'use'
+                            ? select('dropbox', account.id)
+                            : disconnect(account.id),
+                      }}
+                    >
+                      <Button
+                        size="small"
+                        type="text"
+                        aria-label="Account actions"
+                        icon={<MoreOutlined />}
+                      />
+                    </Dropdown>
+                  )}
+                </Flex>
+              );
+            })}
+          </div>
+          {status?.connected && (
+            <Flex justify="space-between" align="center" wrap="wrap" gap={token.marginSM}>
+              <Text type="secondary">
+                {isDropboxActive
+                  ? 'Replace Device Storage with your Dropbox data.'
+                  : 'Replace your Dropbox data with this device’s data.'}
+              </Text>
+              <Button
+                size="small"
+                icon={<SwapOutlined />}
+                disabled={busy || !!verifier}
+                onClick={transfer}
+              >
+                {isDropboxActive ? 'Copy to device' : 'Copy to Dropbox'}
+              </Button>
+            </Flex>
+          )}
+        </Flex>
+      )}
 
-      {/* Subtle Error Display */}
       {displayError && (
         <Flex align="center" gap={6} style={{ color: token.colorError }}>
           <WarningOutlined />
-          <Text type="danger" style={{ fontSize: 13 }}>
-            {displayError}
-          </Text>
+          <Text type="danger">{displayError}</Text>
         </Flex>
       )}
     </Card>
