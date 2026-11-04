@@ -5,6 +5,17 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # Patched with patch-package; update together with patches/.
+      - dependency-name: mineflayer
+      - dependency-name: minecraft-protocol
+      - dependency-name: prismarine-chat
+      - dependency-name: werift
+      # Deep imports need migrating first.
+      - dependency-name: monaco-editor
+      # Ink 8 requires React 19.3+.
+      - dependency-name: ink
+        update-types: [version-update:semver-major]
     groups:
       minor-and-patch:
         update-types: [minor, patch]
