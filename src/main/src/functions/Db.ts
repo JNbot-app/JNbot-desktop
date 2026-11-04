@@ -15,11 +15,9 @@ class Db_ implements MacroDatabase {
   }
 
   async connect() {
-    // No-op: MongoDB is no longer used
   }
 
   async createUser() {
-    // No-op: user persistence is handled by activity analytics
   }
 
   async signin() {

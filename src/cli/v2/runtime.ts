@@ -75,7 +75,6 @@ export async function createCliRuntime(host: RuntimeHost = {}): Promise<CliRunti
   const uid = generateUID();
   const errorHandler = new ErrorHandler(uid);
   const activityTracker = new MixpanelActivityTracker();
-  // This runtime deliberately has no MongoDB dependency; installed macros use disk.
   const db: MacroDatabase = {
     user: null,
     addActivity: (activity) => activityTracker.addActivity(activity),

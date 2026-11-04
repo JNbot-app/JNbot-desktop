@@ -90,7 +90,7 @@ owning CLI stops its scripts, bots, and remote access.
 | `src/renderer` | React + Ant Design UI |
 | `src/cli` | Headless CLI |
 | `minecraft-mods` | Fabric mod used by the JNbot client |
-| `cloud` | Cloudflare relay for remote access |
+| `cloud` | Cloudflare relay |
 | `docs` | Plugin docs and architecture decision records |
 | `examples` | Example plugins and profile UI extensions |
 
