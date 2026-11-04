@@ -7,6 +7,9 @@ const { mapToPng, MAP_SIZE } = require('./mapImage');
 
 const MAX_MAPS = 64;
 const MAP_PUBLISH_MS = 250;
+// Vanilla closes the sign editor beyond the block interaction range (4.5) + 4
+const SIGN_EDIT_RANGE = 8.5;
+const EYE_HEIGHT = 1.62;
 // Click actions the UI performs itself (they need the user's clipboard/browser/chat bar)
 const CLIENT_ACTIONS = new Set([
   'open_url',
@@ -51,6 +54,7 @@ function toNbt(value) {
 function attachScreenPrompts(bot, publish) {
   let prompt = null; // { kind: 'sign' | 'book' | 'dialog', ... }
   let dialog = null; // Server-side half of an open dialog: actions, inputs, after_action
+  let signPlaced = false; // The open sign editor edits a real sign block, not a temporary one
   const dialogRegistry = []; // Synced `minecraft:dialog` registry, index = network id
   const maps = new Map(); // map id -> { colors, version }
   let mapImage = { id: null, version: -1, uri: null };
@@ -78,9 +82,11 @@ function attachScreenPrompts(bot, publish) {
   // -------------------- Sign ------------------ \\
   function onOpenSign({ location, isFrontText = true }) {
     const position = new Vec3(location.x, location.y, location.z);
+    const block = bot.blockAt(position);
+    signPlaced = !!block?.getSignText;
     let text = '';
     try {
-      text = bot.blockAt(position)?.getSignText?.()[isFrontText ? 0 : 1] ?? '';
+      text = block?.getSignText?.()[isFrontText ? 0 : 1] ?? '';
     } catch {}
     const lines = text.split('\n');
     setPrompt({
@@ -107,6 +113,18 @@ function attachScreenPrompts(bot, publish) {
       text,
       !front,
     );
+  }
+
+  /** Vanilla's per-tick validity check: the editor closes once the sign is gone or out of reach. */
+  function checkSign() {
+    if (prompt?.kind !== 'sign') return;
+    const { x, y, z } = prompt.position;
+    const block = bot.blockAt(new Vec3(x, y, z));
+    const removed = signPlaced && block && !block.getSignText;
+    const eye = bot.entity.position.offset(0, EYE_HEIGHT, 0);
+    const tooFar =
+      eye.distanceTo(new Vec3(x + 0.5, y + 0.5, z + 0.5)) > SIGN_EDIT_RANGE;
+    if (removed || tooFar) clear();
   }
 
   // -------------------- Book ------------------ \\
@@ -390,17 +408,19 @@ function attachScreenPrompts(bot, publish) {
   // -------------------- Lifecycle ------------------ \\
   /** Closes the open prompt the way vanilla does when the screen is left. */
   function closePrompt() {
-    if (prompt?.kind === 'sign') updateSign(prompt.lines);
-    else if (prompt?.kind === 'dialog') dialogAction({ button: -1 });
-    else if (prompt) setPrompt(null);
+    if (prompt?.kind === 'dialog') dialogAction({ button: -1 });
+    else clear();
   }
 
+  /** Vanilla sends the sign text whenever the editor screen goes away, whatever closed it. */
   function clear() {
-    if (prompt) setPrompt(null);
+    if (prompt?.kind === 'sign') updateSign(prompt.lines);
+    else if (prompt) setPrompt(null);
   }
 
   const listeners = {
     open_sign_entity: onOpenSign,
+    close_window: clear,
     open_book: onOpenBook,
     registry_data: onRegistryData,
     show_dialog: onShowDialog,
@@ -411,12 +431,14 @@ function attachScreenPrompts(bot, publish) {
     bot._client.on(packet, listener);
   bot.on('windowOpen', clear);
   bot.on('respawn', clear);
+  bot.on('physicsTickEnd', checkSign);
 
   function dispose() {
     for (const [packet, listener] of Object.entries(listeners))
       bot._client.removeListener(packet, listener);
     bot.removeListener('windowOpen', clear);
     bot.removeListener('respawn', clear);
+    bot.removeListener('physicsTickEnd', checkSign);
     clearTimeout(mapTimer);
     maps.clear();
   }

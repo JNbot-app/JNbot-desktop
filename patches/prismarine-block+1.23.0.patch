@@ -1,0 +1,23 @@
+diff --git a/node_modules/prismarine-block/blockEntity.js b/node_modules/prismarine-block/blockEntity.js
+index d435eac..f2ed504 100644
+--- a/node_modules/prismarine-block/blockEntity.js
++++ b/node_modules/prismarine-block/blockEntity.js
+@@ -72,12 +72,17 @@ function signPC (registry) {
+     block.entity.value[side].value.messages.value.value = messages
+   }
+ 
++  // 1.21.5+ stores lines as text components: a plain string, or a compound when any line is styled
++  function componentLineToString (line) {
++    return typeof line === 'string' ? line : new ChatMessage(nbt.simplify(nbt.comp(line))).toString()
++  }
++
+   function getMultiSideSignText (block, side) {
+     if (!block.entity) return ''
+     const messages = block.entity?.value?.[side]?.value?.messages?.value?.value
+     if (!messages) return ''
+     return noMoreJson
+-      ? messages.join('\n')
++      ? messages.map(componentLineToString).join('\n')
+       : messages.map(text => {
+         const parsed = JSON.parse(text)
+         return typeof parsed === 'string'
