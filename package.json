@@ -109,6 +109,7 @@
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
       "gatekeeperAssess": false,
+      "signIgnore": "\\.(gz|pak|png|icns|ico|wasm|nib|dat|bin|asar)$",
       "extraResources": [
         {
           "from": "./assets/needle/darwin-${arch}",
