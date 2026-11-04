@@ -1,4 +1,5 @@
 const _eval = require('eval');
+const { Vec3 } = require('vec3');
 const { default: snapshotLog, logLine, MAX_LOG_BYTES } = require('../../compiler/serializer');
 const node_globals = {
   setTimeout,
@@ -55,6 +56,7 @@ async function runJsBotCode({ code, bot, onLog, timeoutMs }) {
         'bot_code',
         {
           bot,
+          Vec3,
           console: {
             log: (...data) => terminalOutput('info', data),
             error: (...data) => terminalOutput('error', data),
