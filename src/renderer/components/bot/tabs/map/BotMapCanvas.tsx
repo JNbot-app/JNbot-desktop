@@ -122,6 +122,8 @@ const BotMapCanvas = forwardRef<BotMapCanvasRef, { version: string; palette: Map
       [],
     );
 
+    // Create the map once on mount; later palette changes are applied by the effect below.
+    /* oxlint-disable react-hooks/exhaustive-deps */
     useLayoutEffect(() => {
       if (!canvasRef.current) return;
       const map = new WorldMap(canvasRef.current, version, palette);
@@ -134,9 +136,10 @@ const BotMapCanvas = forwardRef<BotMapCanvasRef, { version: string; palette: Map
       };
     }, []);
 
+    /* oxlint-enable react-hooks/exhaustive-deps */
     useLayoutEffect(() => {
       mapRef.current?.setPalette(palette);
-    }, [palette.player, palette.mob, palette.outline]);
+    }, [palette]);
 
     const handleContextMenu = (event: React.MouseEvent) => {
       event.preventDefault();

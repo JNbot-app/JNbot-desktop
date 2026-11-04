@@ -1,4 +1,3 @@
-const StateMachine = require('../Statemachine');
 const {
   hasTradeableItem,
   hasAcceptedTrade,
@@ -30,16 +29,6 @@ function sleep(x){
   return new Promise(resolve => setTimeout(resolve, x));
 }
 
-function once(bot,eventName, timeout) {
-  return new Promise(async (r) => {
-    const end = (...args) => r(args);
-    bot.once(eventName, end);
-    await bot.waitForTicks(timeout);
-    bot.removeListener(eventName, end);
-    r(true);
-  });
-}
-
 const tradeBehaviour = [
   {
     name: 'Opening trade window',
@@ -63,7 +52,7 @@ const tradeBehaviour = [
   },
   {
     name: 'Searching for accept slot',
-    when: ({bot, state}) => isNaN(state.__acceptSlot),
+    when: ({ state }) => isNaN(state.__acceptSlot),
     run: async ({bot, state}) => {
       for (let i = 0; i < bot.currentWindow.inventoryStart; i += 9) {
         for (let j = 0; j < 4; j++) {

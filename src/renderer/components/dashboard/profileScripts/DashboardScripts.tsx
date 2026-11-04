@@ -7,7 +7,7 @@ import {
 } from '../../../redux/settings';
 import { sortScripts } from '../../../../common/profileScripts';
 import DashboardScriptCard from './DashboardScriptCard';
-import { Divider, theme, Typography } from 'antd';
+import SectionHeading from '../SectionHeading';
 import DashboardPinnedScripts from './DashboardPinnedScripts';
 import OnboardingHint from '../../intro/OnboardingHint';
 
@@ -17,8 +17,6 @@ import OnboardingHint from '../../intro/OnboardingHint';
  * of the profile wizard for how the list is built.
  */
 const DashboardScripts: FC = () => {
-  const { token } = theme.useToken();
-
   const profile = useSettingsStore(selectJNDataByServer);
   const settings = useSettingsStore(selectSettings);
   const { list } = useSettingsStore(selectMacros);
@@ -52,25 +50,13 @@ const DashboardScripts: FC = () => {
 
   return (
     <>
-      <Typography.Title
-        level={2}
-        style={{
-          fontWeight: 600,
-          fontSize: '1.7em',
-          color: token.colorPrimaryText,
-          paddingTop: '1rem',
-        }}
-      >
-        Scripts
-      </Typography.Title>
-      <Divider style={{ marginBottom: '2rem', marginTop: 0 }} />
+      <SectionHeading>Scripts</SectionHeading>
       <div
         ref={listRef}
         style={{
-          display: 'flex',
+          display: 'grid',
           gap: '1rem',
-          flexWrap: 'wrap',
-          justifyContent: 'flex-start',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
         }}
       >
         {scripts.map((s) => (

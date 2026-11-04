@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, Tabs } from 'antd';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Modal, Tabs, Typography } from 'antd';
 import type { TabsProps } from 'antd';
 import { MdDns, MdStorage } from 'react-icons/md';
 import { useLocation } from 'react-router-dom';
@@ -23,7 +23,27 @@ interface SettingsModalProps {
   defaultTab?: string;
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab }) => {
+const Section: React.FC<{
+  title: string;
+  spaced?: boolean;
+  children: React.ReactNode;
+}> = ({ title, spaced, children }) => (
+  <>
+    <Typography.Title
+      level={4}
+      className={`settings-section-title${spaced ? ' settings-section-title--spaced' : ''}`}
+    >
+      {title}
+    </Typography.Title>
+    {children}
+  </>
+);
+
+const SettingsModal: React.FC<SettingsModalProps> = ({
+  open,
+  onClose,
+  defaultTab,
+}) => {
   const { setTheme, setLanguage } = useApp();
   const location = useLocation();
   const appSettings = useSettingsStore(selectAppSettings);
@@ -32,7 +52,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   const canChangeGlobalSettings = !window.web || canChangeGlobal;
   const [activeTab, setActiveTab] = useState(() => {
     if (defaultTab) return defaultTab;
-    if (location.pathname === '/profiles' || location.search.includes('tab=profiles')) {
+    if (
+      location.pathname === '/profiles' ||
+      location.search.includes('tab=profiles')
+    ) {
       return 'profiles';
     }
     return window.web ? 'bot' : 'general';
@@ -56,28 +79,32 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   }, [open, defaultTab, location.pathname, location.search]);
 
   const settingsSchema = useMemo(
-    () => getSettingsSchema()
-      .map((tab) => ({
-        ...tab,
-        settings: window.web
-          ? tab.settings.filter(
-            (setting) => setting.profileSpecific || canChangeGlobalSettings,
-          )
-          : tab.settings,
-      }))
-      .filter((tab) => tab.settings.length > 0),
+    () =>
+      getSettingsSchema()
+        .map((tab) => ({
+          ...tab,
+          settings: window.web
+            ? tab.settings.filter(
+                (setting) => setting.profileSpecific || canChangeGlobalSettings,
+              )
+            : tab.settings,
+        }))
+        .filter((tab) => tab.settings.length > 0),
     [canChangeGlobalSettings],
   );
   const profileName =
     activeServerMeta?.name ?? activeServerMeta?.id ?? 'this profile';
 
-  const changeSetting = ({ key, value }: { key: string; value: any }) => {
-    if (key === 'theme') setTheme(value);
-    else if (key === 'locale') setLanguage(value);
-    else if (key === 'server') return switchServer(value);
+  const changeSetting = useCallback(
+    ({ key, value }: { key: string; value: any }) => {
+      if (key === 'theme') setTheme(value);
+      else if (key === 'locale') setLanguage(value);
+      else if (key === 'server') return switchServer(value);
 
-    updateAppSetting(key, value);
-  };
+      updateAppSetting(key, value);
+    },
+    [setTheme, setLanguage],
+  );
 
   const items: TabsProps['items'] = useMemo(() => {
     const schemaTabs: TabsProps['items'] = settingsSchema.map((tab) => ({
@@ -85,18 +112,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
       icon: <tab.icon aria-hidden style={{ fontSize: '1.1em' }} />,
       label: tab.name,
       children: (
-        <div className="settings-list">
-          {tab.settings.map((setting: SettingDef) => (
-            <div className="settings-list-row" key={setting.key}>
-              <SettingListItem
-                changeSetting={changeSetting}
-                value={appSettings[setting.key]}
-                setting={setting}
-                profileLabel={profileName}
-              />
-            </div>
-          ))}
-        </div>
+        <Section title={tab.name}>
+          <div className="settings-list">
+            {tab.settings.map((setting: SettingDef) => (
+              <div className="settings-list-row" key={setting.key}>
+                <SettingListItem
+                  changeSetting={changeSetting}
+                  value={appSettings[setting.key]}
+                  setting={setting}
+                  profileLabel={profileName}
+                />
+              </div>
+            ))}
+          </div>
+        </Section>
       ),
     }));
 
@@ -113,7 +142,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
       key: 'storage',
       icon: <MdStorage aria-hidden style={{ fontSize: '1.1em' }} />,
       label: 'Storage',
-      children: <BackupTab />,
+      children: (
+        <Section title="Storage" spaced>
+          <BackupTab />
+        </Section>
+      ),
     };
 
     const copy = [...schemaTabs];
@@ -126,7 +159,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
 
     copy.push(storageTab);
     return copy;
-  }, [settingsSchema, appSettings, profileName, onClose]);
+  }, [settingsSchema, appSettings, profileName, onClose, changeSetting]);
 
   return (
     <Modal
@@ -147,7 +180,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
         activeKey={activeTab}
         onChange={setActiveTab}
         items={items}
-        styles={{ content: { paddingTop: '3rem' } }}
       />
     </Modal>
   );

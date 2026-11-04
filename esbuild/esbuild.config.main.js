@@ -1,8 +1,6 @@
 const esbuild = require('esbuild');
-const { copy } = require('esbuild-plugin-copy');
 const progress = require('esbuild-plugin-progress');
 
-const fs = require('fs');
 const path = require('path');
 const copyEsbuildWasm = require('./copyEsbuildWasm');
 const copyWasmParser = require('./copyWasmParser');

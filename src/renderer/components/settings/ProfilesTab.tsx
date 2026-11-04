@@ -472,7 +472,7 @@ const ProfilesTab: React.FC<ProfilesTabProps> = ({ onNavigate }) => {
         align="center"
         gap={token.marginSM}
         wrap="wrap"
-        style={{ marginBottom: token.marginLG }}
+        style={{ marginBottom: token.marginLG, paddingRight: token.sizeXL }}
       >
         <div style={{ minWidth: 0 }}>
           <Title level={4} style={{ margin: 0 }}>

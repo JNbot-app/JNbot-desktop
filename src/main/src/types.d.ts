@@ -842,7 +842,7 @@ export interface Window {
 export type LaunchWindowOptions = {
   name: string;
   windowID: string;
-  options?: Object;
+  options?: object;
   subDir?: string;
   url?: string;
   external?: boolean;

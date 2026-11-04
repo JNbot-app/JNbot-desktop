@@ -70,11 +70,11 @@ const MinecraftProjectPanel = ({
           });
 
     void request
-      .then((next: Project | MinecraftServerPluginProject) => {
+      .then((loaded: Project | MinecraftServerPluginProject) => {
         if (cancelled) return;
-        setProject(next);
-        if ('versions' in next && Array.isArray(next.versions)) {
-          const versions = next.versions as MinecraftServerPluginVersion[];
+        setProject(loaded);
+        if ('versions' in loaded && Array.isArray(loaded.versions)) {
+          const versions = loaded.versions as MinecraftServerPluginVersion[];
           setSelectedVersionId(
             data.kind === 'server-plugin' && data.installedVersionId
               ? data.installedVersionId

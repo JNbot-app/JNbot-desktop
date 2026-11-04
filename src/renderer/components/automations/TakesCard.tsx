@@ -87,7 +87,7 @@ export default function TakesCard({
                 {take.file === replayTake && (
                   <Tag
                     color="processing"
-                    bordered={false}
+                    variant="filled"
                     style={{ margin: 0 }}
                   >
                     Replays
@@ -95,7 +95,7 @@ export default function TakesCard({
                 )}
                 {take.partial && (
                   <Tooltip title="Recorded before blocks were fully captured, so the AI can't see e.g. how grown a crop is. Record it again for better results.">
-                    <Tag color="warning" bordered={false} style={{ margin: 0 }}>
+                    <Tag color="warning" variant="filled" style={{ margin: 0 }}>
                       Old
                     </Tag>
                   </Tooltip>

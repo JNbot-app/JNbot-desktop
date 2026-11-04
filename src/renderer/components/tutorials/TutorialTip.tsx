@@ -60,7 +60,7 @@ const TutorialTip = forwardRef<any, TutorialTipProps>(
       ) {
         setUpdate(false);
       }
-    }, [currTutorial]);
+    }, [currTutorial, step, tutorial, update]);
 
     const next = (e?: React.MouseEvent<HTMLElement>) => {
       if (e?.target) {
@@ -86,7 +86,7 @@ const TutorialTip = forwardRef<any, TutorialTipProps>(
           setUpdate(true);
         }, 500);
       }
-    }, [step, update]);
+    }, [step, update, tutorial, invisible, currTutorial.step, currTutorial.tutorial]);
 
     if (
       currTutorial.step !== step ||

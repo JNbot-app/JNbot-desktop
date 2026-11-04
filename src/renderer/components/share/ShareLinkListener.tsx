@@ -8,6 +8,9 @@ import { useOpenShareLink } from './useShareTarget';
 const ShareLinkListener: React.FC = () => {
   const openShareLink = useOpenShareLink();
 
+  /* oxlint-disable react-hooks/exhaustive-deps */
+  // useOpenShareLink returns a new function each render; keep the listener registered once.
+  /* oxlint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (window.web) return;
     const pull = () =>
@@ -17,6 +20,8 @@ const ShareLinkListener: React.FC = () => {
     pull();
     return window.ipcRenderer.on('share-link', pull);
   }, []);
+
+  /* oxlint-enable react-hooks/exhaustive-deps */  /* oxlint-enable react-hooks/exhaustive-deps */
 
   return null;
 };

@@ -3,6 +3,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Dropdown,
   Flex,
   Form,
   Input,
@@ -21,6 +22,7 @@ import {
   CloudUploadOutlined,
   CopyOutlined,
   DeleteOutlined,
+  MoreOutlined,
   ReloadOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
@@ -228,7 +230,7 @@ const CloudBackupCard: FC = () => {
     <Card
       variant="borderless"
       style={{
-        background: withAlpha(token.colorBgElevated, 0.4),
+        background: token.colorBgElevated,
         border: `1px solid ${token.colorBorderSecondary}`,
       }}
       styles={{
@@ -236,88 +238,100 @@ const CloudBackupCard: FC = () => {
           padding: token.paddingLG,
           display: 'flex',
           flexDirection: 'column',
-          gap: token.marginMD,
+          gap: token.marginLG,
         },
       }}
     >
-      <div>
-        <Title level={5} style={{ margin: 0 }}>
-          JNbot Cloud
-        </Title>
-        <Text type="secondary" style={{ fontSize: 13 }}>
-          Store encrypted snapshot stored remotely for backup.
-        </Text>
-      </div>
+      <Flex justify="space-between" align="flex-start" wrap="wrap" gap={token.marginSM}>
+        <div>
+          <Title level={5} style={{ margin: 0 }}>
+            JNbot Cloud
+          </Title>
+          <Text type="secondary">
+            Keep an encrypted snapshot of your data in the JNbot cloud.
+          </Text>
+        </div>
+        {!loadingInfo &&
+          (info?.used ? (
+            <Tag color="success" icon={<CheckCircleFilled />} style={{ margin: 0 }}>
+              Snapshot available
+            </Tag>
+          ) : (
+            <Tag style={{ margin: 0 }}>No snapshot yet</Tag>
+          ))}
+      </Flex>
 
       {loadingInfo ? (
         <Flex justify="center" style={{ padding: token.paddingMD }}>
           <Spin size="small" />
         </Flex>
       ) : (
-        <Flex
-          justify="space-between"
-          align="center"
-          wrap="wrap"
-          gap={token.marginMD}
-        >
-          {/* Status & User ID */}
-          <Space size={token.marginSM} wrap align="center">
-            {info?.used ? (
-              <Tag
-                color="success"
-                icon={<CheckCircleFilled />}
-                style={{ margin: 0 }}
+        <>
+          {info?.userId && (
+            <Flex
+              align="center"
+              gap={token.marginSM}
+              style={{
+                padding: `${token.paddingSM}px ${token.padding}px`,
+                borderRadius: token.borderRadiusLG,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                background: token.colorBgContainer,
+              }}
+            >
+              <Text type="secondary" style={{ flexShrink: 0 }}>
+                User ID
+              </Text>
+              <Text
+                code
+                ellipsis
+                copyable={{ tooltips: ['Copy User ID', 'Copied!'] }}
+                style={{ flex: 1, minWidth: 0, margin: 0 }}
               >
-                Snapshot available
-              </Tag>
-            ) : (
-              <Tag style={{ margin: 0 }}>No snapshot</Tag>
-            )}
-            {info?.userId && (
-              <Space size={4}>
-                <Text type="secondary" style={{ fontSize: 13 }}>
-                  User ID:
-                </Text>
-                <Text
-                  code
-                  copyable={{ tooltips: ['Copy User ID', 'Copied!'] }}
-                  style={{ fontSize: 13 }}
-                >
-                  {info.userId}
-                </Text>
-              </Space>
-            )}
-          </Space>
+                {info.userId}
+              </Text>
+            </Flex>
+          )}
 
-          {/* Action buttons */}
-          <Space size={token.marginSM} wrap>
+          <Flex gap={token.marginXS} wrap="wrap">
             <Button
               type="primary"
               icon={<CloudUploadOutlined />}
               onClick={openUpload}
             >
-              {info?.used ? 'Update Backup' : 'Back up to Cloud'}
+              {info?.used ? 'Update backup' : 'Back up to cloud'}
             </Button>
             <Button icon={<CloudDownloadOutlined />} onClick={openRestore}>
-              Restore from Cloud
+              Restore
             </Button>
             {info?.used && (
-              <Button
-                type="text"
-                danger
-                icon={<DeleteOutlined />}
-                loading={removeLoading}
-                onClick={confirmDelete}
+              <Dropdown
+                trigger={['click']}
+                menu={{
+                  items: [
+                    {
+                      key: 'delete',
+                      label: 'Delete snapshot',
+                      danger: true,
+                      icon: <DeleteOutlined />,
+                    },
+                  ],
+                  onClick: confirmDelete,
+                }}
               >
-                Delete
-              </Button>
+                <Button
+                  type="text"
+                  aria-label="More actions"
+                  loading={removeLoading}
+                  icon={<MoreOutlined />}
+                />
+              </Dropdown>
             )}
-          </Space>
-        </Flex>
+          </Flex>
+        </>
       )}
 
       {info?.error && (
-        <Text type="danger" style={{ fontSize: 13 }}>
+        <Text type="danger">
           <WarningOutlined style={{ marginRight: 6 }} />
           {info.error}
         </Text>

@@ -113,7 +113,7 @@ parentPort.on('close', () => {
 });
 
 // Check if the MC_DATA_PATH is valid for some reason it's missing for some people, perhaps make it auto install it.
-async function verifyMcData(data) {
+async function verifyMcData(_data) {
   if (!process.env.MC_DATA_PATH) console.error('MC_DATA_PATH is not set');
   const mcDataPath = process.env.MC_DATA_PATH;
   const versionPath = path.join(mcDataPath, 'data/pc');

@@ -70,7 +70,7 @@ const PublishedShare: React.FC<{ share: OwnedShare; draft: Draft }> = ({ share, 
     void shareRequest<boolean | 'deleted'>(api, 'SHARE_HAS_CHANGES', share.id).then((result) =>
       setHasChanges(result ?? false),
     );
-  }, [share.id, share.revision]);
+  }, [share.id, share.revision, api]);
 
   const run = async (action: string, input: unknown, success: string) => {
     setBusy('publish');

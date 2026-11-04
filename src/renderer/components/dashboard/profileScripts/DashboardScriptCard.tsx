@@ -85,7 +85,7 @@ const DashboardScriptCard: FC<Props> = ({ script, infoOverride }) => {
       onClick={() => openPanel('details')}
       style={{
         height: 250,
-        width: 300,
+        width: '100%',
         border: 'none',
         marginBottom: '0.5rem',
         borderRadius: 12,

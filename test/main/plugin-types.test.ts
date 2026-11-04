@@ -12,13 +12,10 @@
  * The profile UI test transpiles TS fixtures with native esbuild so it stays
  * independent of the esbuild-wasm asset.
  */
-import esbuild from 'esbuild';
 import { bootElectron, freshUserData, cleanupUserData } from './helpers';
 
 afterAll(cleanupUserData);
 
-const ts = (code: string): string =>
-  esbuild.transformSync(code, { loader: 'ts', format: 'cjs' }).code;
 
 // ---------------------------------------------------------------------------
 // botExtension

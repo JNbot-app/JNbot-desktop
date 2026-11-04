@@ -98,8 +98,8 @@ export const ActiveBotCard: React.FC<ActiveBotCardProps> = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: compact ? '6px 8px' : '8px 10px',
-        borderRadius: token.borderRadiusSM,
+        padding: compact ? '8px 10px' : '10px 12px',
+        borderRadius: token.borderRadius,
         border: `1px solid ${borderColor}`,
         backgroundColor: bgColor,
         cursor: isDisabled ? 'not-allowed' : isClickable ? 'pointer' : 'default',
@@ -135,38 +135,30 @@ export const ActiveBotCard: React.FC<ActiveBotCardProps> = ({
             minWidth: 0,
             display: 'flex',
             flexDirection: 'column',
-            gap: 1,
+            gap: 2,
           }}
         >
-          <div
+          <Typography.Text
+            strong
+            ellipsis
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              minWidth: 0,
+              cursor: !isClickable ? 'pointer' : undefined,
+              fontSize: compact ? 13 : 14,
+              lineHeight: '18px',
+            }}
+            onClick={(e) => {
+              if (!isClickable && openAccountProfile) {
+                e.stopPropagation();
+                openAccountProfile(bot.username);
+              }
             }}
           >
-            <Typography.Text
-              strong={isOnline}
-              ellipsis
-              style={{
-                cursor:
-                  !isClickable ? 'pointer' : undefined,
-                fontSize: compact ? 12 : 13,
-                lineHeight: '18px',
-              }}
-              onClick={(e) => {
-                if (!isClickable && openAccountProfile) {
-                  e.stopPropagation();
-                  openAccountProfile(bot.username);
-                }
-              }}
-            >
-              {bot.username}
-            </Typography.Text>
+            {bot.username}
+          </Typography.Text>
 
+          <Space size={6} style={{ minWidth: 0 }}>
             {displayStatus !== 'connected' && (
-              <Space size={3} style={{ flexShrink: 0 }}>
+              <Space size={4} style={{ flexShrink: 0 }}>
                 {getStatusIcon()}
                 <Tooltip
                   title={
@@ -176,12 +168,9 @@ export const ActiveBotCard: React.FC<ActiveBotCardProps> = ({
                   }
                 >
                   <Typography.Text
-                    type={
-                      isFailed ? 'danger' : isOnline ? 'success' : 'secondary'
-                    }
+                    type={isFailed ? 'danger' : 'secondary'}
                     style={{
-                      fontSize: compact ? 11 : 12,
-                      fontWeight: 500,
+                      fontSize: 12,
                       color: isPaused ? token.colorInfo : undefined,
                     }}
                   >
@@ -193,18 +182,10 @@ export const ActiveBotCard: React.FC<ActiveBotCardProps> = ({
                 </Tooltip>
               </Space>
             )}
-          </div>
-
-          <Typography.Text
-            type="secondary"
-            ellipsis
-            style={{
-              fontSize: compact ? 10 : 11,
-              lineHeight: '14px',
-            }}
-          >
-            {bot.SCRIPT_ID || bot.SCRIPT_NAME}
-          </Typography.Text>
+            <Typography.Text type="secondary" ellipsis style={{ fontSize: 12 }}>
+              {bot.SCRIPT_ID || bot.SCRIPT_NAME}
+            </Typography.Text>
+          </Space>
         </div>
       </div>
 

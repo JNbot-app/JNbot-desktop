@@ -24,7 +24,6 @@ const trashBehaviour = [
     name: "Closing incorrect trash window",
     when: ({bot}) => {
       if (!bot.currentWindow) return false;
-      const title = bot.getWindowTitle().toLowerCase()
       return !bot.transferItems.config.trashWindowTitles.some(title => title.includes(title))
     },
     run: async ({bot}) => {
@@ -37,7 +36,7 @@ const trashBehaviour = [
     name: 'Finished trashing items',
     when: ({bot, state}) =>
       !hasTradeableItem(bot, state) || getFreeWindowSpot(bot, 0) === null,
-    run: async ({bot, state, machine}) => {
+    run: async ({bot, machine}) => {
       if (!bot.currentWindow) return machine.finish();
 
       // The new trash windows have confirmation buttons at the bottom
@@ -61,7 +60,7 @@ const trashBehaviour = [
   },
   {
     name: 'Trashing items',
-    when: ({bot, state}) => true,
+    when: () => true,
     run: async ({bot, state}) => {
       let lastSlot = 0;
       for (
@@ -79,7 +78,6 @@ const trashBehaviour = [
             bot.clickWindow(slot.slot, 0, 1);
             await bot.waitForTicks(2);
           } else {
-            const inv = bot.currentWindow;
             await bot.moveSlotItem(slot.slot, freeSlot);
           }
           break;

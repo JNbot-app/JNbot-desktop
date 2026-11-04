@@ -7,7 +7,6 @@ import {
   SettingsObj,
   SharedSettings,
   WorkerDataType,
-  WorkerSettings,
 } from '../types';
 import BotEvents from './BotEvents';
 import ScriptHandler_ from './ScriptHandler';
@@ -287,7 +286,7 @@ class Script_ extends BotEvents {
   stop() {
     this.forceExit = true;
     this.activeBots.cancelBotJoinRequestsByScript(this);
-    return new Promise(async (resolve) => {
+    return new Promise((resolve) => {
       let terminated = false;
 
       this.onExitPromise?.then(() => {
@@ -296,11 +295,10 @@ class Script_ extends BotEvents {
       });
 
       this.send('TERMINATE', true);
-      if (this.options.waitBeforeTerminate) {
-        await sleep(1000);
-      }
-      await sleep(100); // Delay is needed to properly close the bot
-      if (!terminated) this.worker?.terminate();
+      // Delay is needed to properly close the bot
+      sleep(this.options.waitBeforeTerminate ? 1100 : 100).then(() => {
+        if (!terminated) this.worker?.terminate();
+      });
     });
   }
   async restart(fast = false) {

@@ -2,7 +2,6 @@ import path from 'path';
 import fs from 'fs';
 import {
   migrateLegacySettings,
-  PREDEFINED_SERVERS,
 } from '../../src/main/src/functions/storage/migrateSettings';
 import { freshUserData, cleanupUserData, readJson, writeRaw } from './helpers';
 

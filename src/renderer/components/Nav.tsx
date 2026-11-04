@@ -3,10 +3,8 @@ import { Dropdown, Button, MenuProps, Space, theme as antTheme } from 'antd';
 import {
   MoreOutlined,
   FileSearchOutlined,
-  BulbOutlined,
   AlertOutlined,
   BugOutlined,
-  QuestionCircleOutlined,
   CodeOutlined,
   MobileOutlined,
 } from '@ant-design/icons';
@@ -54,14 +52,6 @@ const Nav: React.FC = () => {
 
   const openChangelog = () => {
     sidePanel.setPanel({ active: true, tab: CHANGELOG_TAB });
-  };
-
-  const openTutorial = () => {
-    window.ipcRenderer.action('PING', ['START_TUTORIAL']);
-  };
-
-  const openSuggestion = () => {
-    setOpenDialog(2);
   };
 
   const openServerStatus = () => {

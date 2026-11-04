@@ -322,7 +322,7 @@ class BotEvents_ {
     );
   }
 
-  ACTIVE_COMP(data: [{ id: String; active: boolean }]) {
+  ACTIVE_COMP(data: [{ id: string; active: boolean }]) {
     for (let comp of data) {
       this.publish('comp-' + comp.id, comp.active);
     }
@@ -361,7 +361,7 @@ class BotEvents_ {
   RESTART() {
     this.script?.restart();
   }
-  UPDATE_SCRIPT_OPTIONS(options: Object) {
+  UPDATE_SCRIPT_OPTIONS(options: object) {
     if (!options || !this.script) return;
     this.script.options = { ...this.script.options, ...options };
   }

@@ -1,20 +1,7 @@
-const { workerData } = require('worker_threads');
 const workerScript = require('../lib/workerScript').default;
 global.appSettings.server ||= 'jartexnetwork';
-function sleep(x) {
-  return new Promise((resolve) => setTimeout(resolve, x));
-}
 
 
-const IPS = workerData?.scriptOptions?.ips || [
-  'proxy001.jartexsys.net',
-  'proxy002.jartexsys.net',
-  'proxy003.jartexsys.net',
-  'proxy004.jartexsys.net',
-  'proxy005.jartexsys.net',
-  'proxy006.jartexsys.net',
-  'proxy007.jartexsys.net',
-];
 class AltCounter {
   count = 0;
   gotoNextAlt = false;

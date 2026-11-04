@@ -38,7 +38,8 @@ const KindTile: React.FC<{
         placeItems: 'center',
         overflow: 'hidden',
         borderRadius: token.borderRadiusLG,
-        background: `${accent}22`,
+        background: `linear-gradient(135deg, ${accent}40, ${accent}12)`,
+        boxShadow: `inset 0 0 0 1px ${accent}33`,
         color: accent,
         fontSize: size * 0.45,
       }}

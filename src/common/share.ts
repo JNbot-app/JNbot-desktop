@@ -19,6 +19,10 @@ export const MAX_UNPACKED_SHARE_BYTES = 8 * 1024 * 1024;
 export const MAX_BANNER_BYTES = 256 * 1024;
 export const MAX_BANNER_URL_LENGTH = 500;
 export const MAX_LISTING_BYTES = 16 * 1024;
+export const MAX_SHARE_TITLE_LENGTH = 100;
+export const MAX_SHARE_DESCRIPTION_LENGTH = 2000;
+export const MAX_DETAIL_TITLE_LENGTH = 200;
+export const MAX_DETAIL_VALUE_LENGTH = 500;
 export const MAX_SHARES_PER_OWNER = 50;
 export const MAX_PENDING_PER_OWNER = 5;
 /** Private (link) shares; public ones are bounded by review instead. */
@@ -260,7 +264,8 @@ export interface SharePluginPreview {
   name: string;
   description?: string;
   scriptType?: string;
-  state: 'new' | 'identical' | 'conflict' | 'unsupported' | 'invalid';
+  /** `update`: a chain or trigger carries a newer version of a plugin from the same publisher. */
+  state: 'new' | 'identical' | 'conflict' | 'update' | 'unsupported' | 'invalid';
   verification: 'trusted' | 'valid-untrusted' | 'unsigned' | 'invalid';
   publisherName?: string;
   fingerprint?: string;
@@ -302,13 +307,19 @@ export interface SharePreviewInput {
   profileKey?: string;
 }
 
+export type SharePluginAction = 'replace' | 'skip';
+
+/** What happens to a plugin unless the user chooses: only plugin updates stay opt-in. */
+export const defaultPluginAction = (plugin: Pick<SharePluginPreview, 'state'>): SharePluginAction =>
+  plugin.state === 'update' ? 'skip' : 'replace';
+
 export interface ShareInstallInput {
   id: string;
   decisions: Array<{
     ownerId: string;
     pluginId: string;
     revision: string;
-    action: 'replace' | 'keep-both' | 'skip';
+    action: SharePluginAction;
     acceptUnverified: boolean;
   }>;
   trustPublisher?: boolean;
@@ -465,13 +476,14 @@ export const previewBlocked = (preview: SharePreview): boolean =>
   !!preview.ownerChanged ||
   (preview.kind === 'profile' && preview.plugins.some((plugin) => plugin.state === 'invalid'));
 
-/** Installing needs a look first: new publisher, unsigned code or plugins you already have. */
+/** Installing needs a look first: new publisher, unsigned code, plugins you already have or plugin updates. */
 export const previewNeedsCheck = (preview: SharePreview): boolean =>
   previewBlocked(preview) ||
   (!preview.publisher.trusted && preview.plugins.length > 0) ||
   preview.plugins.some(
     (plugin) =>
       plugin.state === 'conflict' ||
+      plugin.state === 'update' ||
       plugin.state === 'unsupported' ||
       plugin.verification === 'unsigned' ||
       plugin.verification === 'invalid',

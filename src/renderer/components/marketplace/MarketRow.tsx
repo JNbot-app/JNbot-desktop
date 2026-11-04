@@ -61,6 +61,8 @@ const RowAction: React.FC<{
   return (
     <Button
       size="small"
+      type="primary"
+      ghost
       loading={busy}
       onClick={(event) => {
         event.stopPropagation();

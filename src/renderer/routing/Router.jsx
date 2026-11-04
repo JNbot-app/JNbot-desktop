@@ -9,7 +9,6 @@ import {
   useLocation,
 } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
-import Footer from '../components/Footer';
 import Prompt from '../components/other/Prompt';
 import Popup from '../components/other/Popup';
 import SystemNotifications from '../components/other/SystemNotifications';
@@ -73,6 +72,7 @@ const MainRouterContent = () => {
   const hasServers = useSettingsStore(
     (s) => selectInstalledServerIds(s).length > 0,
   );
+  const hasSelection = useSettingsStore((s) => !!s.selectedProfileKey);
 
   useEffect(() => {
     if (ready) preloadPages();
@@ -111,6 +111,9 @@ const MainRouterContent = () => {
     }
     return <Navigate to="/intro" replace />;
   }
+
+  // Nothing loads without a selected profile, so ask for one first.
+  if (!hasSelection && !window.web) return <Navigate to="/select-server" replace />;
 
   return (
     <div style={{ width: '100vw', overflow: 'hidden' }}>

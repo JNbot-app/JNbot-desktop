@@ -45,7 +45,6 @@ interface ProfileWizardViewProps {
 export function ProfileWizardView({
   runtime,
   forced,
-  width,
   height,
   onDone,
   onCancel,
@@ -342,6 +341,7 @@ export function ProfileWizardView({
         setBusy(true);
         setNotice(`Activating ${profile.data.name ?? profile.server}...`);
         try {
+          // eslint-disable-next-line react-hooks/rules-of-hooks -- CLI command, not a hook
           const result = await useProfile(runtime, profile.server);
           if (result.ok) {
             onDone(profile.data.name ?? profile.server);

@@ -75,7 +75,7 @@ export function useContainerBreakpoint<T extends HTMLElement = HTMLDivElement>(
 
     observer.observe(node);
     return () => observer.disconnect();
-  }, [thresholds.sm, thresholds.md]);
+  }, [thresholds]);
 
   return { ref, breakpoint };
 }

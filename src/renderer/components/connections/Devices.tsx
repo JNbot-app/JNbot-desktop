@@ -29,7 +29,6 @@ import DeviceSettings from './DeviceSettings';
 import { ServerTypes } from './connectionUtils';
 import {
   DEFAULT_REMOTE_PERMISSIONS,
-  FULL_REMOTE_PERMISSIONS,
   permissionPreset,
 } from '../../../common/clientPermissions';
 

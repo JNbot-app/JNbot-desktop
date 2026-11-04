@@ -1,6 +1,5 @@
 const esbuild = require('esbuild');
 const { copy } = require('esbuild-plugin-copy');
-const fs = require('fs');
 const path = require('path');
 const progress = require('esbuild-plugin-progress');
 const copyEsbuildWasm = require('./copyEsbuildWasm');
@@ -54,7 +53,7 @@ async function build(options = {}) {
   });
 
   // 2. Run the build and capture the result
-  const result = await ctx.rebuild();
+  await ctx.rebuild();
 
   // esbuild-wasm isn't in the packaged node_modules; copy the files transpile.ts
   // needs into the build output so extraResources ships them.

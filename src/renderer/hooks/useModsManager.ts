@@ -46,7 +46,7 @@ export const useModsManager = ({
       loader: loaderText
     })  
 
-  }, [selectedVersionId]);
+  }, [selectedVersionId, selectedLoader]);
 
   const handleRemoveMod = useCallback(
     async (modId: string, type: "mod" | "modpack", isProject:boolean) => {
@@ -63,7 +63,7 @@ export const useModsManager = ({
         loader: loaderText
       })
     },
-    [selectedVersionId],
+    [selectedVersionId, selectedLoader],
   );
 
   const getFeaturedMods = useCallback(async () => {

@@ -52,17 +52,13 @@ async function jnFetch(options={}) {
 
 }
 
-function waitForLoad() {
-  if (!isLoading) return
-  return new Promise(async (resolve) => {
-    while (isLoading) await sleep(100)
-    resolve()
-  })
+async function waitForLoad() {
+  while (isLoading) await sleep(100)
 }
 
 async function openWindow(url) {
   isLoading = true
-  return new Promise(async (resolve) => {
+  return new Promise((resolve) => {
     const child = new BrowserWindow({
       show: false,
       webPreferences: { offscreen: true }
@@ -72,11 +68,12 @@ async function openWindow(url) {
       resolve(null)
     }, 60_000) // timeout after 1 minute
     child.webContents.setFrameRate(1)
-    await session.defaultSession.cookies.remove(url, "cf_clearance")
-    child.loadURL(url)
-    child.on('ready-to-show', onPageLoadHandler)
+    session.defaultSession.cookies.remove(url, "cf_clearance").then(() => {
+      child.loadURL(url)
+      child.on('ready-to-show', onPageLoadHandler)
+    })
     async function onPageLoadHandler() {
-      const cookies = await session.defaultSession.cookies.get({ url, name: "cf_clearance" })
+      await session.defaultSession.cookies.get({ url, name: "cf_clearance" })
       if ( !(await checkIfLoaded())  ) return
       isLoading = false
       clearTimeout(timeout)

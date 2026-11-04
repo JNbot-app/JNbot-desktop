@@ -53,7 +53,7 @@ const AutomationStepItem: React.FC<AutomationStepItemProps> = ({
         }}
       >
         <Flex align="center" gap="small" style={{ minWidth: 0, flex: 1 }}>
-          <Tag bordered={false} style={{ margin: 0, flexShrink: 0 }}>
+          <Tag variant="filled" style={{ margin: 0, flexShrink: 0 }}>
             {actionLabel(step.kind)}
           </Tag>
           <Text ellipsis style={{ flex: 1 }}>

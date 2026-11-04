@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button, Input, Modal, Typography } from 'antd';
 
 const { Text } = Typography;
@@ -26,6 +26,21 @@ const Prompt: React.FC = () => {
     setOpen(true);
   };
 
+  const handleClose = useCallback((canceled = false, promptID = value.promptID) => {
+    const input = document.getElementById('prompt-input') as HTMLInputElement;
+    if (!input) return;
+
+    if (value.messageAddress) {
+      window.messenger.send('macro-prompt', value.messageAddress as any, {
+        cancel: canceled,
+        value: input.value,
+        promptID,
+      });
+    }
+
+    setOpen(false);
+  }, [value.messageAddress, value.promptID]);
+
   useEffect(() => {
     const handleEvent = (data: PromptData) => {
       if (!openRef.current) {
@@ -41,22 +56,8 @@ const Prompt: React.FC = () => {
     return () => {
       window.ipcRenderer.removeAllListeners('macro-prompt');
     };
-  }, []);
+  }, [handleClose]);
 
-  const handleClose = (canceled = false, promptID = value.promptID) => {
-    const input = document.getElementById('prompt-input') as HTMLInputElement;
-    if (!input) return;
-
-    if (value.messageAddress) {
-      window.messenger.send('macro-prompt', value.messageAddress as any, {
-        cancel: canceled,
-        value: input.value,
-        promptID,
-      });
-    }
-
-    setOpen(false);
-  };
 
   const keyHandler = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.code === 'Enter') handleClose();

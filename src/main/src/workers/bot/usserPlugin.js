@@ -5,15 +5,10 @@ Plugin Made by usserwout
 ***********************************************/
 
 const openWindow = require('./openWindow');
-const nbt = require('prismarine-nbt');
-const { once } = require('events');
 const itemInfo = require('./extensions/itemInfo');
 const {
   parseItemText,
-  toAnsi,
   parseRawNbt,
-  customNbtToStr,
-  nbtToStr,
 } = require('./extensions/nbtParser');
 const { getOrAskPassword } = require('../lib/MissingDataHandler');
 const { Vec3 } = require('vec3');
@@ -56,9 +51,7 @@ String.prototype.toAlpha = function () {
 };
 const ignoreBlocks = ['barrier', 'grass', 'tall_grass'];
 
-const regex = /([0-9]+ms||You are connected to )|Playing at |§./g;
 const inject = (bot) => {
-  const server = global.appSettings?.server || 'jartexnetwork';
 
   const mc = bot.registry;
   const ignoreBlocksIds = new Set();
@@ -92,7 +85,7 @@ const inject = (bot) => {
   };
 
   bot.login = (pass) => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       bot.once('login', async () => {
         await bot.waitForTicks(5);
         await bot.__login(pass);
@@ -180,7 +173,7 @@ const inject = (bot) => {
   };
 
   bot.onceWithTimeout = (event, timeoutInTicks) => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       function cleanup(...e) {
         bot.removeListener(event, cleanup);
         resolve(...e);
@@ -384,7 +377,7 @@ const inject = (bot) => {
 
   bot.waitForTicks = async function (ticks) {
     if (ticks <= 0) return;
-    await new Promise((resolve, reject) => {
+    await new Promise((resolve) => {
       // Assuming 20 ticks per second, add extra time for lag
       const timeout = setTimeout(
         () => {

@@ -10,7 +10,6 @@ pids
 
 # Coverage directory used by tools like istanbul
 coverage
-.eslintcache
 
 # Dependency directory
 # https://www.npmjs.org/doc/misc/npm-faq.html#should-i-check-my-node_modules-folder-into-git
@@ -80,3 +79,6 @@ assets/needle/notices/
 
 # Local docs
 /docs/
+
+# Lockfile (untracked to avoid merge conflicts)
+/package-lock.json

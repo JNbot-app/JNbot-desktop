@@ -35,8 +35,7 @@ const removeStorage = (storage: Storage, key: string): void => {
  * local storage restores the last selection in a new session.
  */
 export const getSelectedProfileKey = (fallback?: string): string | null =>
-  readStorage(window.sessionStorage, CLEARED_STORAGE_KEY) === 'true' ||
-  readStorage(window.localStorage, CLEARED_STORAGE_KEY) === 'true'
+  readStorage(window.sessionStorage, CLEARED_STORAGE_KEY) === 'true'
     ? null
     : readStorage(window.sessionStorage) ??
       readStorage(window.localStorage) ??
@@ -45,15 +44,17 @@ export const getSelectedProfileKey = (fallback?: string): string | null =>
 
 export const persistSelectedProfileKey = (profileKey: string): void => {
   removeStorage(window.sessionStorage, CLEARED_STORAGE_KEY);
-  removeStorage(window.localStorage, CLEARED_STORAGE_KEY);
   writeStorage(window.sessionStorage, profileKey);
   writeStorage(window.localStorage, profileKey);
 };
 
-/** Keep an invalid profile from being restored from the backend fallback. */
+/**
+ * Keep a failed profile from being restored from the backend fallback for the
+ * rest of this session. The next start tries the fallback again, because the
+ * failure may have been temporary.
+ */
 export const clearSelectedProfileKey = (): void => {
   removeStorage(window.sessionStorage, STORAGE_KEY);
   removeStorage(window.localStorage, STORAGE_KEY);
   writeStorage(window.sessionStorage, 'true', CLEARED_STORAGE_KEY);
-  writeStorage(window.localStorage, 'true', CLEARED_STORAGE_KEY);
 };

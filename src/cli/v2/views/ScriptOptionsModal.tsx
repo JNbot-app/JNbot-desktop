@@ -8,7 +8,6 @@ import {
   runPlugin,
   runScript,
 } from '../actions';
-import { getServerMeta } from '../../../common/serverInfo';
 import { MultiSelectModal } from './MultiSelectModal';
 import { ListOptionModal } from './ListOptionModal';
 import { AltRangeModal } from './AltRangeModal';
@@ -56,7 +55,6 @@ export const ScriptOptionsModal: React.FC<ScriptOptionsModalProps> = ({
 
   const profileKey = runtime.handler.getBootstrapRuntime().profileKey;
   const jndata = runtime.handler.settings.JNdata;
-  const serverMeta = getServerMeta(jndata, profileKey);
 
   const serverGamemodes = useMemo(() => {
     const gmObj = jndata?.servers?.[profileKey];

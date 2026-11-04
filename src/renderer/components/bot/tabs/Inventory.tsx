@@ -43,17 +43,18 @@ const Inventory: React.FC<InventoryProps> = ({ selectedBot }) => {
   const slider = useRef<number>(1);
   const { token } = antTheme.useToken();
 
+  const botId = selectedBot?.botId;
   useEffect(() => {
-    if (!selectedBot) return;
+    if (!botId) return;
     const unsub = botEvents.subscribe(
-      selectedBot.botId,
+      botId,
       'inventory',
       (data: InventoryData) => {
         if (data?.hotbar) setHotbarSlot(data.hotbar);
       },
     );
     return () => unsub();
-  }, [selectedBot?.botId]);
+  }, [botId]);
 
   const toss = async () => {
     if (!slider.current) return;

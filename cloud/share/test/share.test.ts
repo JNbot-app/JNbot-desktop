@@ -285,6 +285,51 @@ describe('share worker', () => {
     expect(after).toMatchObject({ status: 'rejected', note: 'Please remove the webhook', revision: created.revision });
   });
 
+  it('closes the link of a takedown, and tells the owner why', async () => {
+    const created = await create(alice, listing('Takedown'), 'public');
+    await approve(reviewer, created.id, created.revision);
+    const takedown = await signedFetch(
+      reviewer,
+      'POST',
+      `/api/s/${created.id}/review`,
+      JSON.stringify({ revision: created.revision, decision: 'reject', note: 'Malware' }),
+    );
+    expect(takedown.status).toBe(200);
+    const { entries } = (await (await market()).json()) as { entries: ShareRecord[] };
+    expect(entries.some((entry) => entry.id === created.id)).toBe(false);
+    expect((await SELF.fetch(`${ORIGIN}/api/s/${created.id}`)).status).toBe(404);
+    expect((await SELF.fetch(`${ORIGIN}/s/${created.id}`)).status).toBe(404);
+
+    const lookup = await SELF.fetch(`${ORIGIN}/api/revisions`, { method: 'POST', body: JSON.stringify({ ids: [created.id] }) });
+    expect(await lookup.json()).toMatchObject({ [created.id]: { status: 'rejected', note: 'Malware', listed: false } });
+
+    // Withdrawing keeps it a plain link: the approval is gone with the takedown.
+    expect((await signedFetch(alice, 'POST', `/api/s/${created.id}/unlist`)).status).toBe(200);
+    expect(await record(created.id)).toMatchObject({ visibility: 'link', approval: null });
+  });
+
+  it('keeps the reviewed publisher name until a renamed update is approved', async () => {
+    const created = await create(alice, listing('Rename'), 'public');
+    await approve(reviewer, created.id, created.revision);
+
+    const updated = await put(alice, `/api/s/${created.id}`, listing('Rename', 'JNbot Team'), 'public');
+    const { revision } = (await updated.json()) as { revision: string };
+    expect((await record(created.id)).ownerName).toBe('Alice');
+
+    await approve(reviewer, created.id, revision);
+    expect((await record(created.id)).ownerName).toBe('JNbot Team');
+  });
+
+  it('renames links and unreviewed submissions at once', async () => {
+    const link = await create(alice, listing('Link rename'));
+    await put(alice, `/api/s/${link.id}`, listing('Link rename', 'Alice 2'));
+    expect((await record(link.id)).ownerName).toBe('Alice 2');
+
+    const pending = await create(alice, listing('Pending rename'), 'public');
+    await put(alice, `/api/s/${pending.id}`, listing('Pending rename', 'Alice 2'), 'public');
+    expect((await record(pending.id)).ownerName).toBe('Alice 2');
+  });
+
   it('answers repeat catalog checks with 304 until the listed set changes', async () => {
     const first = await market();
     const etag = first.headers.get('etag')!;

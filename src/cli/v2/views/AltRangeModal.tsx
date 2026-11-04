@@ -17,7 +17,6 @@ export const AltRangeModal: React.FC<AltRangeModalProps> = ({
   alts,
   initialValue,
   width,
-  height,
   onSave,
   onCancel,
 }) => {

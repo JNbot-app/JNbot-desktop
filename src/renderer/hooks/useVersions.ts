@@ -96,9 +96,12 @@ export const useVersions = ({
     }
   }, [selectedVersionId, selectedLauncherFlags, onVersionSelect, message]);
 
+  // Fetch once on mount; fetchVersions changes with the selection and would refetch.
+  /* oxlint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     fetchVersions();
   }, []);
 
+  /* oxlint-enable react-hooks/exhaustive-deps */
   return { versions, versionsLoading };
 };

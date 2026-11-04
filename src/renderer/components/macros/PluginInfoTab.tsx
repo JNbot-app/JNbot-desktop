@@ -8,7 +8,6 @@ import {
   Segmented,
   Space,
   Tag,
-  Tooltip,
   Typography,
   theme,
 } from 'antd';
@@ -45,10 +44,8 @@ import { usePluginActions, PluginView } from './usePluginActions';
 import ScriptSettings from '../general/scriptSettings/ScriptSettings';
 import BannerHero from './BannerHero';
 import { usePanelContext } from '../other/botSideBar/SidePanelContextProvider';
-import { checkShareUpdate, useInstalledShare, useShares } from '../../redux/shares';
-import { shareUpdateAvailable } from '../../../common/share';
-import useAppApi from '../../hooks/useAppApi';
-import { openShareModal, useOpenShareLink } from '../share/useShareTarget';
+import { openShareModal } from '../share/useShareTarget';
+import { useShareUpdateAction } from '../share/useShareUpdateAction';
 
 const iconFor = (p: MacroInfo) =>
   p.scriptType === 'action' ? (
@@ -247,19 +244,7 @@ const ActionBar: React.FC<{
 }> = ({ plugin, running, pinned, profileScript, onToggleRun }) => {
   const actions = usePluginActions();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const installedShare = useInstalledShare('plugin', plugin.pluginId);
-  const appVersion = useShares((state) => state.appVersion);
-  const openShareLink = useOpenShareLink();
-  const { message } = useAppApi();
-
-  const checkForUpdates = async (id: string) => {
-    try {
-      if (await checkShareUpdate(id)) openShareLink(id);
-      else message.success('This plugin is up to date');
-    } catch (error) {
-      message.error((error as Error).message);
-    }
-  };
+  const shareUpdate = useShareUpdateAction('plugin', plugin.pluginId);
 
   const moreMenuItems: NonNullable<
     React.ComponentProps<typeof Dropdown>['menu']
@@ -292,21 +277,14 @@ const ActionBar: React.FC<{
         onClick: () =>
           openShareModal({ kind: 'plugin', ref: plugin.pluginId, title: plugin.name }),
       },
-      ...(installedShare
+      ...(shareUpdate
         ? [
-            shareUpdateAvailable(installedShare, appVersion)
-              ? {
-                  key: 'share-update',
-                  icon: <SyncOutlined />,
-                  label: `Update from ${installedShare.ownerName}`,
-                  onClick: () => openShareLink(installedShare.id),
-                }
-              : {
-                  key: 'share-check',
-                  icon: <SyncOutlined />,
-                  label: 'Check for updates',
-                  onClick: () => checkForUpdates(installedShare.id),
-                },
+            {
+              key: 'share-update',
+              icon: <SyncOutlined />,
+              label: shareUpdate.label,
+              onClick: shareUpdate.run,
+            },
           ]
         : []),
       {

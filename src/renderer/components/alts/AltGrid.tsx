@@ -22,6 +22,7 @@ import {
   Skeleton,
   MenuProps,
   Typography,
+  Flex,
   Tag,
   theme,
   Button,
@@ -241,7 +242,7 @@ const AltGrid: React.FC = () => {
       if (result.length === 0) result.push('0 seconds');
       return result.slice(0, 2).join(', ');
     },
-    [stats],
+    [],
   );
 
   const deleteBulkAlts = () => {
@@ -283,47 +284,39 @@ const AltGrid: React.FC = () => {
         render: () => <SortHandle />,
       },
       {
-        title: 'Head',
-        dataIndex: 'head',
-        key: 'head',
-        width: 80,
-        render: (_, record) => (
-          <div style={{ height: 45, width: 45 }}>
-            <Image
-              width={45}
-              heigth={45}
-              loadingElement={
-                <Skeleton.Avatar active shape="square" size={45} />
-              }
-              src={`https://crafthead.net/avatar/${record.username}`}
-              alt={record.username}
-            />
-          </div>
-        ),
-      },
-      {
         title: 'Username',
         dataIndex: 'username',
         key: 'username',
-        width: 150,
+        width: 180,
         sorter: sortUsernames,
         render: (username: string) => (
-          <Typography.Text
+          <Flex
+            align="center"
+            gap={12}
             onClick={() => openAccountProfile(username)}
-            style={{
-              cursor: 'pointer',
-              fontWeight: 700,
-              color: 'inherit',
-            }}
+            style={{ cursor: 'pointer' }}
           >
-            {username}
-          </Typography.Text>
+            <div style={{ height: 36, width: 36, flexShrink: 0 }}>
+              <Image
+                width={36}
+                heigth={36}
+                loadingElement={
+                  <Skeleton.Avatar active shape="square" size={36} />
+                }
+                src={`https://crafthead.net/avatar/${username}`}
+                alt={username}
+              />
+            </div>
+            <Typography.Text strong ellipsis>
+              {username}
+            </Typography.Text>
+          </Flex>
         ),
       },
       {
         title: 'Tags',
         key: 'tags',
-        width: 220,
+        width: 190,
         render: (_, record) => {
           const altTags = tagsByUsername.get(record.username) ?? [];
           if (altTags.length === 0) {
@@ -384,10 +377,13 @@ const AltGrid: React.FC = () => {
         title: 'Last joined',
         dataIndex: 'lastJoined',
         key: 'lastJoined',
-        width: 200,
+        width: 170,
         render: (_, record) => {
           const lastOnline = stats.alts[record.username]?.lastJoined;
-          return lastOnline ? new Date(lastOnline).toLocaleString() : null;
+          return lastOnline ? new Date(lastOnline).toLocaleString(undefined, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          }) : null;
         },
         sorter: sortJoinTimeComparator,
       },
@@ -395,32 +391,34 @@ const AltGrid: React.FC = () => {
         title: 'Created on',
         dataIndex: 'createdOn',
         key: 'createdOn',
-        width: 120,
+        width: 110,
         render: (_, record) => {
           const createdOn = stats.alts[record.username]?.createdOn;
-          return createdOn ? new Date(createdOn).toLocaleDateString() : null;
+          return createdOn ? new Date(createdOn).toLocaleDateString(undefined, {
+            dateStyle: 'medium',
+          }) : null;
         },
         sorter: sortJoinTimeComparator,
       },
       {
-        title: 'Gkit count',
+        title: 'Gkits',
         dataIndex: 'gkitCount',
         key: 'gkitCount',
-        width: 120,
+        width: 90,
         sorter: (a, b) => a.gkitCount - b.gkitCount,
       },
       {
-        title: 'Rank count',
+        title: 'Ranks',
         dataIndex: 'rankCount',
         key: 'rankCount',
-        width: 120,
+        width: 90,
         sorter: (a, b) => a.rankCount - b.rankCount,
       },
       {
-        title: 'Join count',
+        title: 'Joins',
         dataIndex: 'joinCount',
         key: 'joinCount',
-        width: 120,
+        width: 90,
         sorter: (a, b) => a.joinCount - b.joinCount,
       },
       {
@@ -445,6 +443,7 @@ const AltGrid: React.FC = () => {
       tagsByUsername,
       activeTagId,
       openAccountProfile,
+      sortUsernames,
     ],
   );
 

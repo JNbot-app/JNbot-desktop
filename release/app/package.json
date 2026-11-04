@@ -1,6 +1,6 @@
 {
   "name": "jnbot",
-  "version": "3.3.1",
+  "version": "3.4.0",
   "description": "Minecraft bot program built for JartexNetwork & PikaNetwork",
   "main": "./dist/main/main.js",
   "author": {

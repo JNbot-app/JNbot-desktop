@@ -28,7 +28,6 @@ export const ListOptionModal: React.FC<ListOptionModalProps> = ({
   width,
   height,
   onSave,
-  onCancel,
 }) => {
   const [rows, setRows] = useState<Record<string, any>[]>(initialRows || []);
   const [selectedRow, setSelectedRow] = useState(0);

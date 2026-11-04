@@ -19,7 +19,6 @@ import {
   CloudServerOutlined,
   GlobalOutlined,
   SettingOutlined,
-  HeartFilled,
   CloudOutlined,
   ShopOutlined,
   ThunderboltOutlined,
@@ -221,12 +220,15 @@ const SidebarContent: React.FC<{ children: React.ReactNode }> = ({
     locationKey: location.key,
     keys: activeSection ? [activeSection] : [],
   });
-  const openKeys =
-    openKeysState.locationKey === location.key
-      ? openKeysState.keys
-      : activeSection
-        ? [activeSection]
-        : [];
+  const openKeys = useMemo(
+    () =>
+      openKeysState.locationKey === location.key
+        ? openKeysState.keys
+        : activeSection
+          ? [activeSection]
+          : [],
+    [openKeysState, location.key, activeSection],
+  );
 
   const isWeb = window.web;
   const canManageAccess = !isWeb || canManageAccessPermission;
@@ -517,7 +519,7 @@ const SidebarContent: React.FC<{ children: React.ReactNode }> = ({
           <Content
             ref={contentRef}
             style={{
-              padding: '24px 16px',
+              padding: '24px 8px',
               height: '100vh',
               overflow: 'auto',
               paddingTop: headerHeight + sizeLG,

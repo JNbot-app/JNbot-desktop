@@ -25,6 +25,22 @@ interface BotListPanelProps {
   selectedBot: ActiveBotsType[number] | null;
 }
 
+const PanelHeader: React.FC<{ title: string }> = ({ title }) => {
+  const { token } = antTheme.useToken();
+  return (
+    <div
+      style={{
+        padding: '14px 16px',
+        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+      }}
+    >
+      <Typography.Text strong style={{ fontSize: 13 }}>
+        {title}
+      </Typography.Text>
+    </div>
+  );
+};
+
 export const JoinBotCard: React.FC = () => {
   const settings = useSettingsStore(selectSettings);
   const alts = useSettingsStore(selectAlts);
@@ -60,69 +76,63 @@ export const JoinBotCard: React.FC = () => {
   const versionOptions = JNdata.versions.map((v) => ({ label: v, value: v }));
 
   return (
-    <div ref={cardRef} style={{ padding: 16 }}>
-      <OnboardingHint
-        id="join"
-        steps={[
-          {
-            title: 'Join the server',
-            description:
-              "Pick your alt and press Join server. Your bot shows up under Active bots once it's online.",
-            target: () => cardRef.current,
-          },
-        ]}
-      />
-      <Typography.Text
-        strong
-        style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}
-      >
-        Join with alt
-      </Typography.Text>
-      <Form
-        form={form}
-        layout="vertical"
-        initialValues={{
-          username: scriptSettings.username || '',
-          version: scriptSettings.version || '1.8.9',
-        }}
-        style={{ marginTop: 12 }}
-        requiredMark={false}
-      >
-        <Form.Item
-          label="Username"
-          name="username"
-          style={{ marginBottom: 12 }}
+    <div ref={cardRef}>
+      <PanelHeader title="Join with alt" />
+      <div style={{ padding: 16 }}>
+        <OnboardingHint
+          id="join"
+          steps={[
+            {
+              title: 'Join the server',
+              description:
+                "Pick your alt and press Join server. Your bot shows up under Active bots once it's online.",
+              target: () => cardRef.current,
+            },
+          ]}
+        />
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{
+            username: scriptSettings.username || '',
+            version: scriptSettings.version || '1.8.9',
+          }}
+          requiredMark={false}
         >
-          <AutoComplete
-            placeholder="Pick from alts or type a username"
-            options={(alts ?? []).map((a: Alt) => ({ value: a.username }))}
-            showSearch
-          />
-        </Form.Item>
-        <Form.Item
-          label="Minecraft version"
-          name="version"
-          style={{ marginBottom: 12 }}
+          <Form.Item
+            label="Username"
+            name="username"
+            style={{ marginBottom: 12 }}
+          >
+            <AutoComplete
+              placeholder="Pick from alts or type a username"
+              options={(alts ?? []).map((a: Alt) => ({ value: a.username }))}
+              showSearch
+            />
+          </Form.Item>
+          <Form.Item
+            label="Minecraft version"
+            name="version"
+            style={{ marginBottom: 12 }}
+          >
+            <Select options={versionOptions} />
+          </Form.Item>
+        </Form>
+        <Button
+          type="primary"
+          block
+          loading={isLoading}
+          icon={<PlayCircleOutlined />}
+          onClick={startScript}
         >
-          <Select options={versionOptions} />
-        </Form.Item>
-      </Form>
-      <Button
-        type="primary"
-        block
-        loading={isLoading}
-        icon={<PlayCircleOutlined />}
-        onClick={startScript}
-      >
-        Join server
-      </Button>
+          Join server
+        </Button>
+      </div>
     </div>
   );
 };
 
 const BotListPanel: React.FC<BotListPanelProps> = ({ selectedBot }) => {
-  const { token } = antTheme.useToken();
-
   return (
     <div
       style={{
@@ -131,19 +141,7 @@ const BotListPanel: React.FC<BotListPanelProps> = ({ selectedBot }) => {
         height: '100%',
       }}
     >
-      <div
-        style={{
-          padding: '14px 16px',
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <Typography.Text strong style={{ fontSize: 13 }}>
-          Active bots
-        </Typography.Text>
-      </div>
+      <PanelHeader title="Active bots" />
       <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
         <ActiveBotsList
           selectedBotId={selectedBot?.botId}

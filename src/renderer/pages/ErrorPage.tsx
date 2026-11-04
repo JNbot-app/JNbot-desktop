@@ -1,20 +1,8 @@
-import { Button, Collapse, Typography } from 'antd';
+import { Button, Collapse, Flex, Typography } from 'antd';
 import { RedoOutlined, ReloadOutlined } from '@ant-design/icons';
-import styled from 'styled-components';
 import * as Sentry from '@sentry/react';
 import { DiscordServerLink } from '../components/other/DiscordServer';
 
-
-const Container = styled.div`
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100%;
-  transform: translate(-50%);
-  position: absolute;
-  left: 50%;
-  text-align: center;
-`;
 
 const ErrorPage: Sentry.FallbackRender = ({ error, componentStack, resetError }) => {
   const err = error as Error | undefined;
@@ -26,7 +14,17 @@ const ErrorPage: Sentry.FallbackRender = ({ error, componentStack, resetError })
     .join('\n');
 
   return (
-    <Container>
+    <Flex
+      justify="center"
+      align="center"
+      style={{
+        height: '100%',
+        transform: 'translate(-50%)',
+        position: 'absolute',
+        left: '50%',
+        textAlign: 'center',
+      }}
+    >
       <div>
         <div>
           <svg fill='currentColor' viewBox='0 0 32 32' width='64px' height='64px'>
@@ -79,7 +77,7 @@ const ErrorPage: Sentry.FallbackRender = ({ error, componentStack, resetError })
           />
         )}
       </div>
-    </Container>
+    </Flex>
   );
 };
 

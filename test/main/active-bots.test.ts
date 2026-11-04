@@ -1,5 +1,5 @@
 import ActiveBots_ from '../../src/main/src/functions/ActiveBots';
-import { backendMessaging } from '../../src/main/src/messaging';
+import '../../src/main/src/messaging';
 
 jest.mock('../../src/main/src/messaging', () => ({
   backendMessaging: {

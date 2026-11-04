@@ -2,7 +2,6 @@ const { GoalNear, GoalNearXZ } = require('mineflayer-pathfinder').goals;
 const addPathFinder = require('./pathFinderPlugin');
 const axios = require('axios');
 const scriptActionRunner = require('../compiler/scriptActions');
-const { once } = require('events');
 const { workerData } = require('worker_threads');
 const { getItemText, toAnsi } = require('./extensions/nbtParser');
 const { toChatLine } = require('./extensions/chatParts');
@@ -110,7 +109,7 @@ const inject = (bot) => {
     if (!bot.messenger?.hasSubscribers('inventory')) return;
     bot.messenger?.publish('inventory', createInventoryPacket());
   });
-  bot.inventory.on('updateSlot', (slotID, oldSlot, newSlot) => {
+  bot.inventory.on('updateSlot', () => {
     if (bot.currentWindow || !bot.messenger?.hasSubscribers('inventory'))
       return;
 
@@ -819,12 +818,6 @@ const inject = (bot) => {
     return [chunks, positions, bot.entity.position.toArray()]; // Return chunks, positions and player position
   }
 
-  function hotbarPacket() {
-    const payload = { hotbar: bot.quickBarSlot + 1 };
-    bot.messenger?.publish('inventory', payload);
-    send('inventory', payload);
-  }
-
   async function runCode(code) {
     try {
       return await runJsBotCode({ code, bot });
@@ -862,13 +855,6 @@ const inject = (bot) => {
   }
 
   // -------------------- Send data ------------------ \\
-  const packages = {
-    info: infoPacket,
-    chat: chatPacket,
-    hotbar: hotbarPacket,
-    movement: movementPacket,
-    triggers: () => triggers.publish(),
-  };
 
   bot.on('health', infoPacket);
   bot.on('gamemodeChanged', infoPacket);
@@ -905,17 +891,6 @@ const inject = (bot) => {
     bot.removeListener('end', cleanup);
     disposeTerminate();
   }
-  function send(action, data, options = {}, returnValue) {
-    global.sendToClients('bot-action', {
-      action,
-      username: bot.username,
-      data,
-      options,
-      returnValue,
-      botId: bot.botId,
-    });
-  }
-
   bot.actions = {
     chatMessage,
     joinGamemode,

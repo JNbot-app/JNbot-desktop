@@ -1,4 +1,3 @@
-import { MapMovement } from './WorldMapClass';
 
 // Color constants for Steve's 3D top-down avatar (Minecraft character art)
 const COLOR_HEAD_BASE = '#4a321e';

@@ -62,7 +62,6 @@ const ServerPickList = ({ onPicked }: { onPicked?: (id: string) => void }) => {
     switchServer(id);
     onPicked?.(id);
   };
-
   return (
     <Flex vertical gap={token.marginSM} style={{ maxHeight: 360, overflowY: 'auto' }}>
       {installedServers.map((meta) => (

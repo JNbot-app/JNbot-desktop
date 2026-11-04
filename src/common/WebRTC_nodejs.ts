@@ -84,30 +84,34 @@ class WebRTC_nodejs extends WebRTC_base {
     this.socket.off(ClientEvents.CONNECT_REQUEST);
     this.socket.on(
       ClientEvents.CONNECT_REQUEST,
-      (data: ClientEventData[ClientEvents.CONNECT_REQUEST], cb: Function) => {
-        this.handleConnectRequest(data, cb).catch((err) => {
+      async (data: ClientEventData[ClientEvents.CONNECT_REQUEST], cb: Function) => {
+        try {
+          await this.handleConnectRequest(data, cb);
+        } catch (err) {
           console.warn('[host] connect request failed', err);
           try {
             cb({ error: String(err), retry: true });
           } catch {
             /* cb already used */
           }
-        });
+        }
       },
     );
 
     this.socket.off(ClientEvents.ANSWER);
     this.socket.on(
       ClientEvents.ANSWER,
-      (answer: ClientEventData[ClientEvents.ANSWER], cb: Function) => {
-        this.handleAnswerEvent(answer, cb).catch((err) => {
+      async (answer: ClientEventData[ClientEvents.ANSWER], cb: Function) => {
+        try {
+          await this.handleAnswerEvent(answer, cb);
+        } catch (err) {
           console.warn('[host] answer handling failed', err);
           try {
             cb({ error: String(err), retry: false });
           } catch {
             /* cb already used */
           }
-        });
+        }
       },
     );
 

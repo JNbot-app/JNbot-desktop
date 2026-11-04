@@ -1,7 +1,6 @@
 import { Flex, Radio, Switch, Typography, theme } from 'antd';
 import {
   CHANGE_GLOBAL_SETTINGS,
-  CUSTOM_DEFAULT_REMOTE_PERMISSIONS,
   DEFAULT_REMOTE_PERMISSIONS,
   FULL_REMOTE_PERMISSIONS,
   MANAGE_ACCESS,

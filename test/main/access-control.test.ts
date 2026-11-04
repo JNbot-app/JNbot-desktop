@@ -2,13 +2,11 @@ import EventEmitter from 'node:events';
 import AccessControl from '../../src/main/src/functions/AccessControl';
 import { remoteRestriction } from '../../src/main/src/functions/RemotePermissionPolicy';
 import {
-  CHANGE_GLOBAL_SETTINGS,
   CUSTOM_DEFAULT_REMOTE_PERMISSIONS,
   DEFAULT_REMOTE_PERMISSIONS,
   FULL_REMOTE_PERMISSIONS,
   MANAGE_ACCESS,
   MANAGE_PLUGINS,
-  MANAGE_PROFILES,
   REMOTE_CAPABILITIES,
   STANDARD_REMOTE_PERMISSIONS,
   USE_ACCOUNTS,

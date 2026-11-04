@@ -1,7 +1,7 @@
 
 
 const nbt = require('prismarine-nbt');
-const { customNbtToStr, parseItemText2, getItemText } = require('./nbtParser');
+const { getItemText } = require('./nbtParser');
 
 
 function itemInfo(item) {

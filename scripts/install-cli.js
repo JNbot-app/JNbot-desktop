@@ -3,7 +3,6 @@
 
 const { execSync } = require('child_process');
 const path = require('path');
-const fs = require('fs');
 
 // Define CLI directory
 const cliDir = path.join(__dirname, '..', 'src', 'cli');

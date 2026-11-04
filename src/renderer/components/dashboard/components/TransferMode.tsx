@@ -14,9 +14,9 @@ interface TransferModeProps {
 }
 
 const TransferMode: React.FC<TransferModeProps> = ({ scriptName, name }) => {
-  if (!scriptName || !name) return null;
-
   const settings = useSettingsStore(selectSettings);
+
+  if (!scriptName || !name) return null;
 
   const handleChange = (value: number) => {
     updateScriptSettings({

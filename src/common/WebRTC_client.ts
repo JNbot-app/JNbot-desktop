@@ -106,12 +106,14 @@ class WebRTC_client extends WebRTC_base {
     });
 
     this.socket.off(ClientEvents.OFFER);
-    this.socket.on(ClientEvents.OFFER, (data: ClientEventData[ClientEvents.OFFER], cb: Function) => {
-      this.handleOffer(data, cb).catch((err) => {
+    this.socket.on(ClientEvents.OFFER, async (data: ClientEventData[ClientEvents.OFFER], cb: Function) => {
+      try {
+        await this.handleOffer(data, cb);
+      } catch (err) {
         console.warn('[client] offer handling failed', err);
         try { cb({ error: String(err), retry: true }); } catch { /* cb already used */ }
         this.fail('OFFER_FAILED');
-      });
+      }
     });
 
     this.socket.off(ClientEvents.ICE_CANDIDATE);

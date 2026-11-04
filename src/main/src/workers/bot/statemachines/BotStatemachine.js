@@ -1,6 +1,5 @@
 const Statemachine = require('./Statemachine');
 const {
-  joinGamemodeBehaviourV2,
   gamemodeTranslate,
   gamemodeTranslateReverse,
 } = require('./joinGamemode/joinGamemodeBehaviourV2');
@@ -168,10 +167,6 @@ class BotStatemachine extends Statemachine {
         await joinGamemodeBehaviourV3(bot, targets.joinOptions.gamemode),
     };
   }
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 module.exports = BotStatemachine;

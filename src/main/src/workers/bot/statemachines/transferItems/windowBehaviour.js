@@ -24,13 +24,13 @@ const windowBehaviour = [
     name: 'Finished transfering items',
     when: ({bot, state}) =>
       !hasTradeableItem(bot, state) || getFreeWindowSpot(bot, 0) === null,
-    run: async ({bot, state, machine}) => {
+    run: async ({ machine }) => {
       machine.finish();
     },
   },
   {
     name: 'Depositing items',
-    when: ({bot, state}) => true,
+    when: () => true,
     run: async ({bot, state}) => {
       let lastSlot = 0;
       for (
@@ -48,7 +48,6 @@ const windowBehaviour = [
             bot.clickWindow(slot.slot, 0, 1);
             await bot.waitForTicks(2);
           } else {
-            const inv = bot.currentWindow;
             await bot.moveSlotItem(slot.slot, freeSlot);
           }
           break;

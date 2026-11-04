@@ -9,7 +9,6 @@ import {
   type AutomationReplayOrigin,
   type AutomationStep,
   type AutomationTargetDescriptor,
-  type AutomationVec3,
 } from '../../../../../common/automation';
 import type { AutomationExecutionContext, AutomationTargetAdapter } from '../../../../../common/AutomationPlayer';
 import type { IMcClient, McEntityInfo, McWindowInfo } from '../../../../../common/types/McClientApi';

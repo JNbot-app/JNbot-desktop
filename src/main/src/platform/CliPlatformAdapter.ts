@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'fs/promises';
+import { writeFile } from 'fs/promises';
 import path from 'path';
 import type {
   ConfirmPromptOptions,
@@ -14,7 +14,7 @@ import type {
 export class CliPlatformAdapter implements PlatformAdapter {
   public readonly platform = 'cli' as const;
 
-  async openFile(options?: OpenFileOptions): Promise<OpenFileResult> {
+  async openFile(_options?: OpenFileOptions): Promise<OpenFileResult> {
     // In CLI mode, if explicit file paths are not supplied, return canceled.
     return { canceled: true, files: [] };
   }

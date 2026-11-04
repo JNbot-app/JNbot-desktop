@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Empty, Flex, Spin, Typography, theme } from 'antd';
-import { CodeOutlined, FlagOutlined } from '@ant-design/icons';
+import { CodeOutlined, FlagOutlined, WarningFilled } from '@ant-design/icons';
 import {
+  defaultPluginAction,
   entryOverview,
   parseShareId,
   previewBlocked,
@@ -10,19 +11,19 @@ import {
   shareInstallKey,
   shareInstallState,
   type ShareInstallInput,
+  type SharePluginAction,
   type SharePreview,
 } from '../../../common/share';
 import useAppApi from '../../hooks/useAppApi';
 import { selectActiveServerId, useSettingsStore } from '../../redux/settings';
-import { useShares } from '../../redux/shares';
+import { initShares, useShares } from '../../redux/shares';
 import { usePanelContext } from '../other/botSideBar/SidePanelContextProvider';
 import type { SharePanelData } from '../other/botSideBar/panelTabs';
-import type { PluginChoice } from './SharePluginRow';
 import ShareContents from './ShareContents';
 import ShareHeader from './ShareHeader';
 import ShareInstallCheck, { choiceKey } from './ShareInstallCheck';
 import shareRequest from './shareRequest';
-import { useOpenInstalled } from './useInstallShare';
+import { activateInstalled, useOpenInstalled } from './useInstallShare';
 import ShareReviewActions from './ShareReviewActions';
 import promptText from './promptText';
 
@@ -58,7 +59,7 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
   const [busy, setBusy] = useState<'code' | 'install' | null>(null);
   // Links and reviews show the code right away; catalog entries once asked for.
   const [checking, setChecking] = useState(!entry);
-  const [choices, setChoices] = useState<Record<string, PluginChoice>>({});
+  const [choices, setChoices] = useState<Record<string, SharePluginAction>>({});
   const [trustPublisher, setTrustPublisher] = useState(false);
   const checkRef = useRef<HTMLDivElement>(null);
 
@@ -72,15 +73,19 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
     return result;
   };
 
+  // Runs once on mount; load() is not memoized, so depending on it would refetch on every render.
+  /* oxlint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
+    initShares();
     if (!entry) void load();
   }, []);
 
+  /* oxlint-enable react-hooks/exhaustive-deps */
   const showCheck = checking && !!preview;
   useEffect(() => {
     if (showCheck && entry)
       checkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [showCheck]);
+  }, [showCheck, entry]);
 
   const overview = preview
     ? previewOverview(preview)
@@ -102,6 +107,10 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
     appVersion,
     overview.publisher.own,
   );
+  const { official, own, trusted } = overview.publisher;
+  // Marketplace entries always carry an official approval.
+  const reviewed = !!entry || !!preview?.reviewed;
+  const unverifiedPublisher = !official && !own && !trusted && !reviewed;
   const closePanel = () => setPanel((panel) => ({ ...panel, active: false }));
 
   const showCode = async () => {
@@ -130,7 +139,7 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
   const confirmInstall = async () => {
     if (install && installState === 'installed') {
       closePanel();
-      openInstalled(install.localRef);
+      openInstalled(overview.kind, install.localRef);
       return;
     }
     setBusy('install');
@@ -141,7 +150,7 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
       `${overview.title} ${installState === 'none' ? 'installed' : 'updated'}`,
     );
     closePanel();
-    openInstalled(overview.kind, result.localRef);
+    activateInstalled(overview.kind, result.localRef);
   };
 
   /** Downloads the share if needed; shows the check first when something needs a look. */
@@ -158,7 +167,7 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
         ownerId: plugin.ownerId,
         pluginId: plugin.pluginId,
         revision: plugin.revision,
-        action: choices[choiceKey(plugin)] ?? 'replace',
+        action: choices[choiceKey(plugin)] ?? defaultPluginAction(plugin),
         // The user reviewed the plugins and their publishers in this panel.
         acceptUnverified: true,
       })),
@@ -171,7 +180,11 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
 
   return (
     <Flex vertical gap={token.marginLG} style={{ minHeight: '100%' }}>
-      <ShareHeader overview={overview} installState={installState} />
+      <ShareHeader
+        overview={overview}
+        installState={installState}
+        reviewed={reviewed}
+      />
       <ShareContents overview={overview} />
 
       {checking && preview ? (
@@ -228,8 +241,15 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
                 install it.
               </Typography.Text>
             )}
+            {unverifiedPublisher && installState !== 'installed' && (
+              <Typography.Text type="danger">
+                <WarningFilled /> <strong>Only install from people you trust.</strong>{' '}
+                This publisher is unverified, and installing can run code on your
+                computer.
+              </Typography.Text>
+            )}
             <Flex gap={token.marginXS} align="center">
-              {(entry || preview?.reviewed) && !overview.publisher.own && (
+              {reviewed && !overview.publisher.own && (
                 <Button
                   type="text"
                   size="small"

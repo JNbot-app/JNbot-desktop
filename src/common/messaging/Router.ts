@@ -1,7 +1,6 @@
 import {
   Address,
   BACKEND,
-  clientAddress,
   decodeAddress,
   workerScriptAddress,
 } from './Address';

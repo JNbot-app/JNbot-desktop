@@ -41,12 +41,17 @@ const CodeEditor = () => {
     lastUpdated: 0,
   });
 
+  // Fetch once on mount; requestCode is not memoized and would refetch every render.
+  /* oxlint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     requestCode();
   }, []);
 
+  /* oxlint-enable react-hooks/exhaustive-deps */
   // When the window regains focus (e.g. after editing the plugin in an external
   // editor) reload the canonical file — but never clobber unsaved in-app edits.
+  // The focus listener is registered once; requestCode only reads refs.
+  /* oxlint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     const onFocus = () => {
       if (!editorDetails.current.needUpdate) requestCode();
@@ -55,6 +60,7 @@ const CodeEditor = () => {
     return () => window.removeEventListener('focus', onFocus);
   }, []);
 
+  /* oxlint-enable react-hooks/exhaustive-deps */
   const requestCode = async () => {
     const pluginId = window.location.href
       .match(/\/code\/[A-z0-9]+/)?.[0]

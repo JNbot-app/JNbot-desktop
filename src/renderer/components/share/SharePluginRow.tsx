@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { Button, Flex, Segmented, Tag, Typography, theme } from 'antd';
-import type { SharePluginPreview } from '../../../common/share';
-
-export type PluginChoice = 'replace' | 'keep-both' | 'skip';
+import type { SharePluginAction, SharePluginPreview } from '../../../common/share';
 
 /** Only problems get a tag; signed code is the normal case. */
 const VERIFICATION_TAGS: Record<
@@ -17,8 +15,8 @@ const VERIFICATION_TAGS: Record<
 
 const SharePluginRow: React.FC<{
   plugin: SharePluginPreview;
-  choice: PluginChoice;
-  onChoice?: (choice: PluginChoice) => void;
+  choice: SharePluginAction;
+  onChoice?: (choice: SharePluginAction) => void;
 }> = ({ plugin, choice, onChoice }) => {
   const { token } = theme.useToken();
   const [showCode, setShowCode] = useState(false);
@@ -58,23 +56,31 @@ const SharePluginRow: React.FC<{
           Signed by {plugin.publisherName}
         </Typography.Text>
       )}
-      {plugin.state === 'conflict' && onChoice && (
+      {(plugin.state === 'conflict' || plugin.state === 'update') && onChoice && (
         <Flex align="center" gap={token.marginXS} wrap>
           <Typography.Text
             type="secondary"
             style={{ fontSize: token.fontSizeSM }}
           >
-            You already have this plugin:
+            {plugin.state === 'update'
+              ? 'This share has an update for this plugin:'
+              : 'You already have this plugin:'}
           </Typography.Text>
-          <Segmented<PluginChoice>
+          <Segmented<SharePluginAction>
             size="small"
             value={choice}
             onChange={onChoice}
-            options={[
-              { label: 'Replace', value: 'replace' },
-              { label: 'Keep both', value: 'keep-both' },
-              { label: 'Skip', value: 'skip' },
-            ]}
+            options={
+              plugin.state === 'update'
+                ? [
+                    { label: 'Keep yours', value: 'skip' },
+                    { label: 'Update', value: 'replace' },
+                  ]
+                : [
+                    { label: 'Replace', value: 'replace' },
+                    { label: 'Skip', value: 'skip' },
+                  ]
+            }
           />
         </Flex>
       )}

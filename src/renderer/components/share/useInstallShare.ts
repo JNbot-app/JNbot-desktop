@@ -14,11 +14,16 @@ import {
 } from '../../redux/settings';
 import shareRequest from './shareRequest';
 
-/** Takes the user to what was just installed: a profile becomes active, the rest open on their page. */
+/** A freshly installed profile becomes the active one; nothing else navigates. */
+export const activateInstalled = (kind: ShareKind, localRef: string) => {
+  if (kind === 'profile') switchServer(localRef);
+};
+
+/** Opens an already installed item: a profile becomes active, the rest open on their page. */
 export const useOpenInstalled = () => {
   const navigate = useNavigate();
   return (kind: ShareKind, localRef: string) => {
-    if (kind === 'profile') switchServer(localRef);
+    activateInstalled(kind, localRef);
     navigate(
       kind === 'trigger'
         ? '/triggers'
@@ -37,7 +42,6 @@ export const useOpenInstalled = () => {
 export const useQuickInstall = () => {
   const api = useAppApi();
   const profileKey = useSettingsStore(selectActiveServerId);
-  const openInstalled = useOpenInstalled();
   return async (entry: MarketEntry) => {
     const preview = await shareRequest<SharePreview>(api, 'SHARE_PREVIEW', {
       link: entry.id,
@@ -64,7 +68,7 @@ export const useQuickInstall = () => {
     );
     if (!result) return true;
     api.message.success(`${entry.listing.title} installed`);
-    openInstalled(preview.kind, result.localRef);
+    activateInstalled(preview.kind, result.localRef);
     return true;
   };
 };

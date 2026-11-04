@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { Section } from '../components/Section';
-import { clipText } from '../components/Header';
 import type { CliRuntime } from '../types';
 import { getServerMeta } from '../../../common/serverInfo';
 import { addAlt } from '../actions';
@@ -22,8 +20,6 @@ interface AltFormModalProps {
 
 export const AltFormModal: React.FC<AltFormModalProps> = ({
   runtime,
-  width,
-  height,
   initialAlt,
   onClose,
   onSuccess,

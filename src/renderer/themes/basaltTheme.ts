@@ -3,21 +3,21 @@ import { ThemeConfig } from 'antd/es/config-provider';
 
 /**
  * Soft charcoal surfaces with hairline borders, soft gray text and a
- * muted neutral gray accent that stays in the background.
+ * light neutral gray accent with dark text, so primary actions stand out.
  */
 export const basaltTheme: ThemeConfig = {
   algorithm: theme.darkAlgorithm,
   token: {
     fontFamily: "'Exo 2', sans-serif",
     borderRadius: 8,
-    colorPrimary: '#6b6f73',
-    colorPrimaryBg: 'rgba(107, 111, 115, 0.12)',
-    colorPrimaryBorder: 'rgba(107, 111, 115, 0.35)',
-    colorPrimaryHover: '#7d8185',
-    colorPrimaryActive: '#5a5e62',
-    colorLink: '#a8acb0',
+    colorPrimary: '#9aa0a6',
+    colorPrimaryBg: 'rgba(154, 160, 166, 0.14)',
+    colorPrimaryBorder: 'rgba(154, 160, 166, 0.4)',
+    colorPrimaryHover: '#b0b5ba',
+    colorPrimaryActive: '#868b90',
+    colorLink: '#b4b8bc',
     colorLinkHover: '#c2c5c8',
-    colorLinkActive: '#6b6f73',
+    colorLinkActive: '#9aa0a6',
     colorTextBase: '#cccccc',
     colorTextSecondary: '#9d9d9d',
     colorTextTertiary: '#6f6f6f',
@@ -64,10 +64,10 @@ export const basaltTheme: ThemeConfig = {
       colorBorderSecondary: '#242526',
     },
     Button: {
-      colorPrimary: '#6b6f73',
-      colorPrimaryHover: '#7d8185',
-      colorPrimaryActive: '#5a5e62',
-      primaryColor: '#ffffff',
+      colorPrimary: '#9aa0a6',
+      colorPrimaryHover: '#b0b5ba',
+      colorPrimaryActive: '#868b90',
+      primaryColor: '#121314',
       defaultBg: '#202122',
       defaultHoverBg: '#272829',
       defaultBorderColor: '#2e2f30',
@@ -97,7 +97,7 @@ export const basaltTheme: ThemeConfig = {
       itemColor: '#9d9d9d',
       itemHoverColor: '#cccccc',
       itemSelectedColor: '#ffffff',
-      inkBarColor: '#6b6f73',
+      inkBarColor: '#9aa0a6',
     },
     Table: {
       headerBg: '#202122',
@@ -119,8 +119,8 @@ export const basaltTheme: ThemeConfig = {
       itemActiveBg: '#202122',
     },
     Switch: {
-      colorPrimary: '#6b6f73',
-      colorPrimaryHover: '#7d8185',
+      colorPrimary: '#9aa0a6',
+      colorPrimaryHover: '#b0b5ba',
     },
     Tag: {
       defaultBg: '#202122',

@@ -2,7 +2,6 @@ import showDialog from '../../src/main/src/functions/actions/dialog';
 import { ipcMain } from 'electron';
 
 describe('showDialog action', () => {
-  const originalGlobal = { ...global };
 
   afterEach(() => {
     (global as any).isCLI = undefined;

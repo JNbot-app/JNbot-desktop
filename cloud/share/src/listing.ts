@@ -1,9 +1,13 @@
 import {
   APP_VERSION_PATTERN,
   MAX_BANNER_URL_LENGTH,
+  MAX_DETAIL_TITLE_LENGTH,
+  MAX_DETAIL_VALUE_LENGTH,
   MAX_LISTING_BYTES,
+  MAX_SHARE_DESCRIPTION_LENGTH,
   MAX_SHARE_ITEMS,
   MAX_SHARE_SERVERS,
+  MAX_SHARE_TITLE_LENGTH,
   SERVER_ID_PATTERN,
   isShareKind,
   type ShareListing,
@@ -34,16 +38,16 @@ export function parseListing(text: string): ShareListing | null {
       listing.details.length <= 50 &&
       listing.details.every(
         (section) =>
-          isText(section?.title, 200) &&
+          isText(section?.title, MAX_DETAIL_TITLE_LENGTH) &&
           Array.isArray(section.rows) &&
           section.rows.length <= 210 &&
-          section.rows.every((row) => isText(row?.label, 100) && isText(row?.value, 500)),
+          section.rows.every((row) => isText(row?.label, 100) && isText(row?.value, MAX_DETAIL_VALUE_LENGTH)),
       );
     const valid =
       isShareKind(listing.kind) &&
-      isText(listing.title, 100) &&
+      isText(listing.title, MAX_SHARE_TITLE_LENGTH) &&
       listing.title.trim().length > 0 &&
-      isText(listing.description, 2000) &&
+      isText(listing.description, MAX_SHARE_DESCRIPTION_LENGTH) &&
       validItems &&
       validDetails &&
       (listing.stripped === undefined || isTextList(listing.stripped, 20, 100)) &&

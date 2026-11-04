@@ -14,12 +14,13 @@ let initialized = false;
  * The backend refreshes update info at most once a day on this call.
  */
 export function initShares(): void {
-  if (initialized) return;
-  initialized = true;
+  // Also reloads on every call: the backend drops installs whose local copy was deleted.
   void window.ipcRenderer
     .get<ShareState>('SHARE_STATE')
     .then((state) => useShares.setState(state))
     .catch(() => {});
+  if (initialized) return;
+  initialized = true;
   window.ipcRenderer.on('shares', (state: ShareState) => useShares.setState(state));
 }
 

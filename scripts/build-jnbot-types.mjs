@@ -203,7 +203,7 @@ function compactInterface(source, name, memberNames) {
 
   const selected = new Set(memberNames);
   const compactMembers = members.filter((member) => {
-    const match = member.match(/^\s*(?:readonly\s+)?(?:['\"]([^'\"]+)['\"]|([A-Za-z_$][\w$]*))/);
+    const match = member.match(/^\s*(?:readonly\s+)?(?:['"]([^'"]+)['"]|([A-Za-z_$][\w$]*))/);
     return match && selected.has(match[1] ?? match[2]);
   });
 

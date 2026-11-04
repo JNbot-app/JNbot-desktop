@@ -28,7 +28,7 @@ const Tutorial = forwardRef(({ title, markdown, children }: TutorialProps, ref) 
       styles={{body: {padding: '0 15%' }}}
     >
       {markdown && open ? (
-        <ReactMarkdown children={markdown} remarkPlugins={[remarkGfm]} />
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
       ) : null}
       {open && children}
     </Modal>

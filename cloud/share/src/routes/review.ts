@@ -1,4 +1,4 @@
-import { approvalMessage, type ShareReviewDecision } from '../../../../src/common/share';
+import { approvalMessage, type ShareListing, type ShareReviewDecision } from '../../../../src/common/share';
 import { isOfficialKey, sha256Hex, verifyEd25519 } from '../auth';
 import { LATEST, allRecords, bumpMarket, isListed, pruneRevisions, type ShareRow } from '../db';
 import { error, json, readJson, readSignedWrite, type SignedWrite } from '../http';
@@ -74,9 +74,10 @@ export async function reviewShare(request: Request, env: Env, row: ShareRow, pat
         row.id,
         revision,
       ),
+      // A new name is part of the review, so it only shows from here on.
       env.DB.prepare(
-        `UPDATE shares SET status = 'live', note = NULL, live_revision = ?, reports = 0, updated_at = ? WHERE id = ?`,
-      ).bind(revision, now, row.id),
+        `UPDATE shares SET owner_name = ?, status = 'live', note = NULL, live_revision = ?, reports = 0, updated_at = ? WHERE id = ?`,
+      ).bind((JSON.parse(target!.listing) as ShareListing).publisherName, revision, now, row.id),
       pruneRevisions(env, row.id, [revision]),
       env.DB.prepare('DELETE FROM reports WHERE share_id = ?').bind(row.id),
       bumpMarket(env),
@@ -94,6 +95,10 @@ export async function reviewShare(request: Request, env: Env, row: ShareRow, pat
         `UPDATE shares SET status = 'rejected', note = ?, live_revision = ?, reports = 0, updated_at = ? WHERE id = ?`,
       ).bind(note, takedown ? null : row.live_revision, now, row.id),
       env.DB.prepare('DELETE FROM reports WHERE share_id = ?').bind(row.id),
+      // Apps trust the approval, not the status: without this it still shows as reviewed.
+      ...(takedown
+        ? [env.DB.prepare('UPDATE share_revisions SET approval = NULL WHERE share_id = ? AND revision = ?').bind(row.id, revision)]
+        : []),
       ...(takedown && isListed(row) ? [bumpMarket(env)] : []),
     ]);
     return json({ reviewed: true });

@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useState,
   useCallback,
+  useMemo,
 } from 'react';
 
 import BotMapCanvas, { BotMapCanvasRef } from './BotMapCanvas';
@@ -22,15 +23,23 @@ interface BotMapProps {
   small?: boolean;
 }
 
-const BotMap = forwardRef<TabRef, BotMapProps>(({ bot, data, small }, ref) => {
+const BotMap = forwardRef<TabRef, BotMapProps>(({ bot, small }, ref) => {
   const mapRef = useRef<BotMapCanvasRef>(null);
   const [loading, setLoading] = useState(true);
   const [showEntities, setShowEntities] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState<MapEntity | null>(null);
   const { token } = theme.useToken();
+  const palette = useMemo(
+    () => ({
+      player: token.colorPrimary,
+      mob: token.colorWarning,
+      outline: token.colorTextLightSolid,
+    }),
+    [token.colorPrimary, token.colorWarning, token.colorTextLightSolid],
+  );
 
   useImperativeHandle(ref, () => ({
-    update: (data: MapData) => {
+    update: (_data: MapData) => {
     },
   }));
 
@@ -43,8 +52,9 @@ const BotMap = forwardRef<TabRef, BotMapProps>(({ bot, data, small }, ref) => {
       });
   }, []);
 
+  const botId = bot?.botId;
   useEffect(() => {
-    if (!bot) return;
+    if (!botId) return;
 
     setLoading(true);
     let isCancelled = false;
@@ -75,7 +85,7 @@ const BotMap = forwardRef<TabRef, BotMapProps>(({ bot, data, small }, ref) => {
         });
 
       unsubscribeChunks = botEvents.subscribe(
-        bot.botId,
+        botId,
         'chunks',
         (chunkData: ChunkUpdate) => {
           if (chunkData.type === 'load') {
@@ -97,7 +107,7 @@ const BotMap = forwardRef<TabRef, BotMapProps>(({ bot, data, small }, ref) => {
       );
 
       unsubscribeMovement = botEvents.subscribe(
-        bot.botId,
+        botId,
         'movement',
         ([x, y, z]) => {
           mapRef.current?.setPlayerPos({ x, y, z });
@@ -110,7 +120,7 @@ const BotMap = forwardRef<TabRef, BotMapProps>(({ bot, data, small }, ref) => {
       );
 
       unsubscribeForceMove = botEvents.subscribe(
-        bot.botId,
+        botId,
         'force-move',
         ([x, y, z]) => {
           mapRef.current?.setPlayerPos({ x, y, z });
@@ -119,14 +129,14 @@ const BotMap = forwardRef<TabRef, BotMapProps>(({ bot, data, small }, ref) => {
       );
 
       unsubscribeMovementState = botEvents.subscribe(
-        bot.botId,
+        botId,
         'movement-state',
         (movement: MovementData) => {
           if (Number.isFinite(movement?.yaw)) mapRef.current?.setMovement(movement);
         },
         { throttle: 100, ignorePrevious: true },
       );
-      botEvents.action(bot.botId, 'movementPacket');
+      botEvents.action(botId, 'movementPacket');
 
       // Setup click handler for pathfinding
       removeClickHandler = mapRef.current?.onClick((pos, pointer) => {
@@ -149,7 +159,7 @@ const BotMap = forwardRef<TabRef, BotMapProps>(({ bot, data, small }, ref) => {
       unsubscribeMovementState?.();
       removeReady?.();
     };
-  }, [bot.botId]);
+  }, [botId]);
 
   useEffect(() => {
     if (!showEntities) {
@@ -160,7 +170,7 @@ const BotMap = forwardRef<TabRef, BotMapProps>(({ bot, data, small }, ref) => {
     let unsubscribe: (() => void) | undefined;
     const removeReady = mapRef.current?.onReady(() => {
       if (cancelled) return;
-      unsubscribe = botEvents.subscribe(bot.botId, 'map-entities', (value: unknown) => {
+      unsubscribe = botEvents.subscribe(botId, 'map-entities', (value: unknown) => {
         if (!Array.isArray(value)) return;
         const entities = value.filter((entity): entity is MapEntity =>
           entity !== null && typeof entity === 'object' &&
@@ -177,10 +187,12 @@ const BotMap = forwardRef<TabRef, BotMapProps>(({ bot, data, small }, ref) => {
       cancelled = true;
       removeReady?.();
       unsubscribe?.();
+      // Cleanup intentionally reads the canvas handle at unmount time.
+      // oxlint-disable-next-line react-hooks/exhaustive-deps
       mapRef.current?.setEntities([]);
       setSelectedEntity(null);
     };
-  }, [bot.botId, showEntities]);
+  }, [botId, showEntities]);
 
   if (!bot) {
     return <div>No bot selected</div>;
@@ -202,7 +214,7 @@ const BotMap = forwardRef<TabRef, BotMapProps>(({ bot, data, small }, ref) => {
       >
         <BotMapCanvas
           version={bot.version}
-          palette={{ player: token.colorPrimary, mob: token.colorWarning, outline: token.colorTextLightSolid }}
+          palette={palette}
           ref={mapRef}
         />
 

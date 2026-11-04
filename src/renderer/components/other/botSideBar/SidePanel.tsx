@@ -7,7 +7,7 @@ import {
   type TriggerPanelData,
 } from './panelTabs';
 import { CloseOutlined, LoadingOutlined } from '@ant-design/icons';
-import { Badge, Button, Spin, Tabs } from 'antd';
+import { Badge, Button, Spin, Tabs, theme } from 'antd';
 import {
   FC,
   lazy,
@@ -84,12 +84,12 @@ const CONTAINER_STYLE: CSSProperties = {
   height: '100%',
   display: 'flex',
   flexDirection: 'column',
-  borderLeft: '1px solid rgba(128, 128, 128, 0.15)',
+  overflow: 'hidden',
 };
 
 const TAB_BAR_STYLE: CSSProperties = {
   margin: 0,
-  padding: '0 8px',
+  padding: '0 12px',
 };
 
 const CONTENT_STYLE: CSSProperties = {
@@ -198,6 +198,7 @@ const SidePanel: FC<{
   const selectedBot = useSettingsStore(selectSelectedBot);
   const activeBots = useSettingsStore(selectActiveBots);
   const { panel } = usePanelContext();
+  const { token } = theme.useToken();
 
   const onSelectBot = useCallback(
     (bot: ActiveBotsType[number]) => {
@@ -323,7 +324,14 @@ const SidePanel: FC<{
   };
 
   return (
-    <div style={CONTAINER_STYLE}>
+    <div
+      style={{
+        ...CONTAINER_STYLE,
+        background: token.colorBgContainer,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: token.borderRadiusLG,
+      }}
+    >
       <Tabs
         activeKey={activeTab}
         onChange={onTabChange}

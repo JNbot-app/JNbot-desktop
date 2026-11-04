@@ -1,5 +1,5 @@
 const esbuild = require('esbuild');
-const { createServer, request } = require('http');
+const { createServer } = require('http');
 
 esbuild
   .context({

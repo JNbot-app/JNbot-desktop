@@ -110,7 +110,7 @@ const ChainStepRow: FC<Props> = ({
           style={{ flex: 1, minWidth: 160, fontWeight: 500 }}
         />
         {tags.map((tag) => (
-          <Tag key={tag} bordered={false} onClick={onToggle} style={{ cursor: 'pointer', marginInlineEnd: 0 }}>
+          <Tag key={tag} variant="filled" onClick={onToggle} style={{ cursor: 'pointer', marginInlineEnd: 0 }}>
             {tag}
           </Tag>
         ))}

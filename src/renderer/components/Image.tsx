@@ -1,6 +1,6 @@
 import { FC, useState } from 'react';
 import { LoadingOutlined } from '@ant-design/icons';
-import { Space, Spin } from 'antd';
+import { Spin } from 'antd';
 
 const Image: FC<{
   src: string;

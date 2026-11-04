@@ -11,7 +11,7 @@ describe('Offline and Network Failure Resilience', () => {
 
   describe('Mojang UUID fetcher (uuid.ts) when offline', () => {
     it('returns null on DNS resolution failure (ENOTFOUND)', async () => {
-      jest.spyOn(https, 'get').mockImplementation((options: any, cb: any): any => {
+      jest.spyOn(https, 'get').mockImplementation((_options: any, _cb: any): any => {
         const req: any = new EventEmitter();
         setImmediate(() => {
           const err: any = new Error('getaddrinfo ENOTFOUND api.mojang.com');
@@ -26,7 +26,7 @@ describe('Offline and Network Failure Resilience', () => {
     });
 
     it('returns null on connection refused or socket timeout (ECONNREFUSED / ETIMEDOUT)', async () => {
-      jest.spyOn(https, 'get').mockImplementation((options: any, cb: any): any => {
+      jest.spyOn(https, 'get').mockImplementation((_options: any, _cb: any): any => {
         const req: any = new EventEmitter();
         setImmediate(() => {
           const err: any = new Error('connect ECONNREFUSED 127.0.0.1:443');

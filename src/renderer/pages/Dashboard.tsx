@@ -3,8 +3,6 @@ import {
   Divider,
   Row,
   Col,
-  Typography,
-  theme,
 } from 'antd';
 import ContainerBreakpoint from '../components/general/ContainerBreakpoint';
 import AccountWorth from '../components/dashboard/AccountWorth';
@@ -16,6 +14,7 @@ import PlayTime from '../components/dashboard/PlayTime';
 import GkitTimeline from '../components/dashboard/GkitTimeline';
 import ActiveBots from '../components/dashboard/ActiveBots';
 import DisplayGkits from '../components/dashboard/DisplayGkits';
+import SectionHeading from '../components/dashboard/SectionHeading';
 import ActiveScripts from '../components/dashboard/ActiveScripts';
 import PlayerStats from '../components/dashboard/PlayerStats';
 import DashboardScripts from '../components/dashboard/profileScripts/DashboardScripts';
@@ -24,7 +23,6 @@ import PlayMcCard from '../components/mcLauncher/PlayMcCard';
 // import McLauncher from '../components/dashboard/McLauncher';
 
 const Dashboard: React.FC = () => {
-  const { token } = theme.useToken();
   return (
     <ContainerBreakpoint>
         {(bp) => {
@@ -68,10 +66,7 @@ const Dashboard: React.FC = () => {
                 </Col>
               </Row>
 
-              <Typography.Title level={2} style={{ fontWeight: 600, fontSize: '1.7em', paddingTop: '1rem', color: token.colorPrimaryText }}>
-                Kits
-              </Typography.Title>
-              <Divider style={{ marginBottom: '2rem', marginTop: 0 }} />
+              <SectionHeading>Schedule</SectionHeading>
               <Row gutter={[16, 16]}>
                 <Col span={halfSpan}>
                   <GkitTimeline />
@@ -80,15 +75,9 @@ const Dashboard: React.FC = () => {
                   <DisplayGkits />
                 </Col>
               </Row>
-              <Typography.Title level={2} style={{ fontWeight: 600, fontSize: '1.7em', paddingTop: '1rem', color: token.colorPrimaryText }}>
-                Script chaining
-              </Typography.Title>
-              <Divider style={{ marginBottom: '2rem', marginTop: 0 }} />
+              <SectionHeading>Script chaining</SectionHeading>
               <Chains />
-              <Typography.Title level={2} style={{ fontWeight: 600, fontSize: '1.7em', paddingTop: '1rem', color: token.colorPrimaryText }}>
-                Other
-              </Typography.Title>
-              <Divider style={{ marginBottom: '2rem', marginTop: 0 }} />
+              <SectionHeading>Other</SectionHeading>
               <Row gutter={[16, 16]}>
                 <Col span={halfSpan}>
                   <PlayMcCard />

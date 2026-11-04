@@ -101,7 +101,7 @@ const joinGamemodeBehaviour = () => {
   const state = new Statemachine([
     {
       name: 'Version check & setup listeners',
-      shouldTrigger: (bot, targets) => true,
+      shouldTrigger: () => true,
       action: async (bot, targets) => {
         // Setup listeners (before version check so we're sure bot is still online)
         targets.events.__onMessagestr_timeout = null;
@@ -234,16 +234,16 @@ const joinGamemodeBehaviour = () => {
     },
     {
       name: 'Closing current window',
-      shouldTrigger: (bot, targets) =>
+      shouldTrigger: (bot) =>
         !bot.getWindowTitle().toLowerCase().includes('server selector'),
-      action: async (bot, targets) => {
+      action: async (bot) => {
         bot.closeWindow(bot.currentWindow);
         await bot.waitForTicks(5);
       },
     },
     {
       name: 'Clicking on gamemode slot in selector',
-      shouldTrigger: (bot, targets) => true,
+      shouldTrigger: () => true,
       action: async (bot, targets) => {
         const gamemode = targets.joinOptions.gamemode
           .toLowerCase()

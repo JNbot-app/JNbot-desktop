@@ -2,7 +2,6 @@ import { convertLegacyCanvas } from '../../src/common/legacyRecipeConverter';
 import {
   createDefaultRecipeDocument,
   literal,
-  type RecipeDocumentV3,
 } from '../../src/common/recipeV3';
 import { validateRecipeDocument } from '../../src/common/recipeValidation';
 import fs from 'fs';

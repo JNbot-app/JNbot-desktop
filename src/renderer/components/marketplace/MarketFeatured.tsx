@@ -1,6 +1,8 @@
+import { Flex, Tooltip, Typography, theme } from 'antd';
+import { SafetyCertificateFilled } from '@ant-design/icons';
 import { useState } from 'react';
-import { Flex, Typography, theme } from 'antd';
 import type { MarketEntry } from '../../../common/share';
+import { withAlpha } from '../intro/introUtils';
 import BannerHero from '../macros/BannerHero';
 import { SHARE_KIND_ICONS } from './KindTile';
 
@@ -12,56 +14,80 @@ const FeaturedCard: React.FC<{ entry: MarketEntry; onOpen: () => void }> = ({
   const [hover, setHover] = useState(false);
   const accent = entry.listing.color ?? token.colorPrimary;
   return (
-    <Flex
-      vertical
+    <div
       role="button"
       tabIndex={0}
       aria-label={`${entry.listing.title} by ${entry.publisher.name}`}
       onClick={onOpen}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
         onOpen();
       }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
       style={{
         minWidth: 0,
         cursor: 'pointer',
         overflow: 'hidden',
         borderRadius: token.borderRadiusLG,
-        background: token.colorBgContainer,
-        border: `${token.lineWidth}px ${token.lineType} ${hover ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
-        transition: `border-color ${token.motionDurationMid}`,
+        border: `${token.lineWidth}px ${token.lineType} ${token.colorBorderSecondary}`,
       }}
     >
       <BannerHero
         src={entry.bannerUrl}
-        height={132}
+        height={160}
+        zoomed={hover}
         accent={accent}
         fallback={
           <Flex
             align="center"
             justify="center"
-            style={{ height: '100%', fontSize: 32, color: accent, opacity: 0.7 }}
+            style={{
+              height: '100%',
+              fontSize: 56,
+              color: accent,
+              background: `radial-gradient(circle at 30% 20%, ${withAlpha(accent, 0.35)}, transparent 70%)`,
+            }}
           >
             {SHARE_KIND_ICONS[entry.kind]}
           </Flex>
         }
-      />
-      <Flex vertical style={{ padding: token.paddingSM }}>
-        <Typography.Text strong ellipsis>
-          {entry.listing.title}
-        </Typography.Text>
-        <Typography.Text
-          type="secondary"
-          ellipsis
-          style={{ fontSize: token.fontSizeSM }}
+      >
+        <Flex
+          align="center"
+          gap={token.marginXXS}
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            padding: `${token.paddingXL}px ${token.paddingSM}px ${token.paddingSM}px`,
+            background:
+              'linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.5) 55%, transparent)',
+          }}
         >
-          {entry.publisher.name}
-        </Typography.Text>
-      </Flex>
-    </Flex>
+          <Typography.Text
+            ellipsis
+            style={{
+              color: token.colorTextLightSolid,
+              opacity: 0.85,
+              minWidth: 0,
+              fontWeight: token.fontWeightStrong,
+            }}
+          >
+            {entry.listing.title}
+          </Typography.Text>
+          {entry.publisher.official && (
+            <Tooltip title="Made by the JNbot team">
+              <SafetyCertificateFilled
+                style={{ color: token.colorTextLightSolid, opacity: 0.85 }}
+              />
+            </Tooltip>
+          )}
+        </Flex>
+      </BannerHero>
+    </div>
   );
 };
 

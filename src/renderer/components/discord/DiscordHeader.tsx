@@ -7,7 +7,6 @@ import {
   GlobalOutlined,
   PlayCircleOutlined,
   PoweroffOutlined,
-  UserOutlined,
 } from '@ant-design/icons';
 import { FaDiscord } from 'react-icons/fa';
 import type { DiscordStats } from './types';

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useSettingsStore } from '../../redux/settings';
-import { Button, Progress, Tooltip, Badge, Space, Typography } from 'antd';
+import { Button, Progress, Tooltip, Space, Typography } from 'antd';
 import {
   ExclamationCircleOutlined,
   CloudDownloadOutlined,

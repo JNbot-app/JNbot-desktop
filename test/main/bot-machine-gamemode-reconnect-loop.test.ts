@@ -111,7 +111,7 @@ describe('BotMachine gamemode join reconnect loop resolution', () => {
           when: () => !normalizeGamemode(bot.getGamemode()).includes('prison'),
           run: async ({ bot: activeBot }) => {
             joinAttempts++;
-            await activeBot.join('prison').catch((err) => {
+            await activeBot.join('prison').catch((_err) => {
               // Bot failed to join, quit to trigger reconnect
               activeBot.quit();
             });

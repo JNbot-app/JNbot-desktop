@@ -1,5 +1,5 @@
 import { ConfigProvider, ThemeConfig } from "antd"
-import { FC, PropsWithChildren, useEffect, useMemo } from "react"
+import { FC, PropsWithChildren, useMemo } from "react"
 
 
 import { lightTheme } from "../../themes/lightTheme"
@@ -16,6 +16,7 @@ import { goldTheme } from "../../themes/goldTheme";
 import { sculkTheme } from "../../themes/sculkTheme";
 import { basaltTheme } from "../../themes/basaltTheme";
 import { Themes } from "common/CommonEnums";
+import { withSharedTheme } from "../../themes/sharedTheme";
 import { selectAppSettings, useSettingsStore } from "../../redux/settings";
 
 
@@ -25,7 +26,7 @@ const i18n_locale: Record<Language, Locale> = {
   [Language.EN]: enUS,
 };
 
-const appThemes: Record<Themes, ThemeConfig> = {
+const rawThemes: Record<Themes, ThemeConfig> = {
   [Themes.LIGHT]: lightTheme,
   [Themes.DARK]: darkTheme,
   [Themes.OBSIDIAN]: obsidianTheme,
@@ -36,6 +37,10 @@ const appThemes: Record<Themes, ThemeConfig> = {
 }
 
 // Full-screen backdrop blur is costly to repaint while the modal animates
+const appThemes = Object.fromEntries(
+  Object.entries(rawThemes).map(([key, value]) => [key, withSharedTheme(value)]),
+) as Record<Themes, ThemeConfig>
+
 const modalConfig = { mask: { blur: false } }
 
 const ThemeProvider: FC<PropsWithChildren> = ({ children }) => {
@@ -52,7 +57,7 @@ const ThemeProvider: FC<PropsWithChildren> = ({ children }) => {
       theme = {...theme, token: {...theme.token, motion: !reduceMotion}}
     }
     return theme
-  }, [reduceMotion, theme])
+  }, [reduceMotion, theme, selectedTheme])
 
 
   return (

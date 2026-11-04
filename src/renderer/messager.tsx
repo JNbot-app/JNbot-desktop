@@ -165,12 +165,11 @@ function SocketHandler(): null {
         message.error(
           `Could not open ${selectedProfileKey}. Choose another profile.`,
         );
-        if (!window.web) window.location.hash = '/select-server';
       });
     return () => {
       current = false;
     };
-  }, [selectedProfileKey]);
+  }, [selectedProfileKey, message]);
 
   useEffect(() => {
     const removeListeners: Array<() => void> = [];

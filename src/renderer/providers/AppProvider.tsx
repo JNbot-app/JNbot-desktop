@@ -13,7 +13,6 @@ export enum Language {
   FR = 'fr',
   NL = 'nl',
   EN = 'en',
-  US = 'en'
 }
 
 

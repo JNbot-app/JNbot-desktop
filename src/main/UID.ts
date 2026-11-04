@@ -22,7 +22,7 @@ function generateFallbackUID(){
      uid =
        'C' +
        [...Array(63)]
-         .map((i) => (~~(Math.random() * 36)).toString(36))
+         .map(() => (~~(Math.random() * 36)).toString(36))
          .join(''); // self generated uid starts with C
      fs.writeFileSync(filePath, uid);
    } else {

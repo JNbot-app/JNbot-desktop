@@ -6,7 +6,7 @@
 
 <p align="center">
   Desktop app for running Minecraft bots, scripts and macros, with built-in
-  automation for JartexNetwork and PikaNetwork.
+  automation.
 </p>
 
 <p align="center">
