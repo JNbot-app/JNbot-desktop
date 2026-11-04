@@ -31,9 +31,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: app/.nvmrc
-          cache: npm
-          cache-dependency-path: app/package-lock.json
-      - run: npm ci
+      - run: npm install
         working-directory: app
       - name: Plugin reference is up to date
         working-directory: app

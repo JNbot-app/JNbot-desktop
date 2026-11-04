@@ -79,3 +79,6 @@ assets/needle/notices/
 
 # Local docs
 /docs/
+
+# Lockfile (untracked to avoid merge conflicts)
+/package-lock.json
