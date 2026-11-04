@@ -24,6 +24,8 @@ const aliasMock = {
   '^common/(.*)$': '<rootDir>/src/common/$1',
   '^renderer/(.*)$': '<rootDir>/src/renderer/$1',
   '^main/(.*)$': '<rootDir>/src/main/$1',
+  // @ant-design/icons' CommonJS build requires this ESM-only path.
+  '^@ant-design/colors/es/(.*)$': '@ant-design/colors/lib/$1',
 };
 
 const tsJest = {
