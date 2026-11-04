@@ -8,6 +8,7 @@ import {
   selectJNdata,
 } from '../../redux/settings';
 import { Card, Select, Form, Button, AutoComplete } from 'antd';
+import { PlayCircleOutlined } from '@ant-design/icons';
 import { SelectProps } from 'antd/lib';
 import type { Alt } from '../../../../src/main/src/types.d.ts';
 
@@ -51,34 +52,35 @@ const JoinServer: React.FC = () => {
   };
 
   return (
-    <Card title="Join server" style={{ maxWidth: 600 }}>
+    <Card title="Join with alt" size="small">
       <Form
         form={form}
-        labelCol={{ span: 8 }}
-        wrapperCol={{ span: 16 }}
+        layout="vertical"
+        requiredMark={false}
         initialValues={{
           username: currentBot?.username || scriptSettings.username || '',
           version: currentBot?.version || scriptSettings.version || '1.8.9',
         }}
       >
-        <Form.Item label="username:" name="username">
+        <Form.Item label="Username" name="username" style={{ marginBottom: 12 }}>
           <AutoComplete
+            placeholder="Pick from alts or type a username"
             disabled={!!currentBot}
             options={(alts ?? []).map((a: Alt) => ({ value: a.username }))}
             showSearch
           />
         </Form.Item>
 
-        <Form.Item label="Minecraft Version" name="version">
+        <Form.Item label="Minecraft version" name="version" style={{ marginBottom: 12 }}>
           <Select disabled={!!currentBot} options={options} />
         </Form.Item>
       </Form>
-      <br />
       <Button
         loading={isLoading}
         onClick={startScript}
         block
-        type='primary'
+        type="primary"
+        icon={<PlayCircleOutlined />}
       >
         Join server
       </Button>

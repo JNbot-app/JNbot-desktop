@@ -8,7 +8,6 @@ import { ThemeConfig } from 'antd/es/config-provider';
 export const goldTheme: ThemeConfig = {
   algorithm: theme.darkAlgorithm,
   token: {
-    fontFamily: "'Space Grotesk', 'Geist', sans-serif",
     borderRadius: 6,
     colorPrimary: '#f5b50a',
     colorPrimaryBg: 'rgba(245, 181, 10, 0.12)',
