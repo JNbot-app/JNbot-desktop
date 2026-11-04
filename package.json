@@ -224,7 +224,7 @@
     "bot"
   ],
   "devDependencies": {
-    "@babel/preset-env": "^7.23.7",
+    "@babel/preset-env": "^8.0.7",
     "@babel/preset-react": "^7.23.3",
     "@electron/notarize": "^2.1.0",
     "@electron/rebuild": "^3.3.0",
