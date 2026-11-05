@@ -16,6 +16,7 @@ import { promisify } from 'util';
 import ScriptHandler_ from '../ScriptHandler';
 import generateUID from '../../../UID';
 import type { CustomProfile } from '../../../../common/profiles';
+import type { ShareState } from '../../../../common/share';
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -66,6 +67,8 @@ interface BackupPayload {
   createdAt: number;
   settingsJson: string;
   pluginsJson: string;
+  /** Absent in backups made before installs were carried along. */
+  installedShares?: ShareState['installed'];
 }
 
 /**
@@ -440,7 +443,8 @@ class CloudStorage {
       typeof v.uid === 'string' &&
       typeof v.createdAt === 'number' &&
       typeof v.settingsJson === 'string' &&
-      typeof v.pluginsJson === 'string'
+      typeof v.pluginsJson === 'string' &&
+      (v.installedShares === undefined || isObj(v.installedShares))
     );
   }
 
@@ -733,6 +737,7 @@ class CloudStorage {
       createdAt: Date.now(),
       settingsJson: JSON.stringify(settings),
       pluginsJson: this.scriptHandler.macros.toJSON({ allowUnsigned: true }),
+      installedShares: this.scriptHandler.clientEvents.shares.state().installed,
     };
 
     return {
@@ -754,6 +759,8 @@ class CloudStorage {
     if (this.scriptHandler.settings.fromJSON(JSON.stringify(settings)) === false)
       throw new Error('Backup settings could not be restored');
     await this.scriptHandler.macros.fromJSON(payload.pluginsJson, 'restore');
+    if (payload.installedShares)
+      this.scriptHandler.clientEvents.shares.restoreInstalled(payload.installedShares);
   }
 
   public async deleteCloudData(): Promise<void> {

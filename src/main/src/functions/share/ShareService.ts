@@ -219,6 +219,15 @@ export default class ShareService {
     return Object.values(this.file.installed).filter((share) => share.id === id);
   }
 
+  /**
+   * Adds the installs of a restored backup, after its items are restored. Owned
+   * shares stay out of backups: they are signed with this device's publisher key.
+   */
+  restoreInstalled(installed: ShareState['installed']) {
+    Object.assign(this.file.installed, installed);
+    this.persist();
+  }
+
   /** Owned and installed shares; installs whose local copy is gone are dropped. */
   state(): ShareState {
     const { installed } = this.file;
