@@ -1,6 +1,7 @@
 const esbuild = require('esbuild');
 const progress = require('esbuild-plugin-progress');
 
+const fs = require('fs');
 const path = require('path');
 const copyEsbuildWasm = require('./copyEsbuildWasm');
 const copyWasmParser = require('./copyWasmParser');
@@ -44,15 +45,6 @@ async function build() {
     },
     plugins: [
       progress(),
-      // copy({
-      //   once: true,
-      //   assets: [
-      //     {
-      //       from: ['./node_modules/minecraft-data/minecraft-data/data/**/*'],
-      //       to: ['./src/workers/data'],
-      //     },
-      //   ],
-      // }),
       {
         name: 'initial-build-ready',
         setup(build) {
@@ -64,6 +56,17 @@ async function build() {
             copyEsbuildWasm();
             copyWasmParser();
             copyNeedle(path.join(__dirname, '../release/app/dist/main'));
+            fs.cpSync(
+              path.join(
+                __dirname,
+                '../node_modules/minecraft-data/minecraft-data/data',
+              ),
+              path.join(
+                __dirname,
+                '../release/app/dist/main/src/workers/data',
+              ),
+              { recursive: true },
+            );
             console.info('Main process ready');
           });
         },
