@@ -29,6 +29,11 @@ const plugin: MacroInfo = {
 };
 const onChange = jest.fn();
 beforeAll(() => {
+  global.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: jest.fn(() => ({
@@ -77,4 +82,25 @@ test('displays inherited values in existing option controls and restores inherit
   expect(useSettingsStore.getState().settings.scripts.miner.message).toBe(
     'Saved message',
   );
+});
+
+test('shows the inherited values of the picked preset', async () => {
+  useSettingsStore.setState({
+    settings: {
+      ...useSettingsStore.getState().settings,
+      scripts: {
+        miner: {
+          message: 'Saved message',
+          $presets: { second: { name: 'Second', values: { message: 'Preset message' } } },
+        },
+      },
+    },
+  });
+  render(<Editor />);
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Preset' }));
+  fireEvent.click(await screen.findByText('Second'));
+  expect(onChange).toHaveBeenLastCalledWith({ $preset: 'second' });
+  fireEvent.click(screen.getByRole('button', { name: /Script overrides/ }));
+  const field = await screen.findByRole('textbox', { name: 'Message' });
+  await waitFor(() => expect(field).toHaveValue('Preset message'));
 });

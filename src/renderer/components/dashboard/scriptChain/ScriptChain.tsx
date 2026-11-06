@@ -26,6 +26,7 @@ import useAppApi from '../../../hooks/useAppApi';
 import Card from '../../Card';
 import ChainFlow from './ChainFlow';
 import ChainStatus from './ChainStatus';
+import RunningControls from '../../macros/RunningControls';
 import { toChainOptions } from './chainOptionsScheme';
 
 const ScriptChain: FC<{
@@ -113,9 +114,7 @@ const ScriptChain: FC<{
             <Button type="text" icon={<MoreOutlined />} aria-label="More chain actions" />
           </Dropdown>
           {running ? (
-            <Button onClick={() => scripts.stopByScriptId(pluginId)} danger icon={<StopOutlined />}>
-              Stop
-            </Button>
+            <RunningControls pluginId={pluginId} name={chainName} stopIcon={<StopOutlined />} />
           ) : (
             <Button disabled={!isRunnable} onClick={runChain} loading={loading} type="primary" icon={<PlayCircleOutlined />}>
               Run

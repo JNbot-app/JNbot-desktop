@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { DatePicker, Flex, Form, Input, InputNumber, Modal } from 'antd';
 import dayjs from 'dayjs';
 import type { ScriptCooldown } from '../../../../common/cooldowns';
+import { PRESET_OPTION, withPreset } from '../../../../common/pluginPresets';
 import { setCooldown } from '../../../redux/settings';
+import PresetSelect from '../../general/scriptSettings/presets/PresetSelect';
 import { DAY, HOUR, MINUTE } from './CooldownRow';
 
 const EditCooldownModal: React.FC<{ cooldown: ScriptCooldown | null; onClose: () => void }> = ({
@@ -14,6 +16,7 @@ const EditCooldownModal: React.FC<{ cooldown: ScriptCooldown | null; onClose: ()
   const [hours, setHours] = useState(0);
   const [minutes, setMinutes] = useState(0);
   const [readyAt, setReadyAt] = useState(() => dayjs());
+  const [preset, setPreset] = useState<string>();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -23,6 +26,7 @@ const EditCooldownModal: React.FC<{ cooldown: ScriptCooldown | null; onClose: ()
     setHours(Math.floor((cooldown.cooldown % DAY) / HOUR));
     setMinutes(Math.round((cooldown.cooldown % HOUR) / MINUTE));
     setReadyAt(dayjs(cooldown.time + cooldown.cooldown));
+    setPreset(cooldown.options?.[PRESET_OPTION]);
     setError(null);
   }, [cooldown]);
 
@@ -35,7 +39,13 @@ const EditCooldownModal: React.FC<{ cooldown: ScriptCooldown | null; onClose: ()
     const cooldownMs = days * DAY + hours * HOUR + minutes * MINUTE;
     if (cooldownMs <= 0) return setError('Cooldown must be at least 1 minute');
 
-    setCooldown({ ...cooldown, name: trimmed, cooldown: cooldownMs, time: readyAt.valueOf() - cooldownMs });
+    setCooldown({
+      ...cooldown,
+      name: trimmed,
+      cooldown: cooldownMs,
+      time: readyAt.valueOf() - cooldownMs,
+      options: withPreset(cooldown.options ?? {}, preset),
+    });
     onClose();
   };
 
@@ -67,6 +77,11 @@ const EditCooldownModal: React.FC<{ cooldown: ScriptCooldown | null; onClose: ()
         <Form.Item label="Ready on" style={{ marginBottom: 0 }}>
           <DatePicker showTime value={readyAt} onChange={(d) => d && setReadyAt(d)} allowClear={false} style={{ width: '100%' }} />
         </Form.Item>
+        {cooldown && (
+          <div style={{ marginTop: 16 }}>
+            <PresetSelect pluginId={cooldown.pluginId} value={preset} onChange={setPreset} />
+          </div>
+        )}
       </Form>
     </Modal>
   );

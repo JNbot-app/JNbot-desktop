@@ -130,6 +130,9 @@ const ScriptRow: React.FC<RowProps> = ({
             <Tag color={running ? 'success' : 'warning'} style={{ marginInlineEnd: 0 }}>
               {running ? 'Running' : 'Paused'}
             </Tag>
+            {activeScript.presetName && (
+              <Tag style={{ marginInlineEnd: 0 }}>{activeScript.presetName}</Tag>
+            )}
           </Flex>
 
           {isMinecraft ? (

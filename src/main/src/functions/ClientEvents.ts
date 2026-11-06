@@ -52,6 +52,7 @@ import {
   isOnlineMode,
 } from '../../../common/serverAuthentication';
 import { isSensitivePluginOption, type PluginOption } from '../../../common/pluginOptions';
+import { presetValues } from '../../../common/pluginPresets';
 import type ProfileRuntime from './ProfileRuntime';
 import { pluginSecurity } from './signing';
 import { PROFILE_ACTIONS } from '../../../common/profileActions';
@@ -639,7 +640,7 @@ class ClientEvents_ {
             ...(option.type === 'keybind' ? { unsupportedReason: 'Configure keybinds on desktop.' } : {}),
           };
         };
-        const values = { ...(settings.scripts?.[plugin.pluginId] ?? {}) } as Record<string, unknown>;
+        const values = presetValues(settings.scripts?.[plugin.pluginId]) as Record<string, unknown>;
         for (const section of plugin.config ?? []) {
           for (const option of section.options ?? []) {
             if (isSensitivePluginOption(option)) delete values[option.id];

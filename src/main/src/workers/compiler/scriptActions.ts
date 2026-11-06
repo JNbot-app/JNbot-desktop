@@ -2,6 +2,7 @@ import { workerData } from 'worker_threads';
 import workerScript from '../lib/workerScript';
 import { runJS } from './jsRuntime';
 import { resolvePluginOptions } from '../bot/plugin/resolvePluginOptions';
+import { withPreset } from '../../../../common/pluginPresets';
 import { startBotAutomation } from '../bot/automation';
 import type { AutomationDocument } from '../../../../common/automation';
 import type { MacroInfo, MacroCode } from '../../types';
@@ -64,6 +65,7 @@ async function scriptActionRunner({ name, bot, args = [], id, optionOverrides = 
   // Same calling convention as defaultActionRunner: `main(bot, settings, args)`,
   // with the action's settings parsed & validated against its config.
   const settings = resolvePluginOptions(action.info, optionOverrides);
+  const explicitOptions = withPreset(optionOverrides);
 
   global.send('SCRIPT_ACTION_START', { actionId, name: action.info.name });
   try {
@@ -74,7 +76,7 @@ async function scriptActionRunner({ name, bot, args = [], id, optionOverrides = 
         (optionOverrides.spatialMode as any) || settings.spatialMode || 'absolute';
       const inputs = {
         ...settings,
-        ...optionOverrides,
+        ...explicitOptions,
         ...(args?.[0] && typeof args[0] === 'object' ? args[0] : {}),
       };
       const session = startBotAutomation(bot, {
@@ -93,7 +95,7 @@ async function scriptActionRunner({ name, bot, args = [], id, optionOverrides = 
     return runJS({
       code: (action.code as any).code ?? (action.code as any),
       scriptInfo: action.info,
-      args: [bot, { ...settings, ...optionOverrides }, args],
+      args: [bot, { ...settings, ...explicitOptions }, args],
       runAsAction: true,
     });
   } finally {

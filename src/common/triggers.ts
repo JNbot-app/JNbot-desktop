@@ -135,7 +135,8 @@ export type TriggerAction =
   | { type: 'notification' }
   | { type: 'discord'; webhook: string }
   | { type: 'chat'; message: string }
-  | { type: 'scriptAction'; id: string }
+  /** `preset` picks one of the action's presets; unset uses the selected one. */
+  | { type: 'scriptAction'; id: string; preset?: string }
   | { type: 'log'; directory: string };
 
 export type TriggerActionType = TriggerAction['type'];

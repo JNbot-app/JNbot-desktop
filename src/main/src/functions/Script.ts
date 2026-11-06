@@ -36,6 +36,9 @@ class Script_ extends BotEvents {
   scriptHandler: ScriptHandler_;
   forceExit: boolean = false;
   startTime: number;
+  /** The preset this instance runs, pinned when it started. */
+  presetId: string;
+  presetName?: string;
   scriptId: string; // ScriptId is important for distinguishing between multiple plugins with the same name. The pluginId is used here, else it's the script name.
   instanceId: number;
   /** Run-local routing IDs. The legacy names remain until UI data is migrated. */
@@ -61,6 +64,8 @@ class Script_ extends BotEvents {
     public readonly profile: ProfileRuntime,
     scriptOptions: {
       instanceId: number;
+      presetId: string;
+      presetName?: string;
     },
     public sharedArray: Uint16Array,
   ) {
@@ -73,6 +78,8 @@ class Script_ extends BotEvents {
     this.scriptId = scriptSettings.scriptId;
     this.pluginId = scriptSettings.scriptId;
     this.instanceId = scriptOptions.instanceId;
+    this.presetId = scriptOptions.presetId;
+    this.presetName = scriptOptions.presetName;
     this.runtimeScriptId = scriptOptions.instanceId;
     this.runtimeProfileId = profile.profileId;
     this.messagingAddress = workerScriptAddress(

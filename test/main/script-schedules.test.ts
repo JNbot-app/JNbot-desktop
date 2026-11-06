@@ -26,7 +26,9 @@ function fixture(initial: Reminder[] = [schedule]) {
     profileKey: 'profile-a',
     cooldownLastTickAt: 100_000,
     activeScripts: {
-      getScriptsByScriptId: jest.fn(() => [{ stop: () => calls.push('stop') }]),
+      getScriptsByScriptId: jest.fn(() => [
+        { stop: () => calls.push('stop'), presetId: 'default' },
+      ]),
     },
   };
   const handler = Object.assign(Object.create(ScriptHandler.prototype), {

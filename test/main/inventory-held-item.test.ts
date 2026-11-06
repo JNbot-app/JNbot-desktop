@@ -125,4 +125,22 @@ describe('trigger actions', () => {
       args: { message: 'Hello', bot: 'Tester', event: 'on_public_message' },
     });
   });
+
+  it('runs the action on the preset the trigger picked', () => {
+    scriptActionRunner.mockResolvedValue(undefined);
+    const bot = createBot([
+      {
+        id: 'chat-trigger',
+        event: 'chat',
+        enabled: true,
+        actions: [{ type: 'scriptAction', id: 'chat-action', preset: 'second' }],
+      },
+    ]);
+
+    bot.emit('messagestr', 'Hello');
+
+    expect(scriptActionRunner).toHaveBeenCalledWith(
+      expect.objectContaining({ optionOverrides: { $preset: 'second' } }),
+    );
+  });
 });

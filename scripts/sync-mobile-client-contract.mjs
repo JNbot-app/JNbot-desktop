@@ -15,6 +15,7 @@ const files = [
   'clientPermissions.ts',
   'cooldowns.ts',
   'mobileClientContract.ts',
+  'pluginPresets.ts',
   'pluginSignatures.ts',
   'profileCreation.ts',
   'profileUiSchema.ts',

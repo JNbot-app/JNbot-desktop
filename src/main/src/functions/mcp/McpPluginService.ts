@@ -5,6 +5,12 @@ import {
   validatePluginOptionSchema,
   type PluginOptionSchema,
 } from '../../../../common/pluginOptions';
+import {
+  DEFAULT_PRESET,
+  PRESET_OPTION,
+  PRESETS_KEY,
+  presetValues,
+} from '../../../../common/pluginPresets';
 
 export class McpPluginService {
   constructor(private readonly scriptHandler: ScriptHandler) {}
@@ -13,7 +19,7 @@ export class McpPluginService {
     const info = this.plugin(pluginId);
     const profileKey = this.scriptHandler.getRuntime(profileId).profileKey;
     const settings = this.scriptHandler.settings.getProfileSettings(profileKey);
-    const values = { ...(settings.scripts?.[pluginId] ?? {}) };
+    const values = presetValues(settings.scripts?.[pluginId], DEFAULT_PRESET);
     const sensitiveOptionIds = this.sensitiveOptionIds(info.config ?? []);
     for (const id of sensitiveOptionIds) delete values[id];
     const schema = JSON.parse(
@@ -58,8 +64,11 @@ export class McpPluginService {
     const current = { ...(settings.scripts?.[pluginId] ?? {}) };
     const next = replace
       ? Object.fromEntries(
-          Object.entries(current).filter(([key]) =>
-            sensitiveOptionIds.has(key),
+          Object.entries(current).filter(
+            ([key]) =>
+              sensitiveOptionIds.has(key) ||
+              key === PRESET_OPTION ||
+              key === PRESETS_KEY,
           ),
         )
       : current;

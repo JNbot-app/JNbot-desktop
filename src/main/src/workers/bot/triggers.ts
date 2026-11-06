@@ -5,6 +5,7 @@ import type { Entity } from 'prismarine-entity';
 import type { Bot } from '../workerTypes';
 import workerScript from '../lib/workerScript';
 import scriptActionRunner from '../compiler/scriptActions';
+import { PRESET_OPTION } from '../../../../common/pluginPresets';
 import {
   compileTriggerFilter,
   describeTrigger,
@@ -384,6 +385,9 @@ class BotTriggers {
             scriptActionRunner({
               id: action.id,
               bot,
+              optionOverrides: action.preset
+                ? { [PRESET_OPTION]: action.preset }
+                : undefined,
               // Same shape the old triggers passed (an object, not an array).
               args: {
                 ...vars,

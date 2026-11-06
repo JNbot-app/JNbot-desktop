@@ -29,7 +29,7 @@ const PlayButton: React.FC<PlayButtonProps> = ({
   const startMacro = async () => {
     if (loading || !pluginInfo?.pluginId) return;
     if (activeScript) {
-      scripts.stopAll(scripts.getInstanceIdsById(pluginInfo.pluginId)[0]);
+      scripts.stopByScriptId(pluginInfo.pluginId);
       return;
     }
     setLoading(true);

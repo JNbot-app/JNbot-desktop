@@ -20,6 +20,14 @@ import type { ServerTypes } from '../../main/src/types';
 import type { AltUpdates } from '../components/other/AltUpdateRequests';
 import { persistSelectedProfileKey } from './profileSelection';
 import { isProfileSpecificSetting } from '../../common/appSettingsSchema';
+import {
+  DEFAULT_PRESET,
+  pluginPresets,
+  presetOptionPath,
+  presetValues,
+  PRESET_OPTION,
+  PRESETS_KEY,
+} from '../../common/pluginPresets';
 
 export interface UpdateScriptSettingsPayload {
   optionId: string;
@@ -152,7 +160,9 @@ export const updateScriptSettings = (data: UpdateScriptSettingsPayload) =>
   set((state) => {
     if (!data.scriptName) return console.error('Type not found');
     const scripts = (state.settings.scripts ??= {});
-    const script = (scripts[data.scriptName] ??= {});
+    const stored = (scripts[data.scriptName] ??= {});
+    // Edits go to the selected preset; the slot itself is the Default preset.
+    const script = pluginPresets(stored)[stored[PRESET_OPTION]]?.values ?? stored;
 
     const { optionId: key, value } = data;
     if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
@@ -169,7 +179,54 @@ export const updateScriptSettings = (data: UpdateScriptSettingsPayload) =>
     } else {
       script[key] = value;
     }
-    pushSettings(state, [{ path: ['scripts', data.scriptName, key] }]);
+    pushSettings(state, [
+      { path: presetOptionPath(stored, data.scriptName, key) },
+    ]);
+  });
+
+const updatePresets = (
+  pluginId: string,
+  update: (stored: Record<string, any>) => void,
+) =>
+  set((state) => {
+    const scripts = (state.settings.scripts ??= {});
+    update((scripts[pluginId] ??= {}));
+    pushSettings(state, [
+      { path: ['scripts', pluginId, PRESETS_KEY] },
+      { path: ['scripts', pluginId, PRESET_OPTION] },
+    ]);
+  });
+
+/** Create a preset from the options on screen, and switch to it. */
+export const createPluginPreset = (
+  pluginId: string,
+  name: string,
+  presetId = Math.random().toString(36).slice(2, 10),
+) =>
+  updatePresets(pluginId, (stored) => {
+    const values = JSON.parse(JSON.stringify(presetValues(stored)));
+    (stored[PRESETS_KEY] ??= {})[presetId] = { name, values };
+    stored[PRESET_OPTION] = presetId;
+  });
+
+export const renamePluginPreset = (
+  pluginId: string,
+  presetId: string,
+  name: string,
+) =>
+  updatePresets(pluginId, (stored) => {
+    stored[PRESETS_KEY][presetId].name = name;
+  });
+
+export const selectPluginPreset = (pluginId: string, presetId: string) =>
+  updatePresets(pluginId, (stored) => {
+    stored[PRESET_OPTION] = presetId;
+  });
+
+export const deletePluginPreset = (pluginId: string, presetId: string) =>
+  updatePresets(pluginId, (stored) => {
+    delete stored[PRESETS_KEY][presetId];
+    stored[PRESET_OPTION] = DEFAULT_PRESET;
   });
 
 export const saveAlt = ({ alt, originalUsername }: SaveAltPayload) =>

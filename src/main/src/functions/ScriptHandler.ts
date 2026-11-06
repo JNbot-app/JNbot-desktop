@@ -44,6 +44,12 @@ import ProfileRuntime from './ProfileRuntime';
 import { backendMessaging } from '../messaging';
 import type { ProfileRuntimeSummary } from '../../../common/profileRuntime';
 import { isPluginDisallowed } from '../../../common/profiles';
+import {
+  MAX_SCRIPT_INSTANCES,
+  pluginPresets,
+  selectedPresetId,
+  withPreset,
+} from '../../../common/pluginPresets';
 
 interface ScriptHandlerEvents extends Record<string, (...args: any) => any> {
   PROGRESS_UPDATE: (progress: ExtendedProgress, script: Script_) => void;
@@ -497,15 +503,28 @@ class ScriptHandler_ extends TypedEventEmitter<ScriptHandlerEvents> {
       scriptData.scriptId!,
     );
 
-    if (activeScripts.length >= 8) {
+    if (activeScripts.length >= MAX_SCRIPT_INSTANCES) {
       if (isDev)
         console.warn(
-          'You cannot activate more than 8 (the same) scripts at once',
+          `You cannot activate more than ${MAX_SCRIPT_INSTANCES} (the same) scripts at once`,
         );
       return [];
     }
 
     if (!scriptData.script) return [];
+
+    // Pin the preset so restarts keep it after the selection changes.
+    const stored = this.storedOptions(runtime, scriptData.scriptId);
+    const presetId = selectedPresetId(
+      stored,
+      scriptData.arguments?.optionOverrides,
+    );
+    if (scriptName === 'macro') {
+      scriptData.arguments!.optionOverrides = withPreset(
+        scriptData.arguments!.optionOverrides ?? {},
+        presetId,
+      );
+    }
 
     const script = new Script(
       {
@@ -517,12 +536,19 @@ class ScriptHandler_ extends TypedEventEmitter<ScriptHandlerEvents> {
       runtime,
       {
         instanceId,
+        presetId,
+        presetName: pluginPresets(stored)[presetId]?.name,
       },
       sharedArray,
     );
     runtime.activeScripts.prepare(script);
 
     return [await script.run()];
+  }
+
+  private storedOptions(runtime: ProfileRuntime, pluginId?: string) {
+    const { scripts } = this.settings.getProfileSettings(runtime.profileKey);
+    return pluginId ? scripts?.[pluginId] : undefined;
   }
 
   /**
@@ -638,8 +664,14 @@ class ScriptHandler_ extends TypedEventEmitter<ScriptHandlerEvents> {
     });
     for (const c of fired) {
       if (this.isPluginDisallowed(profileId, c.pluginId)) continue;
+      // Instances of the plugin running other presets are left alone.
+      const presetId = selectedPresetId(
+        this.storedOptions(runtime, c.pluginId),
+        c.options,
+      );
       runtime.activeScripts
         .getScriptsByScriptId(c.pluginId)
+        .filter((s) => s.presetId === presetId)
         .forEach((s) => s.stop());
       void this.runByPluginId(profileId, c.pluginId, c.options).catch(
         (error) => {

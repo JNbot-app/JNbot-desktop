@@ -10,6 +10,7 @@ import {
 } from './ScriptSettingsProps.d';
 import Option from './SettingOptions/Option';
 import { Collapse, Form } from 'antd';
+import { presetValues } from '../../../../common/pluginPresets';
 
 const ScriptSettings: FC<{
   /** Option schema, grouped into collapsible sections. */
@@ -29,7 +30,7 @@ const ScriptSettings: FC<{
   const [form] = Form.useForm();
 
   const sourceSettings = useMemo(
-    () => settings.scripts?.[scriptName] ?? {},
+    () => presetValues(settings.scripts?.[scriptName]),
     [settings, scriptName],
   );
 

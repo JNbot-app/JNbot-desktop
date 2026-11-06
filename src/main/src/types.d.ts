@@ -922,6 +922,8 @@ export type ActiveScriptsType = Record<
     runtimeScriptId?: number;
     address?: number;
     instanceId: number;
+    /** Name of the preset this instance runs; unset for the Default preset. */
+    presetName?: string;
     /** Bitfield of enabled runner control buttons (see ScriptControl enum). */
     controls?: number;
     /** "worker" = normal JNbot worker script, "minecraft" = launched Minecraft instance (no worker). */

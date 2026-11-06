@@ -78,3 +78,10 @@ it('skips to the next alt, or stops the chain', async () => {
   );
   expect(ranSteps().slice(2)).toEqual(['alt1:a']);
 });
+
+it('runs a step on the preset it picked', async () => {
+  await runChain(
+    chain([{ id: '1', name: 'A', scriptId: 'a', options: { $preset: 'second' } }]),
+  );
+  expect(runAction.mock.calls[0][0].optionOverrides).toEqual({ $preset: 'second' });
+});

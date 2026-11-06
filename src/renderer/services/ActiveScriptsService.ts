@@ -1,5 +1,6 @@
 import type { ActiveScriptsType, ScriptOptions } from '../../main/src/types';
 import type React from 'react';
+import { withPreset } from '../../common/pluginPresets';
 
 export type StartScriptPayload = {
   script: string;
@@ -34,11 +35,14 @@ export class ActiveScriptsService {
       .filter(Boolean);
   }
 
+  getInstancesById(scriptId: string) {
+    return Object.values(this.state).filter(
+      (v) => v?.scriptId === scriptId && v.instanceId,
+    );
+  }
+
   getInstanceIdsById(scriptId: string): number[] {
-    return Object.values(this.state)
-      .filter((v) => v?.scriptId === scriptId)
-      .map((v) => v.instanceId)
-      .filter(Boolean);
+    return this.getInstancesById(scriptId).map((v) => v.instanceId);
   }
 
   send(instanceId: number, event: string, data?: unknown) {
@@ -99,6 +103,22 @@ export class ActiveScriptsService {
 
   async startScript(payload: StartScriptPayload) {
     return await window.ipcRenderer.get('START_SCRIPT', payload);
+  }
+
+  /** Start an instance of a plugin, on the given preset or else the selected one. */
+  async runPlugin(
+    macroInfo: { pluginId: string; name?: string },
+    presetId?: string,
+  ) {
+    return await this.startScript({
+      script: 'macro',
+      arguments: {
+        macroInfo,
+        devMode: false,
+        optionOverrides: withPreset({}, presetId),
+      },
+      console: 'macro_console',
+    });
   }
 
   async startMacro({

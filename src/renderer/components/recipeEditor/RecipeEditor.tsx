@@ -515,10 +515,7 @@ const RecipeEditor: React.FC<{
     }
   };
   const isRunning = scripts.isScriptActiveById(pluginId);
-  const stop = () => {
-    const instance = scripts.getInstanceIdsById(pluginId)[0];
-    if (instance) scripts.stopAll(instance);
-  };
+  const stop = () => scripts.stopByScriptId(pluginId);
 
   let triggerScope: ScopeValue[] = [
     ...(selectedRecipe.trigger?.kind === 'botEvent'

@@ -203,6 +203,9 @@ export type StartPluginOptions = {
   name: string;
   /** A plugin's id, or `chain:<chainId>` to start one of the user's chains. */
   pluginId: string;
+  /** Run on this preset, by name or id ("default" for Default). Unset uses the selected preset. */
+  preset?: string;
+  /** Applied on top of the preset's options. */
   optionOverrides?: Record<string, any>;
   /* @deprecated */
   quitOnExit?: boolean | string;
@@ -240,6 +243,9 @@ export type ProgressUpdate = {
 export type ActionArgs = {
   actionId: string;
   bot?: Bot;
+  /** Run on this preset, by name or id ("default" for Default). Unset uses the selected preset. */
+  preset?: string;
+  /** Applied on top of the preset's options. */
   optionOverrides?: Record<string, unknown>;
   args: any[];
 };
