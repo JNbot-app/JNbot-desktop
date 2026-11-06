@@ -93,6 +93,23 @@ test('saves the selected script as a schedule with inherited options', async () 
   expect(mockPanel).toHaveBeenCalled();
 });
 
+test('saves a custom repeat of days, hours and minutes', async () => {
+  render(
+    <ScheduleEditor
+      schedule={{ ...schedule, repeat: { every: 1441, unit: 'minute' } }}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText('Minutes'), {
+    target: { value: '2' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));
+  await waitFor(() =>
+    expect(setCooldown).toHaveBeenCalledWith(
+      expect.objectContaining({ repeat: { every: 1442, unit: 'minute' } }),
+    ),
+  );
+});
+
 test('expired dates keep the editor open with a recovery message', async () => {
   render(<ScheduleEditor schedule={{ ...schedule, nextRunAt: 1 }} />);
   fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));

@@ -864,19 +864,22 @@ class BotEvents_ {
       };
     }
 
+    const previous = cooldowns[existing];
+    const keepOptions = previous?.kind !== 'schedule' && previous?.optionsEdited;
     const newCooldown: Reminder = {
       id:
         existing === -1
           ? Math.random().toString(36).substring(2, 9)
-          : cooldowns[existing].id,
+          : previous.id,
       name: reminder.name,
       pluginId,
       reminderId: reminder.reminderId,
       cooldown: reminder.cooldown,
       time: reminder.time ?? Date.now(),
-      options: reminder.options,
-      // Keep the user's auto-run opt-in when a plugin updates its cooldown.
-      autoStart: existing === -1 ? undefined : cooldowns[existing].autoStart,
+      // Keep the user's edits and auto-run opt-in when a plugin updates its cooldown.
+      options: keepOptions ? previous.options : reminder.options,
+      optionsEdited: keepOptions || undefined,
+      autoStart: previous?.autoStart,
     };
 
     if (existing === -1) cooldowns.push(newCooldown);

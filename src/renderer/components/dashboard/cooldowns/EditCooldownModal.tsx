@@ -1,32 +1,50 @@
 import React, { useEffect, useState } from 'react';
-import { DatePicker, Flex, Form, Input, InputNumber, Modal } from 'antd';
+import { DatePicker, Form, Input, Modal } from 'antd';
 import dayjs from 'dayjs';
-import type { ScriptCooldown } from '../../../../common/cooldowns';
+import { withEditedOptions, type ScriptCooldown } from '../../../../common/cooldowns';
 import { PRESET_OPTION, withPreset } from '../../../../common/pluginPresets';
+import { useRunnableScripts } from '../../../hooks/useRunnableScripts';
 import { setCooldown } from '../../../redux/settings';
 import PresetSelect from '../../general/scriptSettings/presets/PresetSelect';
-import { DAY, HOUR, MINUTE } from './CooldownRow';
+import ScheduleOverrides from '../schedules/ScheduleOverrides';
+import DurationFields from './DurationFields';
+
+type Options = Record<string, unknown>;
+
+/** Unavailable plugins have no option definitions, so only their preset can change. */
+const CooldownOverrides: React.FC<{ pluginId: string; values: Options; onChange: (next: Options) => void }> = ({
+  pluginId,
+  values,
+  onChange,
+}) => {
+  const { scripts } = useRunnableScripts();
+  const plugin = scripts.find((script) => script.info.pluginId === pluginId)?.info;
+  if (plugin) return <ScheduleOverrides plugin={plugin} values={values} onChange={onChange} />;
+  return (
+    <PresetSelect
+      pluginId={pluginId}
+      value={values[PRESET_OPTION] as string | undefined}
+      onChange={(preset) => onChange(withPreset(values, preset))}
+    />
+  );
+};
 
 const EditCooldownModal: React.FC<{ cooldown: ScriptCooldown | null; onClose: () => void }> = ({
   cooldown,
   onClose,
 }) => {
   const [name, setName] = useState('');
-  const [days, setDays] = useState(0);
-  const [hours, setHours] = useState(0);
-  const [minutes, setMinutes] = useState(0);
+  const [cooldownMs, setCooldownMs] = useState(0);
   const [readyAt, setReadyAt] = useState(() => dayjs());
-  const [preset, setPreset] = useState<string>();
+  const [options, setOptions] = useState<Options>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!cooldown) return;
     setName(cooldown.name);
-    setDays(Math.floor(cooldown.cooldown / DAY));
-    setHours(Math.floor((cooldown.cooldown % DAY) / HOUR));
-    setMinutes(Math.round((cooldown.cooldown % HOUR) / MINUTE));
+    setCooldownMs(cooldown.cooldown);
     setReadyAt(dayjs(cooldown.time + cooldown.cooldown));
-    setPreset(cooldown.options?.[PRESET_OPTION]);
+    setOptions(cooldown.options ?? {});
     setError(null);
   }, [cooldown]);
 
@@ -35,31 +53,16 @@ const EditCooldownModal: React.FC<{ cooldown: ScriptCooldown | null; onClose: ()
     const trimmed = name.trim();
     if (!trimmed) return setError('Name is required');
     if (trimmed.length > 60) return setError('Name must be 60 characters or fewer');
-
-    const cooldownMs = days * DAY + hours * HOUR + minutes * MINUTE;
     if (cooldownMs <= 0) return setError('Cooldown must be at least 1 minute');
 
     setCooldown({
-      ...cooldown,
+      ...withEditedOptions(cooldown, options),
       name: trimmed,
       cooldown: cooldownMs,
       time: readyAt.valueOf() - cooldownMs,
-      options: withPreset(cooldown.options ?? {}, preset),
     });
     onClose();
   };
-
-  const durationField = (value: number, onChange: (v: number) => void, suffix: string, max?: number) => (
-    <InputNumber
-      min={0}
-      max={max}
-      precision={0}
-      value={value}
-      onChange={(v) => onChange(v ?? 0)}
-      suffix={suffix}
-      style={{ flex: 1 }}
-    />
-  );
 
   return (
     <Modal open={!!cooldown} onCancel={onClose} onOk={save} okText="Save" title="Edit cooldown">
@@ -68,18 +71,14 @@ const EditCooldownModal: React.FC<{ cooldown: ScriptCooldown | null; onClose: ()
           <Input value={name} onChange={(e) => { setName(e.target.value); setError(null); }} />
         </Form.Item>
         <Form.Item label="Cooldown">
-          <Flex gap={8}>
-            {durationField(days, setDays, 'days')}
-            {durationField(hours, setHours, 'hrs', 23)}
-            {durationField(minutes, setMinutes, 'min', 59)}
-          </Flex>
+          <DurationFields value={cooldownMs} onChange={setCooldownMs} />
         </Form.Item>
         <Form.Item label="Ready on" style={{ marginBottom: 0 }}>
           <DatePicker showTime value={readyAt} onChange={(d) => d && setReadyAt(d)} allowClear={false} style={{ width: '100%' }} />
         </Form.Item>
         {cooldown && (
           <div style={{ marginTop: 16 }}>
-            <PresetSelect pluginId={cooldown.pluginId} value={preset} onChange={setPreset} />
+            <CooldownOverrides pluginId={cooldown.pluginId} values={options} onChange={setOptions} />
           </div>
         )}
       </Form>

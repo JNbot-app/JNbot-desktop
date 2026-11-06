@@ -113,6 +113,41 @@ test('script cooldown API cannot see, reset, overwrite, or remove user schedules
   expect(f.events.COOLDOWN_GET('miner')).toHaveLength(1);
 });
 
+test('a plugin re-adding its cooldown keeps options the user edited', () => {
+  const add = (f: ReturnType<typeof fixture>) =>
+    f.events.COOLDOWN_ADD({
+      pluginId: 'miner',
+      reminder: {
+        reminderId: 'prison',
+        name: 'Mining cooldown',
+        cooldown: 60_000,
+        options: { gamemode: 'prison' },
+      },
+    });
+  const existing = {
+    id: 'c',
+    name: 'Mining cooldown',
+    pluginId: 'miner',
+    reminderId: 'prison',
+    cooldown: 60_000,
+    time: 0,
+    options: { gamemode: 'skyblock' },
+  };
+
+  const edited = fixture([{ ...existing, optionsEdited: true }]);
+  add(edited);
+  expect(edited.settings.reminders[0]).toMatchObject({
+    options: { gamemode: 'skyblock' },
+    optionsEdited: true,
+  });
+
+  const untouched = fixture([existing]);
+  add(untouched);
+  expect(untouched.settings.reminders[0].options).toEqual({
+    gamemode: 'prison',
+  });
+});
+
 test('user schedules do not count toward the script cooldown cap', () => {
   const f = fixture(
     Array.from({ length: 10 }, (_, index) => ({
