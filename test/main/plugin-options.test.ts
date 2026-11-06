@@ -1,4 +1,5 @@
-import { validatePluginOptionSchema } from '../../src/common/pluginOptions';
+import { pluginOptionSchemaInput, validatePluginOptionSchema } from '../../src/common/pluginOptions';
+import { groupScriptsByKind, type ScriptKind } from '../../src/common/scriptKinds';
 
 const schema = [{
   name: 'General',
@@ -102,3 +103,45 @@ test('resolvePluginOptions respects overrides for controlling dependency options
 });
 
 
+
+describe('scriptSelect', () => {
+  const script = (pluginId: string, extra: Record<string, unknown> = {}, profileScriptId?: string) => ({
+    info: { pluginId, scriptType: 'script', ...extra },
+    profileScriptId,
+  });
+  const scripts = [
+    script('profile-action', { scriptType: 'action' }, 'entry'),
+    script('action', { scriptType: 'action' }),
+    script('recording', { scriptType: 'action', language: 'recording' }),
+    script('plugin'),
+    script('chain:abc'),
+  ];
+  const ids = (kinds?: ScriptKind[]) =>
+    groupScriptsByKind(scripts, kinds).map((group) => [
+      group.kind,
+      group.scripts.map(({ info }) => info.pluginId),
+    ]);
+
+  it('groups every kind by default', () => {
+    expect(ids()).toEqual([
+      ['profileScript', ['profile-action']],
+      ['action', ['action']],
+      ['recording', ['recording']],
+      ['plugin', ['plugin']],
+      ['chain', ['chain:abc']],
+    ]);
+    expect(ids([])).toEqual(ids());
+  });
+
+  it('keeps profile scripts under their own kind when profileScript is excluded', () => {
+    expect(ids(['action'])).toEqual([['action', ['profile-action', 'action']]]);
+  });
+
+  it('accepts valid schemas and rejects unknown kinds', () => {
+    const schema = (kinds: string[]) => [
+      { name: 'General', options: [{ id: 'target', label: 'Target', type: 'scriptSelect', kinds, multiple: true }] },
+    ];
+    expect(pluginOptionSchemaInput.safeParse(schema(['chain', 'action'])).success).toBe(true);
+    expect(pluginOptionSchemaInput.safeParse(schema(['macro'])).success).toBe(false);
+  });
+});

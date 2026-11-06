@@ -18,6 +18,7 @@ const files = [
   'pluginSignatures.ts',
   'profileCreation.ts',
   'profileUiSchema.ts',
+  'scriptKinds.ts',
   'share.ts',
   'statsHistory.ts',
   'triggers.ts',

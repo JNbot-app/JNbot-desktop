@@ -27,12 +27,12 @@ import {
   useSettingsStore,
 } from '../../../redux/settings';
 import { usePanelContext } from '../../other/botSideBar/SidePanelContextProvider';
-import { useScheduleScripts } from './useScheduleScripts';
+import { useRunnableScripts } from '../../../hooks/useRunnableScripts';
 import ScheduleOverrides from './ScheduleOverrides';
 
 export default function ScheduleEditor({ schedule }: SchedulePanelData) {
   const { setPanel } = usePanelContext();
-  const { scripts, loading } = useScheduleScripts();
+  const { scripts, loading } = useRunnableScripts();
   const canUseAccounts = useSettingsStore(selectCanUseAccounts);
   const [name, setName] = useState(schedule?.name ?? '');
   const [pluginId, setPluginId] = useState(schedule?.pluginId ?? '');

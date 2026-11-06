@@ -44,6 +44,7 @@ function buildScript(scriptInfo: MacroInfo, options: Record<string, any> = {}) {
     startScript: scriptApi.startScript,
     stopScript: scriptApi.stopScript,
     getActiveScripts: scriptApi.getActiveScripts,
+    getPluginInfo: scriptApi.getPluginInfo,
     runAction: scriptApi.runAction,
     startAction: scriptApi.startAction,
     getAlts: scriptApi.getAlts,

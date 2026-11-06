@@ -7,8 +7,8 @@ import {
 } from '../../../redux/settings';
 import type { ScriptSchedule } from '../../../../common/cooldowns';
 
-jest.mock('./useScheduleScripts', () => ({
-  useScheduleScripts: () => ({
+jest.mock('../../../hooks/useRunnableScripts', () => ({
+  useRunnableScripts: () => ({
     loading: false,
     scripts: [
       {

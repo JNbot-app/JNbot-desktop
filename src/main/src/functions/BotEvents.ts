@@ -723,6 +723,14 @@ class BotEvents_ {
     return this.script.activeScripts.toObject();
   }
 
+  async GET_PLUGIN_INFO({ pluginId }: { pluginId: string }) {
+    if (!this.script) throw new Error('Script not found');
+    return this.script.scriptHandler.getPluginInfo(
+      this.script.profile.profileId,
+      pluginId,
+    );
+  }
+
   async GET_MINECRAFT_CLIENTS() {
     return this.minecraftBridgeManager.getClients();
   }

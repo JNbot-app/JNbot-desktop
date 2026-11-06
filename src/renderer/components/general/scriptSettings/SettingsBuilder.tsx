@@ -23,10 +23,15 @@ import {
   selectActiveServerGamemodes,
 } from '../../../redux/settings';
 import {
+  SCRIPT_KIND_LABELS,
+  SCRIPT_KINDS,
+} from '../../../../common/scriptKinds';
+import {
   AimOutlined,
   AppstoreOutlined,
   CheckOutlined,
   CheckSquareOutlined,
+  CodeOutlined,
   ColumnWidthOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -158,6 +163,12 @@ const TYPE_META: Record<OptionTypes, TypeMeta> = {
     icon: <RobotOutlined />,
     color: 'cyan',
   },
+  scriptSelect: {
+    label: 'Script Select',
+    description: 'Pick one or more scripts, actions, recordings or chains.',
+    icon: <CodeOutlined />,
+    color: 'geekblue',
+  },
 };
 
 const TYPE_ORDER: OptionTypes[] = [
@@ -175,6 +186,7 @@ const TYPE_ORDER: OptionTypes[] = [
   'tagsSelect',
   'gamemodeSelect',
   'activeBotSelect',
+  'scriptSelect',
 ];
 
 const FIELDS_BY_TYPE: Record<OptionTypes, string[]> = {
@@ -192,6 +204,7 @@ const FIELDS_BY_TYPE: Record<OptionTypes, string[]> = {
   coordinate: ['defaultValue', 'withDimension'],
   keybind: ['defaultValue', 'simple'],
   activeBotSelect: ['defaultValue', 'multiple', 'botFilter', 'clearable'],
+  scriptSelect: ['kinds', 'multiple', 'clearable'],
 };
 
 const TYPE_SPECIFIC_FIELDS_ALL = Array.from(
@@ -653,6 +666,9 @@ const TypeFields: React.FC<TypeFieldsProps> = ({ type, form }) => {
 
     case 'activeBotSelect':
       return <ActiveBotTypeFields />;
+
+    case 'scriptSelect':
+      return <ScriptTypeFields />;
 
     case 'altSelect':
       return (
@@ -1128,6 +1144,41 @@ const ActiveBotTypeFields: React.FC = () => {
     </>
   );
 };
+
+// ---- scriptSelect ------------------------------------------------------- //
+
+const ScriptTypeFields: React.FC = () => (
+  <>
+    <Form.Item
+      name="kinds"
+      label="Script Types"
+      tooltip="Which kinds of script the user can pick from. Leave empty to offer all of them."
+    >
+      <Select
+        mode="multiple"
+        allowClear
+        placeholder="All types"
+        options={SCRIPT_KINDS.map((kind) => ({
+          value: kind,
+          label: SCRIPT_KIND_LABELS[kind],
+        }))}
+      />
+    </Form.Item>
+    <Space size="large" wrap>
+      <Form.Item
+        name="multiple"
+        valuePropName="checked"
+        label="Allow Multiple"
+        tooltip="When on, the user can pick several scripts and the value is stored as an array of ids."
+      >
+        <Switch />
+      </Form.Item>
+      <Form.Item name="clearable" valuePropName="checked" label="Clearable">
+        <Switch />
+      </Form.Item>
+    </Space>
+  </>
+);
 
 // ---- list -------------------------------------------------------------- //
 

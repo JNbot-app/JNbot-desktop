@@ -239,6 +239,13 @@ export function stopScript({ name }: { name: string }) {
   stopPlugin({ pluginId: name });
 }
 
+export async function getPluginInfo(
+  pluginId: string,
+): Promise<MacroInfo | null> {
+  if (!pluginId) throw new Error('getPluginInfo: pluginId is required');
+  return workerScript.sendAsync('GET_PLUGIN_INFO', { pluginId });
+}
+
 export async function getActiveScripts(): Promise<any> {
   return workerScript.sendAsync('GET_ACTIVE_SCRIPTS');
 }

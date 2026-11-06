@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { clipText } from '../components/Header';
-import type { CliRuntime, RunItem } from '../types';
+import type { CliRuntime, RunItem, RunnableScript } from '../types';
+import { groupScriptsByKind, type ScriptKind } from '../../../common/scriptKinds';
 import {
+  getRunnableScripts,
   getScriptOptionSchema,
   saveScriptOptions,
   runPlugin,
@@ -37,7 +39,17 @@ type FlatOption = {
   max?: number;
   step?: number;
   inputType?: string;
+  kinds?: ScriptKind[];
 };
+
+const isSingleChoice = (opt: FlatOption) =>
+  opt.type === 'select' ||
+  opt.type === 'altSelect' ||
+  (['gamemodeSelect', 'activeBotSelect', 'scriptSelect'].includes(opt.type) && !opt.multiple);
+
+const isMultiChoice = (opt: FlatOption) =>
+  ['altsSelect', 'tagsSelect', 'multiSelect'].includes(opt.type) ||
+  (['gamemodeSelect', 'activeBotSelect', 'scriptSelect'].includes(opt.type) && !!opt.multiple);
 
 export const ScriptOptionsModal: React.FC<ScriptOptionsModalProps> = ({
   runtime,
@@ -49,6 +61,7 @@ export const ScriptOptionsModal: React.FC<ScriptOptionsModalProps> = ({
 }) => {
   const [loading, setLoading] = useState(true);
   const [flatOptions, setFlatOptions] = useState<FlatOption[]>([]);
+  const [scripts, setScripts] = useState<RunnableScript[]>([]);
   const [values, setValues] = useState<Record<string, any>>({});
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [activePicker, setActivePicker] = useState<{ type: 'multi' | 'list' | 'range'; opt: FlatOption } | null>(null);
@@ -79,6 +92,17 @@ export const ScriptOptionsModal: React.FC<ScriptOptionsModalProps> = ({
     }
     return [];
   }, [runtime, profileKey]);
+
+  const scriptChoices = (opt: FlatOption) =>
+    groupScriptsByKind(scripts, opt.kinds).flatMap((group) =>
+      group.scripts.map(({ info }) => ({
+        label: `${info.name} (${group.label})`,
+        value: info.pluginId,
+      })),
+    );
+
+  const scriptName = (id: string) =>
+    scripts.find(({ info }) => info.pluginId === id)?.info.name ?? id;
 
   const optionById = useMemo(() => {
     const map: Record<string, FlatOption> = {};
@@ -113,11 +137,17 @@ export const ScriptOptionsModal: React.FC<ScriptOptionsModalProps> = ({
               max: opt.max,
               step: opt.step || 1,
               inputType: opt.inputType,
+              kinds: opt.kinds,
             });
           }
         }
         setFlatOptions(flat);
         setValues(result.data.values || {});
+        if (flat.some((opt) => opt.type === 'scriptSelect')) {
+          void getRunnableScripts(runtime).then((list) => {
+            if (!cancelled) setScripts(list);
+          });
+        }
       }
       setLoading(false);
     });
@@ -242,12 +272,7 @@ export const ScriptOptionsModal: React.FC<ScriptOptionsModalProps> = ({
         if (input === ' ' || key.return || key.leftArrow || key.rightArrow) {
           updateOptionValue(currentOpt, !currentVal);
         }
-      } else if (
-        currentOpt.type === 'select' ||
-        (currentOpt.type === 'gamemodeSelect' && !currentOpt.multiple) ||
-        currentOpt.type === 'altSelect' ||
-        (currentOpt.type === 'activeBotSelect' && !currentOpt.multiple)
-      ) {
+      } else if (isSingleChoice(currentOpt)) {
         let choices: Array<{ label: string; value: any }> = [];
         if (currentOpt.type === 'select') {
           choices = currentOpt.options || [];
@@ -260,6 +285,8 @@ export const ScriptOptionsModal: React.FC<ScriptOptionsModalProps> = ({
         } else if (currentOpt.type === 'activeBotSelect') {
           const bots = activeBotsList.length ? activeBotsList : altsList;
           choices = bots.map((b) => ({ label: b, value: b }));
+        } else if (currentOpt.type === 'scriptSelect') {
+          choices = scriptChoices(currentOpt);
         }
 
         if (choices.length > 0) {
@@ -272,13 +299,7 @@ export const ScriptOptionsModal: React.FC<ScriptOptionsModalProps> = ({
             updateOptionValue(currentOpt, choices[prevIdx].value);
           }
         }
-      } else if (
-        currentOpt.type === 'altsSelect' ||
-        currentOpt.type === 'tagsSelect' ||
-        currentOpt.type === 'multiSelect' ||
-        (currentOpt.type === 'activeBotSelect' && currentOpt.multiple) ||
-        (currentOpt.type === 'gamemodeSelect' && currentOpt.multiple)
-      ) {
+      } else if (isMultiChoice(currentOpt)) {
         // Open MultiSelect Modal picker on Enter or Space!
         if (key.return || input === ' ') {
           setActivePicker({ type: 'multi', opt: currentOpt });
@@ -327,6 +348,8 @@ export const ScriptOptionsModal: React.FC<ScriptOptionsModalProps> = ({
     } else if (opt.type === 'activeBotSelect') {
       const bots = activeBotsList.length ? activeBotsList : altsList;
       items = bots.map((b) => ({ id: b, label: b }));
+    } else if (opt.type === 'scriptSelect') {
+      items = scriptChoices(opt).map(({ label, value }) => ({ id: value, label }));
     } else if (opt.type === 'gamemodeSelect') {
       const gms = opt.gamemodes && opt.gamemodes.length ? opt.gamemodes : serverGamemodes;
       items = gms.map((gm) => ({ id: gm, label: gm }));
@@ -414,24 +437,13 @@ export const ScriptOptionsModal: React.FC<ScriptOptionsModalProps> = ({
   if (activeOpt) {
     if (activeOpt.type === 'switch') {
       helperText = 'Space / Enter / ← →: toggle [X] Enabled / [ ] Disabled';
-    } else if (
-      activeOpt.type === 'select' ||
-      (activeOpt.type === 'gamemodeSelect' && !activeOpt.multiple) ||
-      activeOpt.type === 'altSelect' ||
-      (activeOpt.type === 'activeBotSelect' && !activeOpt.multiple)
-    ) {
+    } else if (isSingleChoice(activeOpt)) {
       helperText = '← → or Space: cycle through available choices';
     } else if (activeOpt.type === 'slider') {
       helperText = `← →: adjust numeric value (min: ${activeOpt.min ?? 0}, max: ${activeOpt.max ?? 100})`;
     } else if (activeOpt.type === 'input') {
       helperText = 'Type text · Backspace deletes · Down arrow confirms';
-    } else if (
-      activeOpt.type === 'altsSelect' ||
-      activeOpt.type === 'tagsSelect' ||
-      activeOpt.type === 'multiSelect' ||
-      (activeOpt.type === 'activeBotSelect' && activeOpt.multiple) ||
-      (activeOpt.type === 'gamemodeSelect' && activeOpt.multiple)
-    ) {
+    } else if (isMultiChoice(activeOpt)) {
       helperText = 'Enter / Space: open selector to check/uncheck items';
     } else if (activeOpt.type === 'list') {
       helperText = 'Enter: open list editor to add, edit, or delete items';
@@ -468,28 +480,19 @@ export const ScriptOptionsModal: React.FC<ScriptOptionsModalProps> = ({
               displayVal = currentVal ? '[X] Enabled' : '[ ] Disabled';
             } else if (opt.inputType === 'password') {
               displayVal = '********';
-            } else if (
-              opt.type === 'select' ||
-              (opt.type === 'gamemodeSelect' && !opt.multiple) ||
-              opt.type === 'altSelect' ||
-              (opt.type === 'activeBotSelect' && !opt.multiple)
-            ) {
-              displayVal = `← ${currentVal ?? 'None'} →`;
+            } else if (isSingleChoice(opt)) {
+              const shown = opt.type === 'scriptSelect' && currentVal ? scriptName(currentVal) : currentVal;
+              displayVal = `← ${shown ?? 'None'} →`;
             } else if (opt.type === 'slider') {
               displayVal = `← ${currentVal ?? opt.min ?? 0} →`;
-            } else if (
-              opt.type === 'altsSelect' ||
-              opt.type === 'multiSelect' ||
-              opt.type === 'tagsSelect' ||
-              (opt.type === 'activeBotSelect' && opt.multiple) ||
-              (opt.type === 'gamemodeSelect' && opt.multiple)
-            ) {
+            } else if (isMultiChoice(opt)) {
               const arr = Array.isArray(currentVal)
                 ? currentVal
                 : typeof currentVal === 'string' && currentVal.length > 0
                   ? [currentVal]
                   : [];
-              displayVal = arr.length ? `[${arr.length} selected: ${arr.slice(0, 2).join(', ')}${arr.length > 2 ? '…' : ''}]` : '(none selected)';
+              const names = opt.type === 'scriptSelect' ? arr.map(scriptName) : arr;
+              displayVal = arr.length ? `[${arr.length} selected: ${names.slice(0, 2).join(', ')}${arr.length > 2 ? '…' : ''}]` : '(none selected)';
             } else if (opt.type === 'list') {
               const rows = Array.isArray(currentVal) ? currentVal : [];
               displayVal = `[${rows.length} row(s) · Enter to edit]`;

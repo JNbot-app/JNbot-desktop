@@ -18,6 +18,7 @@ import ListOption from './ListOption';
 import CoordinateOption from './CoordinateOption';
 import KeybindOption from './KeybindOption';
 import ActiveBotSelectOption from './ActiveBotSelectOption';
+import ScriptSelectOption from './ScriptSelectOption';
 
 const options: Record<OptionTypes, FC<any>> = {
   select: SelectOption,
@@ -34,6 +35,7 @@ const options: Record<OptionTypes, FC<any>> = {
   coordinate: CoordinateOption,
   keybind: KeybindOption,
   activeBotSelect: ActiveBotSelectOption,
+  scriptSelect: ScriptSelectOption,
 };
 
 const Option: FC<{

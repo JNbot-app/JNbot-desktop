@@ -6,6 +6,8 @@ import { isSensitivePluginOption } from '../../common/pluginOptions';
 import { DEFAULT_REMOTE_PERMISSIONS } from '../../common/clientPermissions';
 import { getServerMeta } from '../../common/serverInfo';
 import type { ProfileScript } from '../../common/profileScripts';
+import { chainPluginId } from '../../common/chains';
+import type { MacroInfo } from '../../main/src/types';
 import { generateTerminalQr } from './qr';
 import type {
   CliAction,
@@ -16,6 +18,7 @@ import type {
   BotChatMessage,
   BotInventorySlot,
   RunItem,
+  RunnableScript,
 } from './types';
 import { cliSnapshot } from './snapshot';
 import { accountAuthenticationError, isOnlineMode } from '../../common/serverAuthentication';
@@ -318,6 +321,32 @@ export function getLibraryPluginItems(
       author: plugin.security?.publisherName || undefined,
       config: plugin.config,
     }));
+}
+
+/** Everything a `scriptSelect` option can offer, matching the app's picker. */
+export async function getRunnableScripts(runtime: CliRuntime): Promise<RunnableScript[]> {
+  const { handler } = runtime;
+  const { profileId, profileKey } = handler.getBootstrapRuntime();
+  const entries = handler.settings.JNdata.data[profileKey]?.scripts ?? [];
+  const resolved = await Promise.all(entries.map(async (entry): Promise<RunnableScript | undefined> => {
+    const result = await handler.settings.profiles.scripts?.resolveInfo(entry);
+    return result?.info && { info: result.info, profileScriptId: entry.id };
+  }));
+  const byId = new Map<string, RunnableScript>();
+  for (const script of [...resolved, ...handler.macros.toList().map((info) => ({ info }))]) {
+    if (!script || byId.has(script.info.pluginId)) continue;
+    if (script.info.scriptType !== 'script' && script.info.scriptType !== 'action') continue;
+    if (!handler.isPluginDisallowed(profileId, script.info.pluginId)) byId.set(script.info.pluginId, script);
+  }
+  const { scripts } = handler.settings.getProfileSettings(profileKey);
+  const chains = Object.values(scripts?.chains ?? {}).map((chain: any): RunnableScript => ({
+    info: {
+      pluginId: chainPluginId(chain.id),
+      name: scripts[chain.id]?.name ?? chain.name ?? 'Chain',
+      scriptType: 'script',
+    } as MacroInfo,
+  }));
+  return [...byId.values(), ...chains];
 }
 
 export async function runPlugin(runtime: CliRuntime, idOrName: string): Promise<CliResult> {

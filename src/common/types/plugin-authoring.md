@@ -47,6 +47,7 @@ Add an option for any value a user may want to change without editing code. Read
 | `list` | object array | 1–6 unique `fields` |
 | `coordinate` | `{ x?, y?, z?, dimension? }` | optional `withDimension` |
 | `keybind` | string | optional `simple` |
+| `scriptSelect` | script ID / ID array with `multiple` | optional `kinds` (`profileScript`, `action`, `recording`, `plugin`, `chain`; default all) |
 
 ```json
 [

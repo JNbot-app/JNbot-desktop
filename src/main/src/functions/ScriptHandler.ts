@@ -653,6 +653,40 @@ class ScriptHandler_ extends TypedEventEmitter<ScriptHandlerEvents> {
     }
   }
 
+  /**
+   * Metadata of an installed plugin, profile script or chain (`chain:<id>`).
+   * Null when the id is unknown or blocked on this profile.
+   */
+  public async getPluginInfo(
+    profileId: number,
+    pluginId: string,
+  ): Promise<MacroInfo | null> {
+    if (this.isPluginDisallowed(profileId, pluginId)) return null;
+    const chainId = chainIdFromPluginId(pluginId);
+    if (chainId) {
+      const { scripts } = this.settings.getProfileSettings(
+        this.getRuntime(profileId).profileKey,
+      );
+      const chain = scripts?.chains?.[chainId];
+      if (!chain) return null;
+      const options = { ...chain.options, ...scripts[chainId] };
+      return {
+        pluginId,
+        name: options.name ?? chain.name ?? 'Chain',
+        description: options.description ?? '',
+        scriptType: 'script',
+      } as MacroInfo;
+    }
+    const installed = this.macros
+      .toList()
+      .find((info) => info.pluginId === pluginId);
+    if (installed) return installed;
+    const script = this.findProfileScript(profileId, pluginId);
+    if (!script) return null;
+    const resolved = await this.settings.profiles?.scripts?.resolveInfo(script);
+    return resolved?.info ?? null;
+  }
+
   public getActions(): MacroInfo[] {
     return this.macros.getScriptActions();
   }

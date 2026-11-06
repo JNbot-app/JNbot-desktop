@@ -31,8 +31,8 @@ import type { IMcServer, McServerHandleSummary } from 'common/types/mcServerApi'
 
 import type {PluginOptionSchema } from './pluginOptions.d';
 
-type MacroLanguage = 'js' | 'ts' | 'components';
-type MacroScriptType = 'script' | 'action' | 'profileUi';
+type MacroLanguage = 'js' | 'ts' | 'components' | 'recording';
+type MacroScriptType = 'script' | 'action' | 'profileUi' | 'botExtension';
 
 type MacroInfo = {
   name: string;
@@ -436,6 +436,13 @@ export interface ScriptAPI {
 
   startAction(options: ActionArgs): Promise<any>;
   getActiveScripts(): Promise<ActiveScriptsType>;
+  /**
+   * Details of an installed plugin, profile script or chain (`chain:<id>`),
+   * such as the ids a `scriptSelect` option stores. Resolves to `null` when
+   * the id is unknown or blocked on this profile. Chains only have `pluginId`,
+   * `name`, `description` and `scriptType`.
+   */
+  getPluginInfo(pluginId: string): Promise<MacroInfo | null>;
   /** Returns the live Minecraft-bridge client for the given id. */
   getMcClient(clientId: string): IMcClient;
   getMcClients(): Promise<{ username: string; clientId: string }[]>;

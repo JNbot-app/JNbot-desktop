@@ -49,6 +49,7 @@ Add an option for any value a user may want to change without editing code. Read
 | `list` | object array | 1–6 unique `fields` |
 | `coordinate` | `{ x?, y?, z?, dimension? }` | optional `withDimension` |
 | `keybind` | string | optional `simple` |
+| `scriptSelect` | script ID / ID array with `multiple` | optional `kinds` (`profileScript`, `action`, `recording`, `plugin`, `chain`; default all) |
 
 ```json
 [
@@ -2336,6 +2337,8 @@ type AltRangeValue = [string | null, string | null];
 
 type ActiveBotFilter = 'all' | 'bots' | 'minecraft';
 
+type ScriptKind = 'profileScript' | 'action' | 'recording' | 'plugin' | 'chain';
+
 type PluginOptionType =
   | 'select'
   | 'multiSelect'
@@ -2350,7 +2353,8 @@ type PluginOptionType =
   | 'list'
   | 'coordinate'
   | 'keybind'
-  | 'activeBotSelect';
+  | 'activeBotSelect'
+  | 'scriptSelect';
 
 interface PluginOptionBase {
   id: string;
@@ -2481,6 +2485,18 @@ interface PluginOptionActiveBotSelect extends PluginOptionBase {
   defaultValue?: string[];
 }
 
+/** Pick scripts by id; pass an id to `script.startPlugin()` or `script.getPluginInfo()`. */
+interface PluginOptionScriptSelect extends PluginOptionBase {
+  type: 'scriptSelect';
+  /** Kinds of script to offer. Omit to offer every kind. */
+  kinds?: ScriptKind[];
+  /** Store a string array instead of a single id. */
+  multiple?: boolean;
+  clearable?: boolean;
+  placeholder?: string;
+  defaultValue?: string | string[];
+}
+
 type PluginOption =
   | PluginOptionInput
   | PluginOptionSwitch
@@ -2495,7 +2511,8 @@ type PluginOption =
   | PluginOptionList
   | PluginOptionCoordinate
   | PluginOptionKeybind
-  | PluginOptionActiveBotSelect;
+  | PluginOptionActiveBotSelect
+  | PluginOptionScriptSelect;
 
 interface PluginOptionSection {
   name: string;
@@ -2536,8 +2553,8 @@ type PluginOptionSchema = PluginOptionSection[];
 
 
 
-type MacroLanguage = 'js' | 'ts' | 'components';
-type MacroScriptType = 'script' | 'action' | 'profileUi';
+type MacroLanguage = 'js' | 'ts' | 'components' | 'recording';
+type MacroScriptType = 'script' | 'action' | 'profileUi' | 'botExtension';
 
 type MacroInfo = {
   name: string;
@@ -2941,6 +2958,13 @@ interface ScriptAPI {
 
   startAction(options: ActionArgs): Promise<any>;
   getActiveScripts(): Promise<ActiveScriptsType>;
+  /**
+   * Details of an installed plugin, profile script or chain (`chain:<id>`),
+   * such as the ids a `scriptSelect` option stores. Resolves to `null` when
+   * the id is unknown or blocked on this profile. Chains only have `pluginId`,
+   * `name`, `description` and `scriptType`.
+   */
+  getPluginInfo(pluginId: string): Promise<MacroInfo | null>;
   /** Returns the live Minecraft-bridge client for the given id. */
   getMcClient(clientId: string): IMcClient;
   getMcClients(): Promise<{ username: string; clientId: string }[]>;

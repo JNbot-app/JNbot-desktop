@@ -1,18 +1,18 @@
-import { useEffect, useState } from 'react';
-import type { MacroInfo } from '../../../../main/src/types';
-import { isPluginDisallowed } from '../../../../common/profiles';
-import { chainPluginId } from '../../../../common/chains';
+import { useEffect, useMemo, useState } from 'react';
+import type { MacroInfo } from '../../main/src/types';
+import { isPluginDisallowed } from '../../common/profiles';
+import { chainPluginId } from '../../common/chains';
 import {
   selectActiveServerId,
   selectCanUsePlugins,
   selectCanUseScripts,
   useSettingsStore,
-} from '../../../redux/settings';
+} from '../redux/settings';
 
-export type ScheduleScript = { info: MacroInfo; profileScriptId?: string };
+export type RunnableScript = { info: MacroInfo; profileScriptId?: string };
 
-/** Resolve only metadata while the schedule editor is open. Profile scripts win by id. */
-export function useScheduleScripts() {
+/** Resolve only the metadata of everything a user can run. Profile scripts win by id. */
+export function useRunnableScripts() {
   const profileId = useSettingsStore((state) => state.selectedProfileId);
   const profileKey = useSettingsStore(selectActiveServerId);
   const profile = useSettingsStore((state) =>
@@ -22,7 +22,7 @@ export function useScheduleScripts() {
   const savedScripts = useSettingsStore((state) => state.settings.scripts);
   const canUseScripts = useSettingsStore(selectCanUseScripts);
   const canUsePlugins = useSettingsStore(selectCanUsePlugins);
-  const [scripts, setScripts] = useState<ScheduleScript[]>([]);
+  const [scripts, setScripts] = useState<RunnableScript[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -35,7 +35,7 @@ export function useScheduleScripts() {
       };
     const entries = profile?.scripts ?? [];
     void Promise.all(
-      entries.map(async (entry): Promise<ScheduleScript | undefined> => {
+      entries.map(async (entry): Promise<RunnableScript | undefined> => {
         if (isPluginDisallowed(profile, entry.pluginId)) return undefined;
         try {
           const result = await window.messenger.profileRequest<{
@@ -50,8 +50,8 @@ export function useScheduleScripts() {
       }),
     ).then((resolved) => {
       if (cancelled) return;
-      const byId = new Map<string, ScheduleScript>();
-      const candidates: (ScheduleScript | undefined)[] = [
+      const byId = new Map<string, RunnableScript>();
+      const candidates: (RunnableScript | undefined)[] = [
         ...resolved,
         ...installed.map((info) => ({ info })),
       ];
@@ -76,14 +76,20 @@ export function useScheduleScripts() {
   }, [profileId, profile, installed, canUsePlugins, canUseScripts]);
 
   // Chains run like plugins under a `chain:<id>` pluginId.
-  const chains = Object.values(savedScripts?.chains ?? {}).map(
-    (chain): ScheduleScript => ({
-      info: {
-        pluginId: chainPluginId(chain.id),
-        name: savedScripts?.[chain.id]?.name ?? chain.name ?? 'Chain',
-        scriptType: 'script',
-      } as MacroInfo,
-    }),
+  const allScripts = useMemo(
+    () => [
+      ...scripts,
+      ...Object.values(savedScripts?.chains ?? {}).map(
+        (chain): RunnableScript => ({
+          info: {
+            pluginId: chainPluginId(chain.id),
+            name: savedScripts?.[chain.id]?.name ?? chain.name ?? 'Chain',
+            scriptType: 'script',
+          } as MacroInfo,
+        }),
+      ),
+    ],
+    [scripts, savedScripts],
   );
-  return { scripts: [...scripts, ...chains], loading };
+  return { scripts: allScripts, loading };
 }
