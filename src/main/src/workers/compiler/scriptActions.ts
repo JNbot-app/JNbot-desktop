@@ -13,7 +13,7 @@ type ScriptActionData = {
   actionName: string;
   code: MacroCode;
   info: MacroInfo;
-  error?: string;
+  error?: string | boolean;
 };
 
 type ActionRequest = {
@@ -33,17 +33,20 @@ function fetchActionData(
   actionName: string,
   isName: boolean,
   id: string,
-): Promise<ScriptActionData | { error: true; code: number }> {
+): Promise<ScriptActionData> {
   if (actionName in cache) return Promise.resolve(cache[actionName]);
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     function handler(data: ScriptActionData) {
       // Ignore responses for other in-flight requests — main echoes back the
       // request's id + actionName on both success and error, so a failure of
       // one concurrent action must not reject the others.
       if (!data || data.id !== id || data.actionName !== actionName) return;
       unsubscribe();
-      if (data.error) return resolve({ error: true, code: 139 });
+      if (data.error) {
+        const reason = typeof data.error === 'string' ? `: ${data.error}` : '';
+        return reject(new Error(`Script action "${actionName}" is not available${reason}`));
+      }
       cache[actionName] = data;
       resolve(data);
     }
@@ -57,10 +60,7 @@ async function scriptActionRunner({ name, bot, args = [], id, optionOverrides = 
   if (!name && !id) throw new Error('scriptActionRunner: name or id is required');
 
   const actionId = workerData.id + Math.random().toString(36).substring(7);
-  const data = await fetchActionData((name ?? id)!, !!name, actionId);
-  if ('error' in data && data.error) return Promise.reject(data.code);
-
-  const action = data as ScriptActionData;
+  const action = await fetchActionData((name ?? id)!, !!name, actionId);
 
   // Same calling convention as defaultActionRunner: `main(bot, settings, args)`,
   // with the action's settings parsed & validated against its config.

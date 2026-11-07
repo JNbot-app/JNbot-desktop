@@ -222,7 +222,11 @@ class ScriptHandler_ extends TypedEventEmitter<ScriptHandlerEvents> {
 
     this.errorHandler = errorHandler;
     setProxyStarter({
-      defaultPort: () => this.proxyConfigPort(this.bootstrapRuntime.profileId),
+      // No profile is installed yet on a fresh install; fall back to the default port.
+      defaultPort: () =>
+        settings.getProfile(settings.bootstrapProfileKey)
+          ? this.proxyConfigPort(this.bootstrapRuntime.profileId)
+          : 25565,
       start: (minecraftInstanceId) => this.startProxy(minecraftInstanceId),
     });
     // A fresh install has no profile yet; the renderer asks to install one.

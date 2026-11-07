@@ -117,6 +117,23 @@ describe('MCP tool catalog', () => {
     });
   });
 
+  test('a failed bot action rejects only for its caller', async () => {
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      const bridge = new McpBotBridge({} as any) as any;
+      const target = { profileId: 1, botId: 1 };
+      await expect(
+        bridge.serialized(target, () => Promise.reject(new Error('timed out'))),
+      ).rejects.toThrow('timed out');
+      await expect(bridge.serialized(target, async () => 'next')).resolves.toBe('next');
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+
   test('uses stable public bot targets', () => {
     const manager = Object.create(McpManager.prototype) as any;
     expect(manager.target({ profileKey: 'jartexnetwork', account: 'BotOne' })).toEqual({ profileKey: 'jartexnetwork', account: 'BotOne' });

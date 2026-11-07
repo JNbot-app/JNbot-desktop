@@ -401,10 +401,12 @@ export class McpBotBridge {
         const active = this.scriptHandler
           .getRuntime(profile.profileId)
           .activeBots.getBot(bot.botId);
-        active?.requestAction('mcpRecipeAction', {
-          actionId: 'botClearMovement',
-          inputs: {},
-        });
+        active
+          ?.requestAction('mcpRecipeAction', {
+            actionId: 'botClearMovement',
+            inputs: {},
+          })
+          .catch(() => undefined);
       }
     }
     void this.stopClientSessions();
@@ -525,8 +527,9 @@ export class McpBotBridge {
   private serialized<T>(target: BotTarget, task: () => Promise<T>): Promise<T> {
     const key = `${target.profileId}:${target.botId}`;
     const previous = this.queues.get(key) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(task);
-    const tracked = next.finally(() => {
+    const next = previous.then(task);
+    // The queue entry never rejects; the caller handles `next`'s error.
+    const tracked = next.catch(() => undefined).finally(() => {
       if (this.queues.get(key) === tracked) this.queues.delete(key);
     });
     this.queues.set(key, tracked);
