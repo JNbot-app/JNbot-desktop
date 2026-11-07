@@ -54,6 +54,19 @@ function buildRunPlugin() {
     );
 }
 
+function buildAsk() {
+  return new SlashCommandBuilder()
+    .setName('ask')
+    .setDescription('Ask the AI to check on or control your bots, in your own words')
+    .addStringOption((o) =>
+      o
+        .setName('request')
+        .setDescription('For example: "what did my bots say in chat?" or "make all bots /warp spawn"')
+        .setRequired(true)
+        .setMaxLength(1000),
+    );
+}
+
 function buildLogs() {
   return new SlashCommandBuilder()
     .setName('logs')
@@ -331,6 +344,24 @@ const list: CommandHandler = async (i, ctx) => {
   }
 };
 
+/** Natural-language control through the user's AI provider and the MCP tools. */
+const ask: CommandHandler = async (i, ctx) => {
+  const request = i.options.getString('request', true);
+  await i.deferReply();
+  ctx.activity('ask', `${i.user.username} asked: ${request.slice(0, 100)}`);
+  try {
+    const answer = await workerScript.sendAsync<string>(
+      'LLM_AGENT',
+      { prompt: request, caller: `@${i.user.username}`, via: 'Discord' },
+      { timeoutMs: 300_000 },
+    );
+    await i.editReply({ embeds: [embed('AI', answer || 'Done.', 'primary')] });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'The AI request failed.';
+    await i.editReply({ embeds: [embed('AI error', message, 'error')] });
+  }
+};
+
 const help: CommandHandler = async (i, ctx) => {
   const lines = ctx.commands.map((c) => `**/${c.data.name}** — ${c.data.description}`);
   await i.reply({ embeds: [embed('Commands', lines.join('\n'), 'primary')] });
@@ -453,8 +484,9 @@ const autocompleteLogScripts: AutocompleteHandler = async (i) => {
 /*  Build the command list                                            */
 /* ------------------------------------------------------------------ */
 
-export function buildCommands(jn: JNdata, server: ServerTypes): DiscordCommand[] {
+export function buildCommands(jn: JNdata, server: ServerTypes, aiEnabled = false): DiscordCommand[] {
   return [
+    ...(aiEnabled ? [{ data: buildAsk().toJSON(), execute: ask }] : []),
     { data: buildRunScript().toJSON(), execute: runScript, autocomplete: autocompleteProfileScripts },
     { data: buildRunPlugin().toJSON(), execute: runPlugin, autocomplete: autocompletePlugins },
     { data: buildLogs().toJSON(), execute: logs, autocomplete: autocompleteLogScripts },

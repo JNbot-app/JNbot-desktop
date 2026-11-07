@@ -14,6 +14,7 @@ const files = [
   'chains.ts',
   'clientPermissions.ts',
   'cooldowns.ts',
+  'llm.ts',
   'mobileClientContract.ts',
   'pluginPresets.ts',
   'pluginSignatures.ts',

@@ -28,6 +28,8 @@ import ChainFlow from './ChainFlow';
 import ChainStatus from './ChainStatus';
 import RunningControls from '../../macros/RunningControls';
 import { toChainOptions } from './chainOptionsScheme';
+import LlmPrompt from '../../llm/LlmPrompt';
+import type { ChainStep } from '../../../../common/chains';
 
 const ScriptChain: FC<{
   selectedChainId: string;
@@ -82,6 +84,15 @@ const ScriptChain: FC<{
 
   const isRunnable = !!chain.chains.length && chain.chains.every((step) => step.scriptId);
 
+  const generate = async (description: string) => {
+    const draft = (await window.ipcRenderer.get('LLM_GENERATE', { kind: 'chain', description })) as {
+      name?: string;
+      steps?: ChainStep[];
+    };
+    onSaveChain({ ...chain, chains: draft.steps ?? [] });
+    if (draft.name && options) setChainOptions(chain.id, { ...options, name: draft.name });
+  };
+
   return (
     <Card
       title={chainName}
@@ -125,6 +136,9 @@ const ScriptChain: FC<{
     >
       <Flex vertical gap={8} style={{ padding: '16px 16px 0' }}>
         {options?.description && <Typography.Text type="secondary">{options.description}</Typography.Text>}
+        {!chain.chains.length && (
+          <LlmPrompt placeholder="Describe the steps, e.g. claim the daily kit, then sell everything" onSubmit={generate} />
+        )}
         <Flex gap={8} align="center" wrap>
           {options?.gamemode && options.gamemode !== 'any' && (
             <Tag variant="filled" style={{ marginInlineEnd: 0 }}>

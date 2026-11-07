@@ -44,6 +44,7 @@ import ProfileRuntime from './ProfileRuntime';
 import { backendMessaging } from '../messaging';
 import type { ProfileRuntimeSummary } from '../../../common/profileRuntime';
 import { isPluginDisallowed } from '../../../common/profiles';
+import type LlmService from './llm/LlmService';
 import {
   MAX_SCRIPT_INSTANCES,
   pluginPresets,
@@ -81,6 +82,8 @@ class ScriptHandler_ extends TypedEventEmitter<ScriptHandlerEvents> {
   mainWindow: BrowserWindow;
   macros: Macros_;
   clientEvents: ClientEvents;
+  /** Optional AI integration, set once the app has started. */
+  llm?: LlmService;
   errorHandler: ErrorHandler_;
   deviceHandler: DeviceHandler;
   windowHandler: WindowHandler_;

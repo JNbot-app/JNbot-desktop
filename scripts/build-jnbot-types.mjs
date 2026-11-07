@@ -35,7 +35,7 @@ const MCP_CONTEXT_DECLARATIONS = [
     id: 'pluginApi',
     name: 'ScriptAPI',
     file: path.join(typeRoot, 'pluginApi.d.ts'),
-    members: ['stop', 'restart', 'onExit', 'startPlugin', 'stopPlugin', 'prompt', 'notification', 'dialog', 'getAlts', 'requestAccountPassword', 'forEachBot', 'forEachAlt', 'startAction', 'getMcClient', 'getMcServer', 'automations', 'ai', 'settings'],
+    members: ['stop', 'restart', 'onExit', 'startPlugin', 'stopPlugin', 'prompt', 'notification', 'dialog', 'getAlts', 'requestAccountPassword', 'forEachBot', 'forEachAlt', 'startAction', 'getMcClient', 'getMcServer', 'automations', 'ai', 'llm', 'settings'],
   },
   {
     id: 'mcServerApi',

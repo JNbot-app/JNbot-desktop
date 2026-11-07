@@ -79,6 +79,8 @@ Use `valueByFieldId` only to make an eligible `select`, `gamemodeSelect`, `altSe
 
 ## Preferred APIs
 
+Cloud AI is available through `script.llm` when the user added an AI provider (Claude, Gemini, OpenAI, OpenRouter or Ollama) in Settings; most users have not, so check `await script.llm.isAvailable()` first and degrade gracefully. Use `script.llm.ask(prompt, { system, tools })` for one answer, `askJson` for parsed JSON, and `createChat({ system, tools, memory })` for a conversation that remembers earlier messages (`chat.send(text)` returns the reply). Tools are `{ name, description, parameters?, run(input) }`; their results are sent back to the model. Use it for free-form text such as a chat persona; prefer `script.ai` for local tool calling and extraction.
+
 Local AI is available through `script.ai`. Create an agent with explicit tool names, descriptions, object JSON Schemas, and optional handlers. `predict()` returns proposed calls without executing them. `run()` makes one prediction and executes its accepted calls sequentially, retaining completed results if a later handler fails. Handler results are not sent back to the model. Each input is independent; unchanged tools stay prepared. Agents start with no tools and support `setTools`, `addTool`, `removeTool`, and `dispose`.
 
 Choose `model: 'main'` for accuracy or `model: 'flash'` for lower memory use and faster inference. Main is the default. Both support tool calls and `script.ai.extract(text, schema, options)`, which returns a validated object or `null`. Reasoning is disabled by default. Pass `{ reasoning: true }` to `agent.predict()`, `agent.run()`, or `script.ai.extract()` to generate reasoning before tool calls. Pass `false` or omit the option to skip reasoning; predictions then return `reasoning: null`. `agent.embed(text, options)` returns `{ modelId, values }` using the agent's selected Gemma model, including its custom model URL. It accepts `signal` and `timeoutMs`, works without tools, and cancels when the agent is disposed. `script.ai.embed(text, options)` also remains available. Both embedding methods reject flash with `AI_UNSUPPORTED_FEATURE`. Rebuild stored embeddings when the model ID changes.
@@ -2860,9 +2862,64 @@ interface AiAPI {
   embed(text: string, options?: AiRequestOptions & AiModelOptions): Promise<{ modelId: string; values: number[] }>;
 }
 
+/** A function the AI may call while answering, e.g. to read the bot's state. */
+interface LlmTool<Input = any> {
+  name: string;
+  description: string;
+  /** JSON Schema of the input object. Omit for a tool without input. */
+  parameters?: AiSchema;
+  /** Its return value (anything JSON-serializable) is shown to the AI. */
+  run(input: Input): unknown | Promise<unknown>;
+}
+interface LlmAskOptions {
+  /** Instructions, e.g. a persona: "You are Steve, a grumpy miner. Keep replies under 100 characters." */
+  system?: string;
+  /** Functions the AI may call before it answers. */
+  tools?: LlmTool[];
+  maxTokens?: number;
+}
+interface LlmChatOptions extends LlmAskOptions {
+  /** How many messages the chat remembers. Defaults to 20. */
+  memory?: number;
+}
+interface LlmChat {
+  /** Send a message and get the reply. Replies are made one at a time, in order. */
+  send(message: string): Promise<string>;
+  /** The remembered conversation. */
+  readonly history: { role: 'user' | 'assistant'; content: string }[];
+  clear(): void;
+}
+/**
+ * The AI provider the user set up in Settings (Claude, Gemini, OpenAI,
+ * OpenRouter or a local Ollama). Most users have none: check `isAvailable()`.
+ *
+ * @example
+ * // A chat bot that answers when its name is mentioned.
+ * const chat = script.llm.createChat({
+ *   system: `You are ${bot.username}, a friendly player on a Minecraft server. Reply in one short line.`,
+ *   tools: [{ name: 'health', description: 'Your health and food.', run: () => ({ health: bot.health, food: bot.food }) }],
+ * });
+ * bot.on('chat', async (username, message) => {
+ *   if (username === bot.username || !message.includes(bot.username)) return;
+ *   bot.chat(await chat.send(`${username}: ${message}`));
+ * });
+ */
+interface LlmAPI {
+  /** True when the user added an AI provider in Settings. */
+  isAvailable(): Promise<boolean>;
+  /** One question, one answer. */
+  ask(prompt: string, options?: LlmAskOptions): Promise<string>;
+  /** Like `ask`, but the answer is parsed JSON. Describe the shape you want in the prompt. */
+  askJson<T = any>(prompt: string, options?: LlmAskOptions): Promise<T>;
+  /** A conversation that remembers earlier messages. */
+  createChat(options?: LlmChatOptions): LlmChat;
+}
+
 interface ScriptAPI {
   /** Local inference. Agents start with no tools and do not load a model until used. */
   ai: AiAPI;
+  /** Cloud AI through the user's own provider (see {@link LlmAPI}); unavailable for most users. */
+  llm: LlmAPI;
   stop(): void;
   restart(): Promise<never>;
   /**

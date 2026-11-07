@@ -1,4 +1,5 @@
 import type { ScriptCooldown } from '../../../common/cooldowns';
+import type { LlmRequest } from '../../../common/llm';
 import {
   BotInfo,
   LogMessage,
@@ -807,6 +808,24 @@ class BotEvents_ {
 
   GET_JNDATA() {
     return this.script?.scriptHandler.settings.JNdata;
+  }
+
+  /* ---------- AI (script.ai and the Discord /ask command) ---------- */
+
+  LLM_STATUS() {
+    return this.script?.scriptHandler.llm?.status() ?? { configured: false };
+  }
+
+  LLM_COMPLETE(request: LlmRequest) {
+    const ai = this.script?.scriptHandler.llm;
+    if (!ai) throw new Error('AI is not available.');
+    return ai.complete(request);
+  }
+
+  LLM_AGENT(input: { prompt: string; caller: string; via: string }) {
+    const script = this.script;
+    if (!script?.scriptHandler.llm) throw new Error('AI is not available.');
+    return script.scriptHandler.llm.agent({ ...input, profileKey: script.profile.profileKey });
   }
 
   /* ---------- Cooldowns (script API) ---------- */

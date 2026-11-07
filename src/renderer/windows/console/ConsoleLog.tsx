@@ -14,6 +14,7 @@ import { LogStatus } from '../../../common/CommonEnums';
 import { FullLogMessage } from '../../../main/src/types';
 import AnsiText from '../../components/common/AnsiText';
 import { logText } from '../../../common/logText';
+import ExplainErrorButton from '../../components/llm/ExplainErrorButton';
 
 export interface ConsoleLogRef {
   clearConsole: () => void;
@@ -148,6 +149,9 @@ const ConsoleLog = forwardRef<
               data={message}
             />
           </div>
+          {type === LogStatus.ERROR && (
+            <ExplainErrorButton error={logText(message)} scriptName={messageData[2]} />
+          )}
         </div>
       </div>
     );

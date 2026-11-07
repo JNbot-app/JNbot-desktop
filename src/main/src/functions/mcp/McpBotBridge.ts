@@ -210,6 +210,20 @@ export class McpBotBridge {
     return this.runCode(this.target(target), code, timeoutMs);
   }
 
+  events(target: McpBotTarget, input: Record<string, unknown>) {
+    return this.request(this.target(target), 'mcpGetEvents', input);
+  }
+
+  wait(target: McpBotTarget, input: Record<string, unknown>) {
+    return this.request(this.target(target), 'mcpWaitForEvent', input);
+  }
+
+  /** Account names of every active bot in a profile, for `accounts: ['*']`. */
+  activeAccounts(profileKey: string): string[] {
+    const runtime = this.scriptHandler.getRuntimeByKey(profileKey);
+    return runtime ? this.listBots(runtime.profileId).map((bot) => bot.username) : [];
+  }
+
   async getBotState(target: BotTarget) {
     return this.request(target, 'mcpGetState');
   }
@@ -236,10 +250,6 @@ export class McpBotBridge {
 
   async findBlocks(target: BotTarget, input: Record<string, unknown>) {
     return this.request(target, 'mcpFindBlocks', input);
-  }
-
-  async waitForEvent(target: BotTarget, input: Record<string, unknown>) {
-    return this.request(target, 'mcpWaitForEvent', input);
   }
 
   async executeRecipeAction(

@@ -37,6 +37,8 @@ import { SearchProjectOptions } from '@xmcl/modrinth';
 import { backendMessaging } from '../messaging';
 import AccessControl from './AccessControl';
 import type { Address } from '../../../common/messaging';
+import type { LlmConfig, LlmGenerateInput, LlmModelsInput, LlmWritePluginInput } from '../../../common/llm';
+import type LlmService from './llm/LlmService';
 import {
   MANAGE_PROFILES,
   USE_ACCOUNTS,
@@ -113,6 +115,7 @@ class ClientEvents_ {
   windowHandler: WindowHandler_;
   registeredSockets: Set<Socket> = new Set();
   mcpManager?: McpManager;
+  llm?: LlmService;
   readonly accessControl: AccessControl;
   readonly profileTransfer: ProfileTransfer;
   readonly shares: ShareService;
@@ -278,6 +281,42 @@ class ClientEvents_ {
   MCP_CLEAR_AUDIT() {
     this.requireMcpManager().clearAudit();
     return true;
+  }
+
+  /* ---------- Optional AI features (bring your own key) ---------- */
+
+  LLM_STATUS() {
+    // The mobile app's embedded backend has no AI service.
+    return this.llm?.status() ?? { configured: false };
+  }
+
+  LLM_SET_CONFIG(input: LlmConfig | null) {
+    return this.requireLlm().setConfig(input);
+  }
+
+  LLM_TEST() {
+    return this.requireLlm().test();
+  }
+
+  LLM_MODELS(input: LlmModelsInput) {
+    return this.requireLlm().models(input);
+  }
+
+  LLM_WRITE_PLUGIN(input: LlmWritePluginInput) {
+    return this.requireLlm().writePlugin(input);
+  }
+
+  LLM_EXPLAIN_ERROR(input: { error: string; scriptName?: string }) {
+    return this.requireLlm().explainError(input);
+  }
+
+  LLM_ASK_SHARE(input: { question: string; title?: string; description?: string; content?: string }) {
+    return this.requireLlm().askAboutShare(input);
+  }
+
+  private requireLlm(): LlmService {
+    if (!this.llm) throw new Error('AI is still starting.');
+    return this.llm;
   }
 
   private requireMcpManager(): McpManager {
@@ -662,6 +701,8 @@ class ClientEvents_ {
       }
       case 'EXPORT_PORTABLE_PROFILE':
         return this.profileTransfer.export(runtime.profileKey);
+      case 'LLM_GENERATE':
+        return this.requireLlm().generate(data as LlmGenerateInput, profileId);
       default:
         throw new Error(`Unknown profile action: ${event}`);
     }

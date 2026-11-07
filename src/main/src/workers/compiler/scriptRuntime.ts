@@ -9,6 +9,7 @@ import * as proxyV3 from '../bot/proxyV3';
 import { ScriptControl } from 'common/CommonEnums';
 import WorkerAutomationApi from '../lib/WorkerAutomationApi';
 import AiClient from '../../ai/AiClient';
+import { createLlmApi } from '../lib/LlmApi';
 
 /* ---------- script.* object ----------
  *
@@ -71,6 +72,7 @@ function buildScript(scriptInfo: MacroInfo, options: Record<string, any> = {}) {
         timeoutMs: remaining > 2_147_483_647 ? 0 : remaining,
       });
     }, networkAllowed),
+    llm: createLlmApi(networkAllowed),
 
     addCooldown: (d: scriptApi.AddCooldownOptions) =>
       scriptApi.addCooldown(d, scriptInfo.pluginId),

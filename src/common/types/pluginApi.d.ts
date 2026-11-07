@@ -338,9 +338,64 @@ export interface AiAPI {
   embed(text: string, options?: AiRequestOptions & AiModelOptions): Promise<{ modelId: string; values: number[] }>;
 }
 
+/** A function the AI may call while answering, e.g. to read the bot's state. */
+export interface LlmTool<Input = any> {
+  name: string;
+  description: string;
+  /** JSON Schema of the input object. Omit for a tool without input. */
+  parameters?: AiSchema;
+  /** Its return value (anything JSON-serializable) is shown to the AI. */
+  run(input: Input): unknown | Promise<unknown>;
+}
+export interface LlmAskOptions {
+  /** Instructions, e.g. a persona: "You are Steve, a grumpy miner. Keep replies under 100 characters." */
+  system?: string;
+  /** Functions the AI may call before it answers. */
+  tools?: LlmTool[];
+  maxTokens?: number;
+}
+export interface LlmChatOptions extends LlmAskOptions {
+  /** How many messages the chat remembers. Defaults to 20. */
+  memory?: number;
+}
+export interface LlmChat {
+  /** Send a message and get the reply. Replies are made one at a time, in order. */
+  send(message: string): Promise<string>;
+  /** The remembered conversation. */
+  readonly history: { role: 'user' | 'assistant'; content: string }[];
+  clear(): void;
+}
+/**
+ * The AI provider the user set up in Settings (Claude, Gemini, OpenAI,
+ * OpenRouter or a local Ollama). Most users have none: check `isAvailable()`.
+ *
+ * @example
+ * // A chat bot that answers when its name is mentioned.
+ * const chat = script.llm.createChat({
+ *   system: `You are ${bot.username}, a friendly player on a Minecraft server. Reply in one short line.`,
+ *   tools: [{ name: 'health', description: 'Your health and food.', run: () => ({ health: bot.health, food: bot.food }) }],
+ * });
+ * bot.on('chat', async (username, message) => {
+ *   if (username === bot.username || !message.includes(bot.username)) return;
+ *   bot.chat(await chat.send(`${username}: ${message}`));
+ * });
+ */
+export interface LlmAPI {
+  /** True when the user added an AI provider in Settings. */
+  isAvailable(): Promise<boolean>;
+  /** One question, one answer. */
+  ask(prompt: string, options?: LlmAskOptions): Promise<string>;
+  /** Like `ask`, but the answer is parsed JSON. Describe the shape you want in the prompt. */
+  askJson<T = any>(prompt: string, options?: LlmAskOptions): Promise<T>;
+  /** A conversation that remembers earlier messages. */
+  createChat(options?: LlmChatOptions): LlmChat;
+}
+
 export interface ScriptAPI {
   /** Local inference. Agents start with no tools and do not load a model until used. */
   ai: AiAPI;
+  /** Cloud AI through the user's own provider (see {@link LlmAPI}); unavailable for most users. */
+  llm: LlmAPI;
   stop(): void;
   restart(): Promise<never>;
   /**

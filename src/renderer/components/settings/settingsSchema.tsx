@@ -13,6 +13,7 @@ import KickBehaviour from './KickBehavior';
 import ProxySettings from './ProxySettings';
 import PublisherIdentity from './PublisherIdentity';
 import DesktopBackgroundSetting from './DesktopBackgroundSetting';
+import LlmSettings from '../llm/LlmSettings';
 
 /**
  * The app-settings schema, shared by the Settings page (renders every tab) and
@@ -148,6 +149,14 @@ export function getSettingsSchema(): SettingTab[] {
             description:
               'Name and device fingerprint used to sign exports and share links, and every link you shared. The private key never leaves this device.',
             Render: PublisherIdentity,
+          },
+          {
+            name: 'AI assistant (optional)',
+            key: 'llmProvider',
+            type: 'custom',
+            description:
+              'Use your own AI provider to write plugins, triggers and chains from a description, explain errors, and use /ask in Discord. Gemini has a free tier and Ollama runs locally. The key stays on this computer.',
+            Render: LlmSettings,
           },
         ],
       },

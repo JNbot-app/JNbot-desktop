@@ -34,6 +34,7 @@ import WebRTC_nodejs from '../../common/WebRTC_nodejs';
 import type ClientEvents_ from './functions/ClientEvents';
 import { backendMessaging, bindClientEventMessaging } from './messaging';
 import McpManager from './functions/mcp/McpManager';
+import LlmService from './functions/llm/LlmService';
 import { recipeActionCatalog } from '../../common/recipeCatalog';
 import { DROPBOX_APP_KEY, DropboxHttp } from './functions/storage/DropboxHttp';
 import { FileDropboxCredentialStore, StorageModeService, type StorageMode } from './functions/storage/StorageModeService';
@@ -260,6 +261,7 @@ async function main(mainWindow: BrowserWindow): Promise<Settings> {
   scriptHandler.on('RUNTIME_ACTIVITY_CHANGED', () => { if (reloadPending) void refreshDropbox(); });
   const mcpManager = new McpManager(scriptHandler, macros);
   scriptHandler.clientEvents.mcpManager = mcpManager;
+  scriptHandler.llm = scriptHandler.clientEvents.llm = new LlmService(scriptHandler, mcpManager);
   app.once('before-quit', () => mcpManager.close());
   protocol.handle('jnbot', (request) => {
     const url = new URL(request.url);

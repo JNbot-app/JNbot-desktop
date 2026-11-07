@@ -17,6 +17,7 @@ const { getRecipeActionHandler } = require('./plugin/RecipeActions');
 const mapEntities = require('./mapEntities');
 const { attachTriggers } = require('./triggers');
 const { attachScreenPrompts } = require('./screenPrompts');
+const { compileTriggerFilter } = require('../../../../common/triggers');
 
 const inject = (bot) => {
   const triggers = attachTriggers(bot);
@@ -29,6 +30,24 @@ const inject = (bot) => {
   let messages = [];
   let chatEntries = [];
   let chatCursor = 0;
+
+  // Recent lifecycle events (kicks, deaths, ...) so AI clients can see why
+  // something went wrong. Shares the cursor counter with chat entries.
+  const eventEntries = [];
+  const eventHandlers = {
+    spawn: () => recordEvent('spawn'),
+    death: () => recordEvent('death'),
+    kicked: (reason) => recordEvent('kicked', { reason: toChatLine(reason).message }),
+    end: (reason) => recordEvent('disconnect', { reason: String(reason ?? '') }),
+    error: (error) => recordEvent('error', { message: String(error?.message ?? error) }),
+    windowOpen: () => recordEvent('window', { title: bot.getWindowTitle?.() ?? null }),
+    gamemodeChanged: () => recordEvent('gamemode', { gamemode: bot.getGamemode?.() ?? null }),
+  };
+  function recordEvent(type, data) {
+    eventEntries.push({ cursor: String(++chatCursor), timestamp: Date.now(), type, ...data });
+    if (eventEntries.length > 100) eventEntries.shift();
+  }
+  for (const [event, handler] of Object.entries(eventHandlers)) bot.on(event, handler);
 
   let isPathfinding = false;
   let mapWindowGeneration = 0;
@@ -741,7 +760,18 @@ const inject = (bot) => {
     return positions.map((position) => serializeBlock(bot.blockAt(position)));
   }
 
-  function mcpWaitForEvent({ event, timeoutMs } = {}) {
+  function mcpGetEvents({ cursor } = {}) {
+    const start = cursor
+      ? eventEntries.findIndex((entry) => Number(entry.cursor) > Number(cursor))
+      : 0;
+    return start < 0 ? [] : eventEntries.slice(start);
+  }
+
+  /**
+   * Resolve on the next matching event, or `{ timedOut: true }`. `match`
+   * filters chat messages and kick/disconnect reasons: text or `/regex/i`.
+   */
+  function mcpWaitForEvent({ event, match, timeoutMs } = {}) {
     const timeout = Math.min(25_000, Math.max(1, Number(timeoutMs) || 25_000));
     const eventMap = {
       chat: 'messagestr',
@@ -749,32 +779,35 @@ const inject = (bot) => {
       inventory: 'updateSlot',
       gamemode: 'gamemodeChanged',
       health: 'health',
+      death: 'death',
+      spawn: 'spawn',
+      kicked: 'kicked',
       disconnect: 'end',
     };
     const sourceEvent = eventMap[event];
     if (!sourceEvent) throw new Error('Unsupported bot event.');
+    const matches = compileTriggerFilter({ event: 'chat', filter: match });
+    const dataOf = (args) => {
+      if (event === 'chat') return String(args[0] ?? '');
+      if (event === 'kicked') return toChatLine(args[0]).message;
+      if (event === 'window') return mcpGetInventory();
+      if (event === 'health') return { health: bot.health, food: bot.food };
+      return args[0] ?? null;
+    };
     return new Promise((resolve) => {
       const source = event === 'inventory' ? bot.inventory : bot;
       const finish = (...args) => {
+        const data = dataOf(args);
+        if (match && !matches(typeof data === 'string' ? data : JSON.stringify(data))) return;
         clearTimeout(timer);
-        resolve({
-          event,
-          timestamp: Date.now(),
-          data:
-            event === 'chat'
-              ? String(args[0] ?? '')
-              : event === 'window'
-                ? mcpGetInventory()
-                : event === 'health'
-                  ? { health: bot.health, food: bot.food }
-                  : args[0] ?? null,
-        });
+        source.removeListener(sourceEvent, finish);
+        resolve({ event, timestamp: Date.now(), data });
       };
       const timer = setTimeout(() => {
         source.removeListener(sourceEvent, finish);
         resolve({ event, timestamp: Date.now(), timedOut: true });
       }, timeout);
-      source.once(sourceEvent, finish);
+      source.on(sourceEvent, finish);
     });
   }
 
@@ -888,6 +921,8 @@ const inject = (bot) => {
     disposeEntitySubscription?.();
     disposeAdditionalEntitySubscription?.();
     disposeEntityUnsubscription?.();
+    for (const [event, handler] of Object.entries(eventHandlers))
+      if (event !== 'end') bot.removeListener(event, handler);
     bot.removeListener('end', cleanup);
     disposeTerminate();
   }
@@ -935,6 +970,7 @@ const inject = (bot) => {
     mcpGetBlockAt,
     mcpFindBlocks,
     mcpWaitForEvent,
+    mcpGetEvents,
     mcpRecipeAction,
   };
 };

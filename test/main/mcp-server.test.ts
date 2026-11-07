@@ -24,22 +24,22 @@ describe('MCP tool catalog', () => {
     };
     const names = manager.tools(client).map((tool: any) => tool.name);
     expect(names).toEqual([
-      'get_jnbot_context', 'get_bot_state', 'inspect_world', 'get_operation',
+      'get_jnbot_context', 'get_bot_state', 'wait_for_event', 'inspect_world', 'get_operation',
       'join_bot', 'leave_bot', 'send_bot_chat', 'move_bot', 'interact_with_world', 'manage_inventory',
       'get_run', 'get_jnbot_reference',
     ]);
-    expect(names).toHaveLength(12);
+    expect(names).toHaveLength(13);
     expect(names).not.toContain('wait_for_approval');
     expect(names).not.toContain('describe_jnbot_operations');
     expect(names).not.toContain('run_bot_script');
   });
 
-  test('keeps the fully enabled catalog below twenty tools', () => {
+  test('keeps the fully enabled catalog at twenty tools or fewer', () => {
     const manager = Object.create(McpManager.prototype) as any;
     const client = {
       permissions: { mcp: { observe: 'allow', control: 'allow', code: 'allow', plugins: 'allow' } },
     };
-    expect(manager.tools(client)).toHaveLength(18);
+    expect(manager.tools(client)).toHaveLength(20);
   });
 
   test('advertises complete flat mode schemas for inspectors', () => {

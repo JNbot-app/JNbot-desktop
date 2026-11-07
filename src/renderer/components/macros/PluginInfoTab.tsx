@@ -38,10 +38,12 @@ import {
   selectIsMacroActive,
   selectMacroById,
   selectSettings,
+  updateScriptSettings,
 } from '../../redux/settings';
 import { usePluginActions, PluginView } from './usePluginActions';
 import ScriptSettings from '../general/scriptSettings/ScriptSettings';
 import PresetBar from '../general/scriptSettings/presets/PresetBar';
+import LlmPrompt from '../llm/LlmPrompt';
 import RunningControls from './RunningControls';
 import { selectedPresetId } from '../../../common/pluginPresets';
 import BannerHero from './BannerHero';
@@ -497,6 +499,18 @@ const OptionsView: React.FC<{
   const presetId = useSettingsStore((state) =>
     selectedPresetId(state.settings.scripts?.[plugin.pluginId]),
   );
+  // Bumped after the AI changes values, so the form re-reads them.
+  const [revision, setRevision] = useState(0);
+  const applyDescription = async (description: string) => {
+    const values = await window.ipcRenderer.get('LLM_GENERATE', {
+      kind: 'options',
+      description,
+      pluginId: plugin.pluginId,
+    });
+    for (const [optionId, value] of Object.entries(values as Record<string, unknown>))
+      updateScriptSettings({ optionId, value, scriptName: plugin.pluginId });
+    setRevision((current) => current + 1);
+  };
   if (!plugin.config || plugin.config.length === 0) {
     return (
       <Typography.Text type="secondary">
@@ -508,9 +522,10 @@ const OptionsView: React.FC<{
   return (
     <Flex vertical gap={8}>
       <PresetBar pluginId={plugin.pluginId} />
+      <LlmPrompt placeholder="Describe the settings, e.g. only farm wheat and go slower" button="Apply" onSubmit={applyDescription} />
       {/* The form only reads its values on mount, so remount it per preset. */}
       <ScriptSettings
-        key={presetId}
+        key={`${presetId}-${revision}`}
         options={plugin.config}
         scriptName={plugin.pluginId}
         errors={errors}

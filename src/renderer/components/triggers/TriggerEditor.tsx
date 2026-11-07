@@ -29,6 +29,7 @@ import TagsSelectOption from '../general/scriptSettings/SettingOptions/TagsSelec
 import AltsSelectOption from '../general/scriptSettings/SettingOptions/AltsSelectOption';
 import TriggerActionsField from './TriggerActionsField';
 import TriggerEventFields from './TriggerEventFields';
+import LlmPrompt from '../llm/LlmPrompt';
 
 const TAGS_OPTION = { id: 'tags', label: 'Tags', type: 'tagsSelect' } as const;
 const ALTS_OPTION = {
@@ -49,6 +50,11 @@ export default function TriggerEditor({ trigger }: TriggerPanelData) {
   const exists = useSettingsStore((s) =>
     Boolean(s.settings.triggers?.some((t) => t.id === draft.id)),
   );
+  const generate = async (description: string) => {
+    const generated = await window.ipcRenderer.get('LLM_GENERATE', { kind: 'trigger', description });
+    setDraft({ ...(generated as Trigger), id: draft.id });
+    setError(null);
+  };
   const event = TRIGGER_EVENTS[draft.event];
   const autoName = describeTrigger({ ...draft, name: undefined });
   const targets = (draft.tags?.length ?? 0) + (draft.alts?.length ?? 0);
@@ -83,6 +89,14 @@ export default function TriggerEditor({ trigger }: TriggerPanelData) {
       onFinish={save}
       initialValues={{ tags: draft.tags ?? [], alts: draft.alts ?? [] }}
     >
+      {!exists && (
+        <div style={{ marginBottom: 16 }}>
+          <LlmPrompt
+            placeholder="Describe it, e.g. post to Discord when a bot dies"
+            onSubmit={generate}
+          />
+        </div>
+      )}
       <Collapse
         style={{ marginBottom: 16 }}
         defaultActiveKey={['event', 'actions']}
