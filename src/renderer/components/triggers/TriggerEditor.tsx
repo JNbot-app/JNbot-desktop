@@ -30,6 +30,7 @@ import AltsSelectOption from '../general/scriptSettings/SettingOptions/AltsSelec
 import TriggerActionsField from './TriggerActionsField';
 import TriggerEventFields from './TriggerEventFields';
 import LlmPrompt from '../llm/LlmPrompt';
+import type { LlmRun } from '../../hooks/useLlmRun';
 
 const TAGS_OPTION = { id: 'tags', label: 'Tags', type: 'tagsSelect' } as const;
 const ALTS_OPTION = {
@@ -50,9 +51,10 @@ export default function TriggerEditor({ trigger }: TriggerPanelData) {
   const exists = useSettingsStore((s) =>
     Boolean(s.settings.triggers?.some((t) => t.id === draft.id)),
   );
-  const generate = async (description: string) => {
-    const generated = await window.ipcRenderer.get('LLM_GENERATE', { kind: 'trigger', description });
-    setDraft({ ...(generated as Trigger), id: draft.id });
+  const generate = async (description: string, run: LlmRun['run']) => {
+    const generated = await run<Trigger>('LLM_GENERATE', { kind: 'trigger', description });
+    if (!generated) return;
+    setDraft({ ...generated, id: draft.id });
     setError(null);
   };
   const event = TRIGGER_EVENTS[draft.event];
@@ -93,6 +95,7 @@ export default function TriggerEditor({ trigger }: TriggerPanelData) {
         <div style={{ marginBottom: 16 }}>
           <LlmPrompt
             placeholder="Describe it, e.g. post to Discord when a bot dies"
+            examples={['Notify me when a bot gets kicked', 'Post to Discord when a bot dies', 'Say hi when someone whispers']}
             onSubmit={generate}
           />
         </div>

@@ -37,7 +37,7 @@ import { SearchProjectOptions } from '@xmcl/modrinth';
 import { backendMessaging } from '../messaging';
 import AccessControl from './AccessControl';
 import type { Address } from '../../../common/messaging';
-import type { LlmConfig, LlmGenerateInput, LlmModelsInput, LlmWritePluginInput } from '../../../common/llm';
+import type { LlmAskShareInput, LlmCancelInput, LlmConfig, LlmExplainErrorInput, LlmGenerateInput, LlmModelsInput, LlmWritePluginInput } from '../../../common/llm';
 import type LlmService from './llm/LlmService';
 import {
   MANAGE_PROFILES,
@@ -55,6 +55,7 @@ import {
 } from '../../../common/serverAuthentication';
 import { isSensitivePluginOption, type PluginOption } from '../../../common/pluginOptions';
 import { presetValues } from '../../../common/pluginPresets';
+import { pluginOptionChoices } from './pluginOptionChoices';
 import type ProfileRuntime from './ProfileRuntime';
 import { pluginSecurity } from './signing';
 import { PROFILE_ACTIONS } from '../../../common/profileActions';
@@ -302,16 +303,20 @@ class ClientEvents_ {
     return this.requireLlm().models(input);
   }
 
-  LLM_WRITE_PLUGIN(input: LlmWritePluginInput) {
-    return this.requireLlm().writePlugin(input);
+  LLM_WRITE_PLUGIN(input: LlmWritePluginInput, _event?: unknown, origin?: Address) {
+    return this.requireLlm().writePlugin(input, origin);
   }
 
-  LLM_EXPLAIN_ERROR(input: { error: string; scriptName?: string }) {
-    return this.requireLlm().explainError(input);
+  LLM_EXPLAIN_ERROR(input: LlmExplainErrorInput, _event?: unknown, origin?: Address) {
+    return this.requireLlm().explainError(input, origin);
   }
 
-  LLM_ASK_SHARE(input: { question: string; title?: string; description?: string; content?: string }) {
-    return this.requireLlm().askAboutShare(input);
+  LLM_ASK_SHARE(input: LlmAskShareInput, _event?: unknown, origin?: Address) {
+    return this.requireLlm().askAboutShare(input, origin);
+  }
+
+  LLM_CANCEL(input: LlmCancelInput) {
+    this.llm?.cancel(input.streamId);
   }
 
   private requireLlm(): LlmService {
@@ -648,33 +653,10 @@ class ClientEvents_ {
         if (!plugin?.pluginId) throw new Error('A plugin is required.');
         const profile = this.settings.JNdata.data[runtime.profileKey];
         const settings = this.settings.getProfileSettings(runtime.profileKey);
-        const toOptionChoices = (values?: readonly string[]) =>
-          (values ?? []).map((value) => ({ label: value, value }));
-        const getOptionChoices = (option: PluginOption) => {
-          switch (option.type) {
-            case 'gamemodeSelect':
-              return toOptionChoices(option.gamemodes ?? profile?.gamemodes ?? []);
-            case 'altSelect':
-            case 'altsSelect':
-            case 'altRange':
-              return toOptionChoices(Object.keys(settings.altData ?? {}));
-            case 'tagsSelect':
-              return (settings.altTags ?? []).map(({ name, id }) => ({
-                label: name,
-                value: id,
-              }));
-            case 'select':
-              return option.options;
-            case 'multiSelect':
-              return toOptionChoices(option.options);
-            default:
-              return undefined;
-          }
-        };
         const mapOption = (option: PluginOption) => {
           return {
             ...option,
-            options: getOptionChoices(option),
+            options: pluginOptionChoices(option, profile, settings),
             supported: option.type !== 'keybind',
             ...(option.type === 'keybind' ? { unsupportedReason: 'Configure keybinds on desktop.' } : {}),
           };
@@ -702,7 +684,7 @@ class ClientEvents_ {
       case 'EXPORT_PORTABLE_PROFILE':
         return this.profileTransfer.export(runtime.profileKey);
       case 'LLM_GENERATE':
-        return this.requireLlm().generate(data as LlmGenerateInput, profileId);
+        return this.requireLlm().generate(data as LlmGenerateInput, profileId, originAddress);
       default:
         throw new Error(`Unknown profile action: ${event}`);
     }

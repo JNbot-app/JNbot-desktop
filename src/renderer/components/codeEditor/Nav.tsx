@@ -33,8 +33,8 @@ import { savePlugin } from '../../redux/settings';
 import PlayButton from '../PlayButton';
 import PluginSettingsModal from './PluginSettingsModal';
 import AIHelpModal from './AIHelpModal';
-import LlmCodeModal from './LlmCodeModal';
 import useLlm from '../../hooks/useLlm';
+import { LLM_CODE_TAB } from './LlmCodePanel';
 import BotContextMenu from './BotContextMenu';
 import { usePanelContext } from '../other/botSideBar/SidePanelContextProvider';
 import type { EditorInstance } from './CodeEditor';
@@ -61,7 +61,6 @@ const Nav: FC<{
   const { setPanel } = usePanelContext();
   const [pluginSettingsModal, setPluginSettingsModal] = useState(false);
   const [aiHelpModal, setAiHelpModal] = useState(false);
-  const [llmModal, setLlmModal] = useState(false);
   const llm = useLlm();
 
   const platform = (window as any).platform as NodeJS.Platform | undefined;
@@ -122,9 +121,6 @@ const Nav: FC<{
 
   // Rarely used actions live in the overflow menu to keep the toolbar calm.
   const moreItems: MenuProps['items'] = [
-    ...(llm.configured
-      ? [{ key: 'ai-write', icon: <RobotOutlined />, label: 'Write with AI', onClick: () => setLlmModal(true) }]
-      : []),
     {
       key: 'ai',
       icon: <RobotOutlined />,
@@ -232,6 +228,12 @@ const Nav: FC<{
               </Button>
           )}
 
+          {llm.configured && pluginInfo.scriptType !== 'profileUi' && (
+            <Button icon={<RobotOutlined />} onClick={() => onSelectActiveTab(LLM_CODE_TAB)}>
+              AI
+            </Button>
+          )}
+
           <Divider orientation="vertical" style={{ marginInline: token.marginXXS }} />
 
           {pluginInfo.scriptType !== 'profileUi' && (
@@ -290,14 +292,6 @@ const Nav: FC<{
         onClose={() => setAiHelpModal(false)}
       />
 
-      <LlmCodeModal
-        open={llmModal}
-        onClose={() => setLlmModal(false)}
-        pluginInfo={pluginInfo}
-        code={code}
-        editorRef={editorRef}
-        setMacroInfo={setMacroInfo}
-      />
     </>
   );
 };

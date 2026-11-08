@@ -12,11 +12,14 @@ import autoCompleteText from '../../assets/autoComplete/fullApiTypes.txt?raw';
 //@ts-ignore
 import profileUiTypesText from '../../assets/autoComplete/profileUiTypes.txt?raw';
 import SidePanel from '../other/botSideBar/SidePanel';
+import useLlm from '../../hooks/useLlm';
+import LlmCodePanel, { LLM_CODE_TAB } from './LlmCodePanel';
 
 export type EditorInstance = monaco.editor.IStandaloneCodeEditor;
 
 type CodeEditorProps = {
   macroInfo: MacroInfo;
+  setMacroInfo: (info: MacroInfo) => void;
   codeRef: React.MutableRefObject<string>;
   editorRef: React.MutableRefObject<EditorInstance | null>;
 
@@ -35,6 +38,7 @@ type CodeEditorProps = {
 
 const CodeEditor: FC<CodeEditorProps> = ({
   macroInfo,
+  setMacroInfo,
   code,
   codeRef,
   editorRef,
@@ -44,6 +48,7 @@ const CodeEditor: FC<CodeEditorProps> = ({
   previewNonce,
 }) => {
   const { theme } = useApp();
+  const llm = useLlm();
   const libsRef = useRef<monaco.IDisposable[]>([]);
   const hasRuntimeMarker = useRef(false);
 
@@ -191,6 +196,17 @@ const CodeEditor: FC<CodeEditorProps> = ({
               activeTab={activeTab}
               onClose={() => setActiveTab(null)}
               onTabChange={setActiveTab}
+              extraTabs={
+                llm.configured && macroInfo.scriptType !== 'profileUi'
+                  ? [
+                    {
+                      key: LLM_CODE_TAB,
+                      label: 'AI',
+                      content: <LlmCodePanel pluginInfo={macroInfo} codeRef={codeRef} editorRef={editorRef} setMacroInfo={setMacroInfo} />,
+                    },
+                  ]
+                  : undefined
+              }
               preview={
                 macroInfo.scriptType === 'profileUi'
                   ? { codeRef, macroInfo, nonce: previewNonce }

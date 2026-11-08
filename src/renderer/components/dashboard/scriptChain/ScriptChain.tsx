@@ -29,6 +29,7 @@ import ChainStatus from './ChainStatus';
 import RunningControls from '../../macros/RunningControls';
 import { toChainOptions } from './chainOptionsScheme';
 import LlmPrompt from '../../llm/LlmPrompt';
+import type { LlmRun } from '../../../hooks/useLlmRun';
 import type { ChainStep } from '../../../../common/chains';
 
 const ScriptChain: FC<{
@@ -84,11 +85,9 @@ const ScriptChain: FC<{
 
   const isRunnable = !!chain.chains.length && chain.chains.every((step) => step.scriptId);
 
-  const generate = async (description: string) => {
-    const draft = (await window.ipcRenderer.get('LLM_GENERATE', { kind: 'chain', description })) as {
-      name?: string;
-      steps?: ChainStep[];
-    };
+  const generate = async (description: string, run: LlmRun['run']) => {
+    const draft = await run<{ name?: string; steps?: ChainStep[] }>('LLM_GENERATE', { kind: 'chain', description });
+    if (!draft) return;
     onSaveChain({ ...chain, chains: draft.steps ?? [] });
     if (draft.name && options) setChainOptions(chain.id, { ...options, name: draft.name });
   };

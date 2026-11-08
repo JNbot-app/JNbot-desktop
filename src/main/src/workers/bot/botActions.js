@@ -105,35 +105,29 @@ const inject = (bot) => {
     lastEntities = [];
   });
 
+  // A window arrives as a burst of slot updates (a /kit menu is ~300), so
+  // publish one snapshot per burst; one per slot stalls the bot for 100+ ms.
+  let inventoryPublish = null;
   function publishInventory() {
-    if (!bot.messenger?.hasSubscribers('inventory')) return;
-    bot.messenger.publish('inventory', createInventoryPacket());
+    if (inventoryPublish || !bot.messenger?.hasSubscribers('inventory')) return;
+    inventoryPublish = setImmediate(() => {
+      inventoryPublish = null;
+      if (bot.messenger?.hasSubscribers('inventory'))
+        bot.messenger.publish('inventory', createInventoryPacket());
+    });
   }
 
   const prompts = attachScreenPrompts(bot, publishInventory);
-  bot.on('windowOpen', () => {
-    if (!bot.messenger?.hasSubscribers('inventory')) return;
-
-    bot.currentWindow.on('updateSlot', (slotID, oldSlot, newSlot) => {
-      if (!oldSlot && !newSlot) return;
-
-      bot.messenger?.publish('inventory', createInventoryPacket());
-    });
-
-    bot.messenger?.publish('inventory', createInventoryPacket());
+  bot.on('windowOpen', (window) => {
+    window.on('updateSlot', publishInventory);
+    publishInventory();
   });
   bot.on('windowClose', (window) => {
     if (window) window.selectedItem = null;
     bot.inventory.selectedItem = null;
-    if (!bot.messenger?.hasSubscribers('inventory')) return;
-    bot.messenger?.publish('inventory', createInventoryPacket());
+    publishInventory();
   });
-  bot.inventory.on('updateSlot', () => {
-    if (bot.currentWindow || !bot.messenger?.hasSubscribers('inventory'))
-      return;
-
-    bot.messenger?.publish('inventory', createInventoryPacket());
-  });
+  bot.inventory.on('updateSlot', publishInventory);
 
   bot.on('message', chatHandler);
   bot.on('move', moveHandler);
@@ -365,9 +359,7 @@ const inject = (bot) => {
       bot.openInventory();
     }
     await bot.clickWindow(data.slot, data.button ?? 0, data.mode ?? 0);
-    if (bot.messenger?.hasSubscribers('inventory')) {
-      bot.messenger.publish('inventory', createInventoryPacket());
-    }
+    publishInventory();
     if (
       !bot.currentWindow &&
       !bot.inventory.selectedItem &&
@@ -404,9 +396,7 @@ const inject = (bot) => {
     if (!bot.inventory.selectedItem && !bot.currentWindow?.selectedItem) return;
     bot.inventory.selectedItem = null;
     if (bot.currentWindow) bot.currentWindow.selectedItem = null;
-    if (bot.messenger?.hasSubscribers('inventory')) {
-      bot.messenger.publish('inventory', createInventoryPacket());
-    }
+    publishInventory();
   }
   async function setHeadRotation({ yaw, pitch }) {
     await bot.look(yaw, pitch);
@@ -898,6 +888,7 @@ const inject = (bot) => {
 
   function cleanup() {
     void stopBotAutomation(bot);
+    clearImmediate(inventoryPublish);
     sendData.chat = [];
     sendData.map = [];
     mapWindowGeneration += 1;

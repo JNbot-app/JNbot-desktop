@@ -147,6 +147,7 @@ const CodeEditor = () => {
           codeRef={codeRef}
           editorRef={editorRef}
           macroInfo={macroInfo}
+          setMacroInfo={setMacroInfo}
           code={code}
           editorDetails={editorDetails}
           activeTab={activeTab}

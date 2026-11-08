@@ -36,7 +36,7 @@ const clientActions = buildRestrictions([
     NO_PERMISSION,
     [
       'PING', 'ERROR', 'GET_BOOTSTRAP', 'GET_JNDATA', 'GET_MACROS',
-      'GET_MINECRAFT_VERSIONS', 'LLM_STATUS',
+      'GET_MINECRAFT_VERSIONS', 'LLM_STATUS', 'LLM_CANCEL',
       // These verify the caller themselves (host prompt / mobile runtime).
       'REQUEST_INSTANCE_TRANSFER', 'READ_INSTANCE_TRANSFER_CHUNK',
       'COMPLETE_INSTANCE_TRANSFER', 'CANCEL_INSTANCE_TRANSFER',

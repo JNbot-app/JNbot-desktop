@@ -52,6 +52,8 @@ function createBot(triggers: unknown[] = []) {
 }
 
 const item = { name: 'stone', displayName: 'Stone', count: 1 };
+/** Inventory snapshots are published once per burst, after the current I/O callbacks. */
+const flushPublish = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('inventory held item', () => {
   it('keeps the inventory open while a crafting slot contains an item', async () => {
@@ -63,6 +65,7 @@ describe('inventory held item', () => {
     });
 
     await bot.actions.inventoryClick({ slot: 1 });
+    await flushPublish();
 
     expect(bot.closeInventory).not.toHaveBeenCalled();
     expect(bot.messenger.publish).toHaveBeenCalledWith(
@@ -74,12 +77,13 @@ describe('inventory held item', () => {
     expect(bot.closeInventory).toHaveBeenCalledTimes(1);
   });
 
-  it('clears the held item when the game changes', () => {
+  it('clears the held item when the game changes', async () => {
     const bot = createBot();
     bot.inventory.selectedItem = item;
     bot.currentWindow = { ...bot.inventory, selectedItem: item };
 
     bot.emit('gamemodeChanged', 'creative');
+    await flushPublish();
 
     expect(bot.inventory.selectedItem).toBeNull();
     expect(bot.currentWindow.selectedItem).toBeNull();
@@ -89,12 +93,13 @@ describe('inventory held item', () => {
     );
   });
 
-  it('clears the held item when a window closes', () => {
+  it('clears the held item when a window closes', async () => {
     const bot = createBot();
     const window = { selectedItem: item };
     bot.inventory.selectedItem = item;
 
     bot.emit('windowClose', window);
+    await flushPublish();
 
     expect(window.selectedItem).toBeNull();
     expect(bot.inventory.selectedItem).toBeNull();
@@ -102,6 +107,44 @@ describe('inventory held item', () => {
       'inventory',
       expect.objectContaining({ selectedItem: null }),
     );
+  });
+});
+
+describe('inventory publishing', () => {
+  it('publishes one snapshot for a burst of window slot updates', async () => {
+    const bot = createBot();
+    const window = Object.assign(new EventEmitter(), {
+      type: 'minecraft:generic_9x6',
+      inventoryStart: 54,
+      slots: Array(90).fill(null),
+      selectedItem: null,
+    });
+    bot.currentWindow = window;
+
+    bot.emit('windowOpen', window);
+    // window_items updates every slot, then the server sends set_slot bursts
+    for (let i = 0; i < 300; i++) {
+      window.slots[i % 90] = item;
+      window.emit('updateSlot', i % 90, null, item);
+    }
+    bot.inventory.emit('updateSlot', 36, null, item);
+    expect(bot.messenger.publish).not.toHaveBeenCalled();
+
+    await flushPublish();
+    expect(bot.messenger.publish).toHaveBeenCalledTimes(1);
+    expect(bot.messenger.publish.mock.calls[0][1].items.filter(Boolean)).toHaveLength(90);
+
+    window.emit('updateSlot', 0, item, null);
+    await flushPublish();
+    expect(bot.messenger.publish).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not build snapshots without subscribers', async () => {
+    const bot = createBot();
+    bot.messenger.hasSubscribers = () => false;
+    bot.inventory.emit('updateSlot', 36, null, item);
+    await flushPublish();
+    expect(bot.messenger.publish).not.toHaveBeenCalled();
   });
 });
 

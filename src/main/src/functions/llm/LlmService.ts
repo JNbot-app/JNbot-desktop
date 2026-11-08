@@ -1,38 +1,87 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
-import Anthropic from '@anthropic-ai/sdk';
-import * as z from 'zod/v4';
 import {
+  LLM_STREAM_EVENT,
+  llmAnswerText,
   llmProvider,
   parseLlmJson,
+  parsePluginDraft,
   runLlmAgent,
+  type LlmCallOptions,
   type LlmConfig,
   type LlmGenerateInput,
-  type LlmMessage,
   type LlmModelsInput,
+  type LlmOptionsResult,
   type LlmRequest,
   type LlmResponse,
   type LlmStatus,
+  type LlmStreamEvent,
   type LlmToolSpec,
   type LlmWritePluginInput,
 } from '../../../../common/llm';
-import { PLUGIN_AUTHORING_GUIDE } from '../../../../common/pluginAuthoringGuideSource';
-import { JNBOT_REFERENCE_SECTION_IDS } from '../../../../common/pluginMcpReferenceSource';
+import type { Address } from '../../../../common/messaging';
+import type { PluginOption } from '../../../../common/pluginOptions';
+import { presetValues } from '../../../../common/pluginPresets';
 import { TRIGGER_ACTION_TYPES, TRIGGER_EVENTS, newTrigger, triggerProblem, type Trigger } from '../../../../common/triggers';
+import { backendMessaging } from '../../messaging';
 import type ScriptHandler from '../ScriptHandler';
 import type McpManager from '../mcp/McpManager';
 import { MCP_INSTRUCTIONS } from '../mcp/McpManager';
+import { pluginOptionChoices } from '../pluginOptionChoices';
+import { describeOptions, groundOptionValues } from './groundOptions';
+import { PLUGIN_TOOLS, describePluginTool, jsonSchema, pluginSystemPrompt } from './pluginContext';
+import { STOPPED, bearer, claudeClient, completeClaude, completeOpenAi, fetchOpenAi } from './providers';
 
-/** Claude models that accept the server-side refusal fallback. */
-const FALLBACK_MODELS = /^claude-(opus-5|fable-5|sonnet-5-5)/;
 const TERMINAL = ['succeeded', 'failed', 'denied', 'cancelled'];
-/** One model call. Busy providers sometimes hold a request without answering. */
-const REQUEST_TIMEOUT_MS = 90_000;
-/** Overloaded / rate limited: worth a quick retry. */
-const RETRY_STATUSES = [429, 500, 503];
 /** Listed models that can't chat (speech, images, embeddings...). */
 const NON_CHAT_MODEL = /embed|tts|audio|image|imagen|veo|banana|lyria|whisper|dall-e|moderation|transcribe|translate|realtime|live|aqa|robotics|computer-use|research|antigravity/i;
+/** Streamed text is batched so remote clients get a few messages a second, not one per token. */
+const STREAM_FLUSH_MS = 60;
+/** Asked of every "draft" feature, so the user reads a sentence while the JSON streams. */
+const DRAFT_FORMAT = 'First write one short sentence saying what you made, then the JSON in one ```json block. Nothing else.';
+
+/**
+ * Sends one request's progress to the client that asked, batching text
+ * deltas. A no-op when the client didn't ask for a stream.
+ */
+class LlmStream {
+  readonly controller = new AbortController();
+  private buffered: Extract<LlmStreamEvent, { delta: string }> | null = null;
+  private timer?: ReturnType<typeof setTimeout>;
+
+  constructor(private readonly origin?: Address, private readonly streamId?: string) {}
+
+  readonly options: LlmCallOptions = {
+    signal: this.controller.signal,
+    onEvent: (event) => {
+      if (!this.origin || !this.streamId) return;
+      if (event.type === 'text' || event.type === 'thinking') {
+        if (this.buffered && this.buffered.type !== event.type) this.flush();
+        this.buffered = this.buffered ? { ...this.buffered, delta: this.buffered.delta + event.delta } : event;
+        this.timer ??= setTimeout(() => this.flush(), STREAM_FLUSH_MS);
+        return;
+      }
+      this.flush();
+      this.send(event);
+    },
+  };
+
+  status(text: string) {
+    this.options.onEvent!({ type: 'status', text });
+  }
+
+  flush() {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    if (this.buffered) this.send(this.buffered);
+    this.buffered = null;
+  }
+
+  private send(event: LlmStreamEvent) {
+    backendMessaging.messenger.send(LLM_STREAM_EVENT, this.origin!, { ...event, streamId: this.streamId });
+  }
+}
 
 /**
  * The optional LLM integration. Users bring their own key (stored in a plain
@@ -40,6 +89,7 @@ const NON_CHAT_MODEL = /embed|tts|audio|image|imagen|veo|banana|lyria|whisper|da
  */
 export class LlmService {
   private config: LlmConfig | null = null;
+  private readonly running = new Map<string, AbortController>();
   private readonly file = path.join(app.getPath('userData'), 'ai.json');
 
   constructor(
@@ -90,9 +140,9 @@ export class LlmService {
     let ids: string[];
     if (provider.format === 'anthropic') {
       ids = [];
-      for await (const model of this.claude(apiKey!, baseUrl).models.list({ limit: 100 })) ids.push(model.id);
+      for await (const model of claudeClient(apiKey!, baseUrl).models.list({ limit: 100 })) ids.push(model.id);
     } else {
-      const response = await this.fetchOpenAi(`${baseUrl.replace(/\/$/, '')}/models`, { headers: bearer(apiKey) });
+      const response = await fetchOpenAi(`${baseUrl.replace(/\/$/, '')}/models`, { headers: bearer(apiKey), signal: AbortSignal.timeout(30_000) });
       ids = ((await response.json()).data ?? []).map((model: { id: string }) => model.id.replace(/^models\//, ''));
     }
     return ids.filter((id) => !NON_CHAT_MODEL.test(id));
@@ -106,106 +156,52 @@ export class LlmService {
   // Model calls
   // ---------------------------------------------------------------------------
 
-  complete(request: LlmRequest): Promise<LlmResponse> {
+  /**
+   * One model reply. Some models (often free ones) occasionally only reason
+   * and send no answer; they get one nudge to answer.
+   */
+  async complete(request: LlmRequest, options?: LlmCallOptions): Promise<LlmResponse> {
+    const response = await this.call(request, options);
+    if (response.text.trim() || response.toolCalls.length) return response;
+    options?.onEvent?.({ type: 'status', text: 'Asking for the final answer' });
+    options?.onEvent?.({ type: 'turn' });
+    return this.call(
+      { ...request, messages: [...request.messages, { role: 'user', content: 'You did not write an answer. Write your final answer now, in the requested format.' }] },
+      options,
+    );
+  }
+
+  private call(request: LlmRequest, options?: LlmCallOptions): Promise<LlmResponse> {
     const config = this.config;
     if (!config?.model || !this.status().configured) throw new Error('Pick an AI provider and model in Settings first.');
     const provider = llmProvider(config.provider);
-    const model = config.model;
     const baseUrl = config.baseUrl || provider.baseUrl;
     return provider.format === 'anthropic'
-      ? this.completeClaude(request, model, baseUrl, config.apiKey!)
-      : this.completeOpenAi(request, model, baseUrl, config.apiKey);
+      ? completeClaude(request, config.model, baseUrl, config.apiKey!, options)
+      : completeOpenAi(request, config.model, baseUrl, config.apiKey, options);
   }
 
-  async ask(system: string, prompt: string): Promise<string> {
-    return (await this.complete({ system, messages: [{ role: 'user', content: prompt }] })).text;
+  async ask(system: string, prompt: string, options?: LlmCallOptions): Promise<string> {
+    return (await this.complete({ system, messages: [{ role: 'user', content: prompt }] }, options)).text;
   }
 
-  private async completeClaude(request: LlmRequest, model: string, baseURL: string, apiKey: string): Promise<LlmResponse> {
-    const client = this.claude(apiKey, baseURL);
-    const fallback = FALLBACK_MODELS.test(model);
-    const response = await client.beta.messages.create({
-      model,
-      max_tokens: request.maxTokens ?? 16_000,
-      ...(request.system ? { system: request.system } : {}),
-      messages: toClaudeMessages(request.messages),
-      ...(request.tools?.length
-        ? {
-          tools: request.tools.map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            input_schema: tool.parameters as Anthropic.Beta.BetaTool.InputSchema,
-          })),
-        }
-        : {}),
-      ...(fallback ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
-    });
-    if (response.stop_reason === 'refusal') {
-      return { text: 'The AI declined to help with this request.', toolCalls: [] };
+  /** Stop the request streaming under `streamId`. */
+  cancel(streamId: string) {
+    this.running.get(streamId)?.abort();
+  }
+
+  /** Run one request, streaming its progress to `origin` when it gave a stream id. */
+  private async streamed<T>(origin: Address | undefined, streamId: string | undefined, work: (stream: LlmStream) => Promise<T>) {
+    const stream = new LlmStream(origin, streamId);
+    if (streamId) this.running.set(streamId, stream.controller);
+    try {
+      return await work(stream);
+    } catch (error) {
+      throw stream.controller.signal.aborted ? new Error(STOPPED) : error;
+    } finally {
+      stream.flush();
+      if (streamId) this.running.delete(streamId);
     }
-    return {
-      text: response.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n'),
-      toolCalls: response.content.flatMap((block) =>
-        block.type === 'tool_use'
-          ? [{ id: block.id, name: block.name, input: block.input as Record<string, unknown> }]
-          : [],
-      ),
-      raw: response.content,
-    };
-  }
-
-  private claude(apiKey: string, baseURL: string) {
-    // The SDK retries overloaded/rate-limited requests itself.
-    return new Anthropic({ apiKey, baseURL, timeout: REQUEST_TIMEOUT_MS, maxRetries: 2 });
-  }
-
-  /** fetch with a timeout and a retry while the provider is busy; throws a readable error. */
-  private async fetchOpenAi(url: string, init: RequestInit): Promise<Response> {
-    for (let attempt = 0; ; attempt++) {
-      let response: Response;
-      try {
-        response = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-      } catch (error) {
-        if ((error as Error).name !== 'TimeoutError') throw error;
-        throw new Error('The AI provider did not answer in time. It may be busy: try again, or pick another model in Settings.');
-      }
-      if (response.ok) return response;
-      if (attempt < 2 && RETRY_STATUSES.includes(response.status)) {
-        await new Promise((resolve) => setTimeout(resolve, 1_500 * (attempt + 1)));
-        continue;
-      }
-      const body = await response.json().catch(() => null) as any;
-      const detail = body?.error?.message ?? (Array.isArray(body) ? body[0]?.error?.message : undefined);
-      throw new Error(`AI request failed (${response.status})${detail ? `: ${detail}` : ''}`);
-    }
-  }
-
-  private async completeOpenAi(request: LlmRequest, model: string, baseUrl: string, apiKey?: string): Promise<LlmResponse> {
-    const response = await this.fetchOpenAi(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...bearer(apiKey) },
-      body: JSON.stringify({
-        model,
-        messages: [
-          ...(request.system ? [{ role: 'system', content: request.system }] : []),
-          ...request.messages.map(toOpenAiMessage),
-        ],
-        ...(request.tools?.length
-          ? { tools: request.tools.map((tool) => ({ type: 'function', function: tool })) }
-          : {}),
-      }),
-    });
-    const body = await response.json() as any;
-    const message = body?.choices?.[0]?.message ?? {};
-    return {
-      text: typeof message.content === 'string' ? message.content : '',
-      toolCalls: (message.tool_calls ?? []).map((call: any) => ({
-        id: call.id,
-        name: call.function?.name,
-        input: safeJson(call.function?.arguments),
-      })),
-      raw: message,
-    };
   }
 
   // ---------------------------------------------------------------------------
@@ -216,94 +212,162 @@ export class LlmService {
    * Turn a description into a draft for one profile's editor; nothing is
    * saved here.
    */
-  async generate(input: LlmGenerateInput, profileId: number): Promise<unknown> {
-    if (input.kind === 'options') return this.generateOptions(input);
-    const runtime = this.scriptHandler.getRuntime(profileId);
-    const actions = (await this.scriptHandler.getUiActions(profileId)).map((action) => ({
+  generate(input: LlmGenerateInput, profileId: number, origin?: Address): Promise<unknown> {
+    return this.streamed(origin, input.streamId, (stream) => {
+      if (input.kind === 'options') return this.generateOptions(input, profileId, stream);
+      return input.kind === 'trigger' ? this.generateTrigger(input, profileId, stream) : this.generateChain(input, profileId, stream);
+    });
+  }
+
+  private async actionsFor(profileId: number) {
+    return (await this.scriptHandler.getUiActions(profileId)).map((action) => ({
       pluginId: action.pluginId,
       name: action.name,
       description: action.description,
       options: action.config?.flatMap((section) => section.options.map((option) => ({ id: option.id, type: option.type, label: option.label }))),
     }));
+  }
 
-    if (input.kind === 'trigger') {
-      const settings = this.scriptHandler.settings.getProfileSettings(runtime.profileKey);
-      const draft = parseLlmJson<Partial<Trigger>>(await this.ask(
-        `You create JNbot triggers: "when <event> happens on <bots>, run <actions>". Reply with only one JSON object shaped like {"name","event","filter","actions":[...],"alts":[],"tags":[],"cooldown"}.
+  private async generateTrigger(input: LlmGenerateInput, profileId: number, stream: LlmStream) {
+    stream.status('Drafting the trigger');
+    const runtime = this.scriptHandler.getRuntime(profileId);
+    const settings = this.scriptHandler.settings.getProfileSettings(runtime.profileKey);
+    const actions = await this.actionsFor(profileId);
+    const draft = parseLlmJson<Partial<Trigger>>(await this.ask(
+      `You create JNbot triggers: "when <event> happens on <bots>, run <actions>". The JSON is one object shaped like {"name","event","filter","actions":[...],"alts":[],"tags":[],"cooldown"}. ${DRAFT_FORMAT}
 Events: ${JSON.stringify(TRIGGER_EVENTS)}
 Action types: ${JSON.stringify(TRIGGER_ACTION_TYPES)}. Shapes: {"type":"notification"}, {"type":"discord","webhook"}, {"type":"chat","message"}, {"type":"scriptAction","id":"<pluginId>"}, {"type":"log","directory"}. Messages may use {bot}, {player}, {message}, {reason}, {health}, {item}, {count}.
 Available script actions: ${JSON.stringify(actions.map(({ pluginId, name }) => ({ pluginId, name })))}
 Alt tags (use their id): ${JSON.stringify((settings.altTags ?? []).map((tag: any) => ({ id: tag.id, name: tag.name })))}`,
-        input.description,
-      ));
-      const trigger = newTrigger('', { ...draft, enabled: true });
-      // A missing webhook or folder is fine: the user fills it in the editor.
-      const problem = triggerProblem(trigger);
-      if (problem && !/webhook|directory/i.test(problem)) throw new Error(problem);
-      return trigger;
-    }
+      input.description,
+      stream.options,
+    ));
+    const trigger = newTrigger('', { ...draft, enabled: true });
+    // A missing webhook or folder is fine: the user fills it in the editor.
+    const problem = triggerProblem(trigger);
+    if (problem && !/webhook|directory/i.test(problem)) throw new Error(problem);
+    return trigger;
+  }
 
+  private async generateChain(input: LlmGenerateInput, profileId: number, stream: LlmStream) {
+    stream.status('Drafting the chain');
+    const actions = await this.actionsFor(profileId);
     return parseLlmJson(await this.ask(
-      `You build JNbot chains: an ordered list of action steps that runs on every selected alt. Reply with only one JSON object: {"name": string, "steps": [{"id": "1", "name": string, "scriptId": "<pluginId>", "options": {<optionId>: value}, "onSuccess"?: "next"|"nextAlt"|"retryAlt"|"stop"|"step:<id>", "onFail"?: same}]}.
+      `You build JNbot chains: an ordered list of action steps that runs on every selected alt. The JSON is one object: {"name": string, "steps": [{"id": "1", "name": string, "scriptId": "<pluginId>", "options": {<optionId>: value}, "onSuccess"?: "next"|"nextAlt"|"retryAlt"|"stop"|"step:<id>", "onFail"?: same}]}. ${DRAFT_FORMAT}
 Only use these actions: ${JSON.stringify(actions)}`,
       input.description,
+      stream.options,
     ));
   }
 
-  private async generateOptions(input: LlmGenerateInput) {
-    const plugin = this.scriptHandler.macros.readPluginInfo(String(input.pluginId));
+  /** An installed plugin, or one that comes with the profile. */
+  private async pluginInfo(profileId: number, pluginId: string) {
+    const installed = this.scriptHandler.macros.readPluginInfo(pluginId);
+    if (installed) return installed;
+    const script = this.scriptHandler.dashboardScripts(profileId).find((candidate) => candidate.pluginId === pluginId) ??
+      this.scriptHandler.findProfileScript(profileId, pluginId);
+    return script ? (await this.scriptHandler.settings.profiles.scripts?.resolveInfo(script))?.info : undefined;
+  }
+
+  /**
+   * Values for a plugin's options. The model sees the current values and the
+   * real choices in this profile (gamemodes, alts, tags differ per profile),
+   * and anything it suggests is matched to a valid choice before the user
+   * reviews it.
+   */
+  private async generateOptions(input: LlmGenerateInput, profileId: number, stream: LlmStream): Promise<LlmOptionsResult> {
+    const plugin = await this.pluginInfo(profileId, String(input.pluginId));
     if (!plugin) throw new Error('Plugin not found.');
-    const result = parseLlmJson<{ values?: Record<string, unknown> }>(await this.ask(
-      `You change the settings of the JNbot plugin "${plugin.name}". Reply with only {"values": {<optionId>: <new value>}} containing just the options the user wants changed, using the option types from this schema: ${JSON.stringify(plugin.config ?? [])}`,
+    stream.status('Reading the current settings');
+    const runtime = this.scriptHandler.getRuntime(profileId);
+    const settings = this.scriptHandler.settings.getProfileSettings(runtime.profileKey);
+    const profile = this.scriptHandler.settings.JNdata.data[runtime.profileKey];
+    const options = (plugin.config ?? []).flatMap((section) => section.options) as PluginOption[];
+    const current = presetValues(settings.scripts?.[plugin.pluginId]) as Record<string, unknown>;
+    const choices = (option: PluginOption) => pluginOptionChoices(option, profile, settings);
+    stream.status('Choosing values');
+    const reply = await this.ask(
+      `You change the settings of the JNbot plugin "${plugin.name}"${plugin.description ? ` (${plugin.description})` : ''}. The JSON is {"values": {<optionId>: <new value>}} with only the options the user wants changed. When an option lists "choices", use one of those exact values (an array of them when "multiple" or for multiSelect); only options marked "freeForm" also accept new values the user asks for, so add those as typed. Sliders must stay within min/max. ${DRAFT_FORMAT}
+Options: ${JSON.stringify(describeOptions(options, current, choices))}`,
       input.description,
-    ));
-    const known = new Set((plugin.config ?? []).flatMap((section) => section.options.map((option) => option.id)));
-    return Object.fromEntries(Object.entries(result.values ?? {}).filter(([key]) => known.has(key)));
-  }
-
-  /** Write or change a plugin; drafts that don't compile are fixed once. */
-  async writePlugin(input: LlmWritePluginInput) {
-    const request: LlmRequest = {
-      system: `You write JNbot plugins in JavaScript. Follow this guide exactly:\n\n${PLUGIN_AUTHORING_GUIDE}\n\nUse get_jnbot_reference for any API you are unsure of; never invent APIs. Add options for behaviour a user may want to adjust. When done, reply with only one JSON object: {"name": string, "description": string, "scriptType": "script"|"action", "source": string, "optionSchema": [...]}.`,
-      messages: [{
-        role: 'user',
-        content: input.source
-          ? `Change this plugin: ${input.description}\n\nCurrent source:\n${input.source}`
-          : input.description,
-      }],
-      tools: [{
-        name: 'get_jnbot_reference',
-        description: 'Read one section of the JNbot API reference.',
-        parameters: z.toJSONSchema(z.object({ section: z.enum(JNBOT_REFERENCE_SECTION_IDS) })),
-      }],
-    };
-    const runTool = async (call: { input: Record<string, unknown> }) => this.mcp.getReference(String(call.input.section));
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const draft = parseLlmJson<{ source: string; scriptType?: 'script' | 'action'; optionSchema?: unknown }>(
-        await runLlmAgent((r) => this.complete(r), request, runTool),
-      );
-      const validation = await this.mcp.validatePlugin(draft);
-      if (validation.valid) return draft;
-      request.messages.push({ role: 'user', content: `That plugin has problems, fix them and reply with the full JSON again:\n${validation.errors.join('\n')}` });
-    }
-    throw new Error('The AI could not write a working plugin. Try describing it differently.');
-  }
-
-  async explainError(input: { error: string; scriptName?: string }): Promise<string> {
-    const plugin = this.scriptHandler.macros.toList().find(({ name }) => name === input.scriptName);
-    const source = plugin ? this.mcp.pluginSource(plugin.pluginId) : undefined;
-    return this.ask(
-      'You help JNbot users (a Minecraft bot app) understand plugin errors. In a few short sentences say what went wrong in plain language, then how to fix it. If the fix is a code change, show only the changed lines. Use markdown.',
-      `Error:\n${input.error.slice(0, 4_000)}${source ? `\n\nPlugin source:\n${source.slice(0, 30_000)}` : ''}`,
+      stream.options,
     );
+    const suggested = parseLlmJson<{ values?: Record<string, unknown> }>(reply).values ?? {};
+    return { ...groundOptionValues(options, suggested, current, choices), summary: llmAnswerText(reply) };
+  }
+
+  /**
+   * Write or change a plugin. The model gets the relevant API reference up
+   * front, can look up more, and drafts that don't compile are sent back once.
+   */
+  writePlugin(input: LlmWritePluginInput, origin?: Address) {
+    return this.streamed(origin, input.streamId, async (stream) => {
+      const type = input.scriptType === 'action' ? 'an action (runs on one connected bot)' : 'a normal plugin (owns its bot lifecycle)';
+      const request: LlmRequest = {
+        system: pluginSystemPrompt(input.description, (section) => this.mcp.getReference(section).content, this.config?.provider === 'ollama'),
+        messages: [{
+          role: 'user',
+          content: input.source
+            ? `Change this plugin (${type}): ${input.description}\n\nCurrent source:\n\`\`\`js\n${input.source}\n\`\`\`${input.optionSchema ? `\n\nCurrent option schema:\n${JSON.stringify(input.optionSchema)}` : ''}`
+            : `Write ${type}: ${input.description}`,
+        }],
+        tools: PLUGIN_TOOLS,
+      };
+      const plugins = () => this.scriptHandler.macros.toList();
+      const runTool = async ({ name, input: args }: { name: string; input: Record<string, unknown> }) => {
+        if (name === 'get_jnbot_reference') return this.mcp.getReference(String(args.section));
+        if (name === 'list_plugins') return plugins().map(({ pluginId, name: pluginName, description, scriptType }) => ({ pluginId, name: pluginName, description, scriptType }));
+        if (name === 'read_plugin') return this.mcp.pluginSource(String(args.pluginId)) ?? { error: 'No plugin with that id.' };
+        throw new Error(`Unknown tool ${name}`);
+      };
+      const describeTool = (call: Parameters<typeof describePluginTool>[0]) =>
+        describePluginTool(call, (id) => plugins().find((plugin) => plugin.pluginId === id)?.name);
+
+      stream.status(input.source ? 'Reading your code' : 'Planning the plugin');
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const draft = parsePluginDraft(await runLlmAgent((r, o) => this.complete(r, o), request, runTool, { ...stream.options, describeTool }));
+        let problem: string;
+        if (draft === 'missing') {
+          problem = 'Your reply had no ```js block. Reply again with the complete plugin source in a ```js block, plus the ```json block.';
+        } else {
+          if (!draft.source) return draft;
+          draft.scriptType ??= input.scriptType;
+          stream.status('Checking that it compiles');
+          const validation = await this.mcp.validatePlugin({ ...draft, source: draft.source });
+          if (validation.valid) return draft;
+          stream.status(`Fixing ${validation.errors.length === 1 ? 'a problem' : `${validation.errors.length} problems`}`);
+          problem = `That plugin has problems. Fix them and reply in the same format, with the complete source:\n${validation.errors.join('\n')}`;
+        }
+        stream.options.onEvent!({ type: 'turn' });
+        request.messages.push({ role: 'user', content: problem });
+      }
+      throw new Error('The AI could not write a working plugin. Try describing it differently.');
+    });
+  }
+
+  explainError(input: { error: string; scriptName?: string; streamId?: string }, origin?: Address): Promise<string> {
+    return this.streamed(origin, input.streamId, (stream) => {
+      const plugin = this.scriptHandler.macros.toList().find(({ name }) => name === input.scriptName);
+      const source = plugin ? this.mcp.pluginSource(plugin.pluginId) : undefined;
+      stream.status(source ? `Reading ${plugin!.name}` : 'Reading the error');
+      return this.ask(
+        'You help JNbot users (a Minecraft bot app) understand plugin errors. In a few short sentences say what went wrong in plain language, then how to fix it. If the fix is a code change, show only the changed lines. Use markdown.',
+        `Error:\n${input.error.slice(0, 4_000)}${source ? `\n\nPlugin source:\n${source.slice(0, 30_000)}` : ''}`,
+        stream.options,
+      );
+    });
   }
 
   /** Answer a question about a marketplace item from its description and code. */
-  async askAboutShare(input: { question: string; title?: string; description?: string; content?: string }): Promise<string> {
-    return this.ask(
-      'You answer questions about an item on the JNbot marketplace (plugins, chains, triggers and profiles for a Minecraft bot app). Answer only from the item below; if it does not say, say so. Be short and use markdown.',
-      `Item: ${input.title ?? ''}\n${input.description ?? ''}\n\nContent:\n${(input.content ?? '').slice(0, 40_000)}\n\nQuestion: ${input.question}`,
-    );
+  askAboutShare(input: { question: string; title?: string; description?: string; content?: string; streamId?: string }, origin?: Address): Promise<string> {
+    return this.streamed(origin, input.streamId, (stream) => {
+      stream.status('Reading the item');
+      return this.ask(
+        'You answer questions about an item on the JNbot marketplace (plugins, chains, triggers and profiles for a Minecraft bot app). Answer only from the item below; if it does not say, say so. Be short and use markdown.',
+        `Item: ${input.title ?? ''}\n${input.description ?? ''}\n\nContent:\n${(input.content ?? '').slice(0, 40_000)}\n\nQuestion: ${input.question}`,
+        stream.options,
+      );
+    });
   }
 
   /**
@@ -322,11 +386,11 @@ Only use these actions: ${JSON.stringify(actions)}`,
         parameters: jsonSchema(tool.schema),
       })),
     };
-    return runLlmAgent((r) => this.complete(r), request, async (call) => {
+    return runLlmAgent((r, o) => this.complete(r, o), request, async (call) => {
       const tool = tools.find(({ name }) => name === call.name);
       if (!tool) throw new Error(`Unknown tool ${call.name}`);
       return this.settle(client.id, await tool.handler(tool.schema.parse(call.input) as Record<string, unknown>, client));
-    }, 20);
+    }, { maxSteps: 20 });
   }
 
   /** Wait for an MCP write operation to finish so the model sees its result. */
@@ -340,46 +404,6 @@ Only use these actions: ${JSON.stringify(actions)}`,
     }
     return this.mcp.getOperations().get(clientId, operationId);
   }
-}
-
-const bearer = (apiKey?: string): Record<string, string> =>
-  apiKey ? { authorization: `Bearer ${apiKey}` } : {};
-
-const safeJson = (value: unknown): Record<string, unknown> => {
-  try {
-    return typeof value === 'string' ? JSON.parse(value) : {};
-  } catch {
-    return {};
-  }
-};
-
-const jsonSchema = (schema: z.ZodType): Record<string, unknown> => {
-  const { $schema: _ignored, ...rest } = z.toJSONSchema(schema, { unrepresentable: 'any' }) as Record<string, unknown>;
-  return rest;
-};
-
-function toClaudeMessages(messages: LlmMessage[]): Anthropic.Beta.BetaMessageParam[] {
-  const result: Anthropic.Beta.BetaMessageParam[] = [];
-  for (const message of messages) {
-    if (message.role === 'assistant') {
-      result.push({ role: 'assistant', content: (message.raw as Anthropic.Beta.BetaContentBlockParam[]) ?? message.content });
-    } else if (message.role === 'user') {
-      result.push({ role: 'user', content: message.content });
-    } else {
-      // All results of one turn go back in a single user message.
-      const block: Anthropic.Beta.BetaToolResultBlockParam = { type: 'tool_result', tool_use_id: message.toolCallId, content: message.content };
-      const last = result.at(-1);
-      if (last?.role === 'user' && Array.isArray(last.content)) last.content.push(block);
-      else result.push({ role: 'user', content: [block] });
-    }
-  }
-  return result;
-}
-
-function toOpenAiMessage(message: LlmMessage) {
-  if (message.role === 'tool') return { role: 'tool', tool_call_id: message.toolCallId, content: message.content };
-  if (message.role === 'user') return message;
-  return message.raw ?? { role: 'assistant', content: message.content };
 }
 
 export default LlmService;

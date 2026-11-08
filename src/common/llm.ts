@@ -103,7 +103,40 @@ export type LlmResponse = {
   raw?: unknown;
 };
 
-export type LlmComplete = (request: LlmRequest) => Promise<LlmResponse>;
+/**
+ * Live progress of one AI request, so the UI can show what it is doing
+ * instead of a bare spinner.
+ * - `status`: a new step started (e.g. "Reading the Bot API reference").
+ * - `thinking` / `text`: streamed reasoning and answer text.
+ * - `turn`: the model starts a new reply (after tool calls); the previous
+ *   reply's text was intermediate.
+ */
+export type LlmStreamEvent =
+  | { type: 'status'; text: string }
+  | { type: 'thinking'; delta: string }
+  | { type: 'text'; delta: string }
+  | { type: 'turn' };
+
+/** Sent by the backend on {@link LLM_STREAM_EVENT} to the client that asked. */
+export type LlmStreamMessage = LlmStreamEvent & { streamId: string };
+export const LLM_STREAM_EVENT = 'LLM_STREAM';
+
+/** Optional on every slow AI request: stream progress to the caller under this id. */
+export type LlmStreamInput = { streamId?: string };
+
+/** Not part of {@link LlmRequest}, which is sent between processes. */
+export type LlmCallOptions = {
+  onEvent?: (event: LlmStreamEvent) => void;
+  signal?: AbortSignal;
+};
+
+export type LlmComplete = (request: LlmRequest, options?: LlmCallOptions) => Promise<LlmResponse>;
+
+export type LlmAgentOptions = LlmCallOptions & {
+  maxSteps?: number;
+  /** A readable label for a tool call, shown as a progress step. */
+  describeTool?: (call: LlmToolCall) => string;
+};
 
 /**
  * Call the model, run the tools it asks for, and repeat until it answers.
@@ -113,10 +146,11 @@ export async function runLlmAgent(
   complete: LlmComplete,
   request: LlmRequest,
   runTool: (call: LlmToolCall) => Promise<unknown>,
-  maxSteps = 12,
+  { maxSteps = 12, describeTool, ...call }: LlmAgentOptions = {},
 ): Promise<string> {
   for (let step = 0; step < maxSteps; step++) {
-    const response = await complete(request);
+    if (step) call.onEvent?.({ type: 'turn' });
+    const response = await complete(request, call);
     request.messages.push({
       role: 'assistant',
       content: response.text,
@@ -124,17 +158,79 @@ export async function runLlmAgent(
       raw: response.raw,
     });
     if (!response.toolCalls.length) return response.text;
-    for (const call of response.toolCalls) {
+    for (const toolCall of response.toolCalls) {
+      call.signal?.throwIfAborted();
+      call.onEvent?.({ type: 'status', text: describeTool?.(toolCall) ?? `Using ${toolCall.name}` });
       let content: string;
       try {
-        content = JSON.stringify((await runTool(call)) ?? null);
+        content = JSON.stringify((await runTool(toolCall)) ?? null);
       } catch (error) {
         content = JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
       }
-      request.messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content });
+      request.messages.push({ role: 'tool', toolCallId: toolCall.id, name: toolCall.name, content });
     }
   }
   return 'I stopped because this took too many steps.';
+}
+
+/**
+ * The body of the first ``` block in `text` whose language matches, or
+ * undefined. With `partial`, an unclosed block (still streaming) counts too.
+ */
+export function codeBlock(text: string, languages: RegExp, partial = false): string | undefined {
+  const fence = /```([\w-]*)[^\n]*\n/g;
+  for (let match = fence.exec(text); match; match = fence.exec(text)) {
+    const start = match.index + match[0].length;
+    const end = text.indexOf('\n```', start - 1);
+    if (languages.test(match[1])) {
+      if (end >= 0) return text.slice(start, end);
+      return partial ? text.slice(start) : undefined;
+    }
+    if (end < 0) return undefined;
+    fence.lastIndex = end + 4;
+  }
+  return undefined;
+}
+
+export const JS_BLOCK = /^(js|javascript|ts|typescript)$/i;
+
+/**
+ * The editor's AI reply: a plugin (a ```js block plus a ```json block with
+ * its details) or, for a question, just an answer.
+ */
+export type LlmPluginDraft = {
+  source?: string;
+  answer?: string;
+  name?: string;
+  description?: string;
+  scriptType?: 'script' | 'action';
+  optionSchema?: unknown;
+};
+
+/** Whether code is a whole plugin rather than an example snippet. */
+export const isWholePlugin = (source: string) => /\bfunction\s+main\s*\(|require\(\s*['"]jnbot['"]\s*\)/.test(source);
+
+/**
+ * A reply as the user reads it: without the drafts the app uses itself
+ * (```json details, whole plugins), also while they stream, but keeping
+ * example snippets in an answer.
+ */
+export const llmAnswerText = (text: string) =>
+  text
+    .replace(/```([\w-]*)[^\n]*\n?([\s\S]*?)(```|$)/g, (block, language: string, body: string) =>
+      /^json$/i.test(language) || (JS_BLOCK.test(language) && isWholePlugin(body)) ? '' : block)
+    .trim();
+
+/**
+ * Read the editor's AI reply. `missing` means it described a plugin (gave
+ * details) but left out the code, so the model should be asked again.
+ */
+export function parsePluginDraft(text: string): LlmPluginDraft | 'missing' {
+  const source = codeBlock(text, JS_BLOCK);
+  const details = codeBlock(text, /^json$/i);
+  if (details && !source) return 'missing';
+  if (!source || (!details && !isWholePlugin(source))) return { answer: text.trim() };
+  return { ...(details ? parseLlmJson<Omit<LlmPluginDraft, 'source'>>(details) : {}), source };
 }
 
 /** Parse the JSON object or array in a model reply, tolerating ``` fences. */
@@ -149,6 +245,11 @@ export function parseLlmJson<T = unknown>(text: string): T {
 
 /** AI calls can take minutes; requests for these use {@link LLM_TIMEOUT_MS}. */
 export const LLM_SLOW_ACTIONS = new Set(['LLM_TEST', 'LLM_GENERATE', 'LLM_WRITE_PLUGIN', 'LLM_EXPLAIN_ERROR', 'LLM_ASK_SHARE']);
+/** Stops the request streaming under `streamId`. */
+export type LlmCancelInput = { streamId: string };
+
+export type LlmExplainErrorInput = LlmStreamInput & { error: string; scriptName?: string };
+export type LlmAskShareInput = LlmStreamInput & { question: string; title?: string; description?: string; content?: string };
 export const LLM_TIMEOUT_MS = 300_000;
 export const llmRequestOptions = (event: string) =>
   LLM_SLOW_ACTIONS.has(event) ? { timeoutMs: LLM_TIMEOUT_MS } : undefined;
@@ -157,7 +258,7 @@ export const llmRequestOptions = (event: string) =>
  * "Describe it" for one profile (a profile action, so each client uses its
  * own profile): a trigger, a chain, or values for a plugin's options.
  */
-export type LlmGenerateInput = {
+export type LlmGenerateInput = LlmStreamInput & {
   kind: 'trigger' | 'chain' | 'options';
   description: string;
   /** options: the plugin whose options to fill in. */
@@ -165,7 +266,22 @@ export type LlmGenerateInput = {
 };
 
 /** "Write with AI" in the code editor; `source` is the plugin to change. */
-export type LlmWritePluginInput = { description: string; source?: string };
+export type LlmWritePluginInput = LlmStreamInput & {
+  description: string;
+  source?: string;
+  scriptType?: 'script' | 'action';
+  /** The plugin's current options, kept when changing it. */
+  optionSchema?: unknown;
+};
+
+/** "Describe the settings": the grounded changes, for the user to review. */
+export type LlmOptionsResult = {
+  values: Record<string, unknown>;
+  changes: { id: string; label: string; from: unknown; to: unknown }[];
+  /** Values the AI suggested that are not valid choices here. */
+  skipped: { label: string; value: unknown; reason: string }[];
+  summary?: string;
+};
 
 /** Which models to list: the form's unsaved provider/key, or the saved ones. */
 export type LlmModelsInput = Pick<LlmConfig, 'provider' | 'apiKey' | 'baseUrl'>;
