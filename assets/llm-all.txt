@@ -2322,8 +2322,13 @@ interface RecordingPacket {
   n: string;
   /** delta time from recording start, ms */
   dt: number;
-  /** packet params */
+  /**
+   * Packet params. On disk a packet may carry `r` instead; reading the
+   * recording decodes it into `p`.
+   */
   p: Record<string, any>;
+  /** Raw packet body (packet id included), base64; only in the file on disk. */
+  r?: string;
   /** free-form metadata */
   m: Record<string, any>;
   /** direction; absent on legacy recordings (treat as 'c2s') */

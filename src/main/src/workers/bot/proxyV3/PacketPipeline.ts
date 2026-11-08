@@ -97,6 +97,11 @@ export class PacketContext<T = any> {
     return Buffer.from(this.#raw);
   }
 
+  /** Length of the input bytes, without copying them. */
+  get size(): number {
+    return this.#buffer.length;
+  }
+
   /** Preserved input bytes. A copy prevents handlers from changing fallback output. */
   get buffer(): Buffer {
     return Buffer.from(this.#buffer);
@@ -236,6 +241,8 @@ interface HandlerRegistration {
   handler: PacketHandler;
   once: boolean;
   observer: boolean;
+  /** Reads only the raw bytes, so it never forces the packet to be decoded. */
+  rawOnly: boolean;
 }
 
 function clonePacketValue<T>(value: T): T {
@@ -256,7 +263,7 @@ export class PacketPipeline {
   /** True when running a packet of this name can change observable behavior. */
   hasListeners(name: string): boolean {
     return this.#registrations.some(
-      ({ events }) => events.has(ANY_PACKET) || events.has(name),
+      ({ events, rawOnly }) => !rawOnly && (events.has(ANY_PACKET) || events.has(name)),
     );
   }
 
@@ -271,6 +278,16 @@ export class PacketPipeline {
   /** Register a read-only observer without enabling payload rollback copies. */
   observe(events: string | string[], handler: PacketHandler): () => void {
     this.#add(events, handler, false, true);
+    return () => this.off(events, handler);
+  }
+
+  /**
+   * Register a read-only observer of the raw bytes (`context.raw`). Unlike
+   * `observe` it doesn't make the proxy decode packets, so `context.data` is
+   * null unless another handler needed it.
+   */
+  observeRaw(events: string | string[], handler: PacketHandler): () => void {
+    this.#add(events, handler, false, true, true);
     return () => this.off(events, handler);
   }
 
@@ -326,12 +343,19 @@ export class PacketPipeline {
     this.#registrations = [];
   }
 
-  #add(events: string | string[], handler: PacketHandler, once: boolean, observer: boolean): this {
+  #add(
+    events: string | string[],
+    handler: PacketHandler,
+    once: boolean,
+    observer: boolean,
+    rawOnly = false,
+  ): this {
     this.#registrations.push({
       events: new Set(Array.isArray(events) ? events : [events]),
       handler,
       once,
       observer,
+      rawOnly,
     });
     return this;
   }

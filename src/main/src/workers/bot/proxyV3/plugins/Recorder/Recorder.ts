@@ -3,8 +3,9 @@
  *
  * This taps the {@link PacketPipeline} instead of a mineflayer bot mirror, so
  * there is no second parser and no world-state dependency. The
- * on-disk format is unchanged ({@link RecordingPacket} NDJSON + a JSON header)
- * with one addition: a `d` direction field. Files land in
+ * on-disk format is {@link RecordingPacket} NDJSON + a JSON header, where most
+ * packets carry their raw bytes (`r`) instead of params; `Recordings` decodes
+ * them when the recording is read. Files land in
  * `workerData.paths.recordings` so the main-process Recordings store reads them.
  */
 import fs from 'fs';
@@ -44,6 +45,9 @@ export interface DebugCaptureOptions {
   onLimit?: () => void;
   onFailure?: (error: Error) => void;
 }
+
+/** A line as written: raw packets have `r` and no `p` yet. */
+type StoredPacket = Omit<RecordingPacket, 'p'> & { p?: RecordingPacket['p'] };
 
 /** `JSON.stringify` replacer that survives values it normally throws on. */
 function jsonSafeReplacer(_key: string, value: unknown): unknown {
@@ -129,33 +133,24 @@ export class DebugCapture {
     this.#start = Date.now();
 
     this.#handler = (ctx: PacketContext) => this.#onPacket(ctx);
-    this.#pipeline.observe(ANY_PACKET, this.#handler);
+    this.#pipeline.observeRaw(ANY_PACKET, this.#handler);
   }
 
   #onPacket(ctx: PacketContext): void {
     if (!this.stream || this.#ignore.has(ctx.name)) return;
 
-    // Cheap size gate using the raw body length (avoids serializing huge
-    // packets like chunk data just to measure them).
-    const oversized =
-      this.#maxPacketBytes > 0 &&
-      !ctx.unparsed &&
-      ctx.buffer.length > this.#maxPacketBytes;
-
-    const packet: RecordingPacket = {
+    // Stored as raw bytes and decoded when the recording is read, so the live
+    // stream is never decoded or JSON-encoded for the recorder. Handler edits
+    // only exist decoded, so modified packets keep their data.
+    const size = ctx.size;
+    const packet: StoredPacket = {
       n: ctx.name,
       dt: Date.now() - this.#start,
-      // Packets the proxy couldn't decode are kept (raw bytes) but clearly
-      // flagged, so the recording stays complete and the UI can show why.
-      p: ctx.unparsed
-        ? {
-            __unparsed: true,
-            error: 'Failed to parse packet',
-            raw: ctx.buffer.toString('base64'),
-          }
-        : oversized
-          ? { __truncated: true, bytes: ctx.buffer.length }
-          : ctx.data,
+      ...(this.#maxPacketBytes > 0 && size > this.#maxPacketBytes
+        ? { p: { __truncated: true, bytes: size } }
+        : ctx.isModified && !ctx.unparsed
+          ? { p: ctx.data }
+          : { r: ctx.buffer.toString('base64') }),
       m: {
         sessionId: ctx.sessionId,
         sourceParticipantId: ctx.sourceParticipantId,
@@ -163,7 +158,7 @@ export class DebugCapture {
         sequence: ctx.sequence,
         phase: ctx.state,
         origin: ctx.origin,
-        bytes: ctx.buffer.length,
+        bytes: size,
         dropped: ctx.isDropped,
         modified: ctx.isModified,
         injections: ctx.injected.length,
@@ -190,7 +185,7 @@ export class DebugCapture {
    * chokes on (BigInt longs, Buffers). If serialization still fails the packet
    * is recorded as a flagged placeholder rather than crashing the recorder.
    */
-  #serialize(packet: RecordingPacket): string | null {
+  #serialize(packet: StoredPacket): string | null {
     try {
       return JSON.stringify(packet, jsonSafeReplacer);
     } catch (error) {

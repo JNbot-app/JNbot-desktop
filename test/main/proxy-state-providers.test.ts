@@ -90,6 +90,34 @@ describe('bot proxy state', () => {
     expect(injectProxyState.getBotStateProvider(41)).toBeUndefined();
   });
 
+  test('forgets the heightmaps of unloaded chunks', () => {
+    const client = Object.assign(new EventEmitter(), { write: jest.fn(), protocolVersion: 774 });
+    const column = { toJson: () => '{}' };
+    const bot: any = Object.assign(new EventEmitter(), {
+      botId: 44,
+      _client: client,
+      entity: { id: 1, position: { x: 0, y: 64, z: 0 }, yaw: 0, pitch: 0 },
+      inventory: { slots: [] },
+      entities: {},
+      game: { minY: -64, height: 384 },
+      world: { getColumns: () => [{ chunkX: '1', chunkZ: '2', column }] },
+      supportFeature: jest.fn(() => false),
+      clearControlStates: jest.fn(),
+    });
+    injectProxyState(bot);
+    client.emit('custom_payload', {
+      channel: 'jnbot:proxy',
+      data: Buffer.from(JSON.stringify({ type: 'enable', nonce: 'n' })),
+    });
+    client.emit('packet', {}, { name: 'login', state: 'play' }, undefined, Buffer.from([1]));
+    client.emit('map_chunk', { x: 1, z: 2, heightmaps: { surface: [7] } });
+    expect(bot.exportProxyState().world.chunks[0].heightmaps).toEqual({ surface: [7] });
+
+    bot.emit('chunkColumnUnload', { x: 16, z: 32 });
+    expect(bot.exportProxyState().world.chunks[0].heightmaps).toBeUndefined();
+    bot.emit('end');
+  });
+
   test('records each configuration phase as raw packets and resets it on reconfiguration', () => {
     const client = Object.assign(new EventEmitter(), {
       write: jest.fn(),
