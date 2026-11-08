@@ -35,9 +35,10 @@ import McpOperations from './McpOperations';
 import McpRelayClient, { type PairingFrame } from './McpRelayClient';
 import { consumeRateLimit, redactMcpValue, sanitizeError } from './security';
 import { PLUGIN_API_TYPES } from '../../../../common/pluginApiTypesSource';
-import { PLUGIN_AUTHORING_GUIDE } from '../../../../common/pluginAuthoringGuideSource';
+import { PLUGIN_AUTHORING_GUIDE, PLUGIN_FULL_EXAMPLES } from '../../../../common/pluginAuthoringGuideSource';
 import {
   JNBOT_MCP_CONTEXT,
+  JNBOT_REFERENCE_SECTION_IDS,
   JNBOT_REFERENCE_SECTION_MARKERS,
   type JnbotReferenceSection,
 } from '../../../../common/pluginMcpReferenceSource';
@@ -155,7 +156,6 @@ export class McpManager {
       endpoint: this.endpoint,
       remoteEndpoint: this.mode === 'remote' ? `${JNBOT_MCP_RELAY_ORIGIN}/i/${this.storage.installationId}/mcp` : undefined,
       sessionStartedAt: this.sessionStartedAt,
-      encryptionAvailable: this.storage.encryptionAvailable,
       connectedClients: this.activeClientIds.size,
       relayConnected: this.relayConnected,
     };
@@ -544,7 +544,7 @@ export class McpManager {
 
   /** Read-only documents clients can attach as context without a tool call. */
   private registerResources(server: McpServer, client: McpClientContext) {
-    for (const section of ['authoring', ...Object.keys(JNBOT_REFERENCE_SECTION_MARKERS)]) {
+    for (const section of JNBOT_REFERENCE_SECTION_IDS) {
       server.registerResource(
         `reference-${section}`,
         `jnbot://reference/${section}`,
@@ -785,7 +785,7 @@ export class McpManager {
     return {
       entryPoint: args.scriptType === 'action' ? 'async function main(bot, settings, args?)' : 'Plugin scripts run with script.settings.',
       guide: PLUGIN_AUTHORING_GUIDE,
-      referenceSections: ['authoring', ...Object.keys(JNBOT_REFERENCE_SECTION_MARKERS)],
+      referenceSections: JNBOT_REFERENCE_SECTION_IDS,
     };
   }
 
@@ -945,9 +945,8 @@ export class McpManager {
   }
 
   getReference(section: string) {
-    if (section === 'authoring') {
-      return { section, content: PLUGIN_AUTHORING_GUIDE };
-    }
+    if (section === 'authoring') return { section, content: PLUGIN_AUTHORING_GUIDE };
+    if (section === 'examples') return { section, content: PLUGIN_FULL_EXAMPLES };
 
     if (!Object.prototype.hasOwnProperty.call(JNBOT_REFERENCE_SECTION_MARKERS, section)) {
       throw new Error(`Unknown JNbot reference section: ${section}`);

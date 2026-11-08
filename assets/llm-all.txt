@@ -6,7 +6,41 @@ Create or update plugins with `save_plugin`; do not merely return source code wh
 
 ## Entrypoints
 
-Normal plugins own their bot lifecycle. Import `script` and read persistent options from `script.settings`.
+Normal plugins own their bot lifecycle. Import `script` and read persistent options from `script.settings`. Pick the join pattern by how many alts the plugin drives:
+
+- **One alt** (an `altSelect` option, a main account, a single bot): drive it with `BotMachine`, which joins, logs in, enters the gamemode and reconnects after kicks. For a short one-off step, `await Bot.join({ username }, { gamemode, login: true })` is enough. Do not use `forEachBot` or `getAlts().slice(0, 1)` for this.
+- **Many alts** (loop over the user's alts with filters such as tags, ranks, `altRange`, ignored alts): use `script.forEachBot(script.getAlts(), script.settings)`. It filters the alts, wires the pause/skip/previous buttons, joins each alt and ends it after the loop body.
+
+```js
+const { BotMachine, script } = require('jnbot');
+
+async function main() {
+  new BotMachine(
+    [
+      {
+        name: 'open kits menu',
+        when: ({ bot, state }) => !state.claimed && !bot.currentWindow,
+        run: ({ bot }) => bot.openWindow('/kit'),
+      },
+      {
+        name: 'claim kit',
+        when: ({ bot, state }) => !state.claimed && bot.getWindowTitle()?.includes('Kits'),
+        run: async ({ bot, state }) => {
+          const [kit] = bot.findWindowSlots({ name: script.settings.kit });
+          if (kit) await bot.clickWindow(kit.slot, 0, 0);
+          state.claimed = true;
+        },
+      },
+      { name: 'done', when: ({ state }) => state.claimed, run: ({ machine }) => machine.stop() }, // stop() also disconnects the bot
+    ],
+    { options: { username: script.settings.alt }, join: { gamemode: script.settings.gamemode, login: true } },
+  )
+    .onFinish(() => script.stop())
+    .start();
+}
+
+main();
+```
 
 ```js
 const { script } = require('jnbot');
@@ -93,11 +127,29 @@ The model focuses on English. All supplied tools must fit within the model conte
 
 Native support must be packaged for the device. Local inference supports desktop builds, Android ARM64, and iOS device and simulator builds. Other Android architectures return `AI_UNSUPPORTED_PLATFORM`. The app command UI and typing previews are not part of this API.
 
-- Use `script.forEachBot(script.getAlts(), script.settings)` for multi-alt scripts; its settings object enables standard alt filters.
+- Use `script.forEachBot(script.getAlts(), script.settings)` only when looping over several alts; its settings object enables the standard alt filters. For one alt use `BotMachine` with `options: { username }` (or `Bot.join`). Inside a `forEachBot` loop you can still hand the yielded bot to `new BotMachine(tasks, { bot })`.
 - Use `await bot.openWindow(command)` rather than sending a command then waiting for a window event.
 - Use `bot.findWindowSlots()` before relying on slot numbers and `await bot.transferItems()` for supported transfer flows.
 - Import JNbot helpers from `require('jnbot')`. Supported sandbox modules include `axios`, `events`, selected Prismarine modules, `vec3`, and `assert`; AI-authored plugins cannot use process, child processes, proxy APIs, account passwords, Fabric clients, or managed servers.
 - [IMPORTANT] Use `BotMachine` for the entire bot task. Avoid creating long functions. Split the task up into smaller steps. This will allow the bot to recover from errors like if some action failed or the bot gets suddenly kicked to hub, BotMachine allows you to deal with these scenarios much easier. For the `when` condition, try to find when the bot should perform the action. For example, if the bot doesn\'t have a window opened -> do window action. Or if specific window must be opened, we can check it using bot.getWindowTitle(). Avoid doing stuff like state.step = "step1" and then checking for state.step === "step1" in the next task.
+
+## Common mistakes
+
+Check the plugin against this list before saving it.
+
+- **`forEachBot` for one account.** `script.forEachBot(script.getAlts().slice(0, 1), ...)` or a loop over a single `altSelect` value. Use `new BotMachine(tasks, { options: { username }, join: { gamemode, login: true } })` or `Bot.join` instead.
+- **Not awaiting work inside a `forEachBot` loop.** The bot is ended as soon as the loop body returns, so starting a BotMachine or registering listeners without awaiting them disconnects the bot immediately. Await the work, e.g. `await new Promise((resolve) => new BotMachine(tasks, { bot }).onFinish(resolve).start())`.
+- **Sharing one task array between machines.** `once` progress is stored on the task objects, so build the tasks in a function and call it per bot.
+- **Step counters in BotMachine state.** `state.step = 2` then `when: ({ state }) => state.step === 2` breaks after a kick or failed action. Guard on what the bot can observe: open window and its title, inventory contents, position, timestamps.
+- **One long linear `async` function.** It cannot recover from kicks, lag or a menu that did not open. Split it into BotMachine tasks.
+- **Sending a command and waiting for `windowOpen`.** Use `const window = await bot.openWindow(command)` and handle `null` (timed out).
+- **Hard-coded slot numbers.** Menus differ per server and update; look items up with `bot.findWindowSlots({ name })` or `{ lore }`.
+- **Hard-coded values the user may want to change.** Commands, item names, accounts, gamemodes, delays and amounts belong in options. Never give passwords, tokens or API keys a default value.
+- **Joining a bot inside an action.** Actions receive an already-connected bot; only normal plugins join.
+- **Deprecated globals.** Import everything from `require('jnbot')` (`script`, `Bot`, `BotMachine`, ...) instead of the global `script`, `join`, `BotMachine` or `BotStatemachine`; use `console.log` instead of `log`.
+- **Using `script.llm` without `await script.llm.isAvailable()`.** Most users have no AI provider; notify them and stop instead of throwing.
+- **Forgetting `main()`.** Normal plugins must call `main()` at the end of the file; actions must not.
+- **Inventing API members.** If a method is not in the reference, it does not exist. Look it up with `get_jnbot_reference` or ask instead of guessing.
 
 # Compact plugin examples
 
@@ -178,11 +230,11 @@ async function main(bot, settings, args = []) {
 Record yourself fighting in the JNbot Client, train, then let a bot copy you. Recordings store raw observations, so you can change `features` and train again without recording again.
 
 ```json
-[{"name":"Brain","options":[{"id":"mode","label":"Mode","type":"select","options":[{"label":"Record (JNbot Client)","value":"record"},{"label":"Train","value":"train"},{"label":"Run on bot","value":"run"}],"defaultValue":"record"},{"id":"minutes","label":"Record minutes","type":"input","inputType":"number","defaultValue":"10"}]}]
+[{"name":"Brain","options":[{"id":"mode","label":"Mode","type":"select","options":[{"label":"Record (JNbot Client)","value":"record"},{"label":"Train","value":"train"},{"label":"Run on bot","value":"run"}],"defaultValue":"record"},{"id":"minutes","label":"Record minutes","type":"input","inputType":"number","defaultValue":"10"},{"id":"alt","label":"Bot account","type":"altSelect"}]}]
 ```
 
 ```js
-const { Brain, script } = require('jnbot');
+const { Bot, Brain, script } = require('jnbot');
 
 const brain = new Brain({
   name: 'mob-fighter',
@@ -218,10 +270,9 @@ async function main() {
   } else if (mode === 'train') {
     console.log(await brain.train());
   } else {
-    for await (const bot of script.forEachBot(script.getAlts().slice(0, 1), {})) {
-      script.onExit(brain.run(bot));
-      await new Promise(() => {}); // run until the plugin is stopped
-    }
+    const bot = await Bot.join({ username: script.settings.alt }, { login: true });
+    script.onExit(brain.run(bot));
+    await new Promise(() => {}); // run until the plugin is stopped
   }
 }
 
@@ -246,6 +297,164 @@ const brain = new Brain({
   },
   heads: ['forward', 'strafe', 'jump', 'attack', 'use', Brain.hold({ seeds: /wheat_seeds/ })],
 });
+```
+
+# Complete example plugins
+
+Each example is a full plugin: the option schema followed by the source. Copy the structure, not the server-specific details (commands, window titles, item names), which differ per server and should be options.
+
+## Single alt: claim a kit on a timer (BotMachine)
+
+One account, runs until the user stops it. BotMachine joins, enters the gamemode and reconnects after kicks; the tasks only describe what to do in each situation.
+
+```json
+[{"name":"General","options":[{"id":"alt","label":"Account","type":"altSelect"},{"id":"gamemode","label":"Gamemode","type":"gamemodeSelect"},{"id":"command","label":"Kit command","type":"input","defaultValue":"/kit"},{"id":"kit","label":"Kit item name","type":"input","defaultValue":"Daily"},{"id":"minutes","label":"Claim every (minutes)","type":"slider","min":1,"max":1440,"step":1,"defaultValue":60}]}]
+```
+
+```js
+const { BotMachine, script } = require('jnbot');
+
+const { alt, gamemode, command, kit, minutes } = script.settings;
+
+function claimTasks() {
+  return [
+    {
+      name: 'open kits menu',
+      when: ({ bot, state }) => Date.now() >= state.nextClaim && !bot.currentWindow,
+      run: ({ bot }) => bot.openWindow(command),
+    },
+    {
+      name: 'claim kit',
+      when: ({ bot, state }) => Date.now() >= state.nextClaim && Boolean(bot.currentWindow),
+      run: async ({ bot, state }) => {
+        const [slot] = bot.findWindowSlots({ name: kit });
+        if (slot) await bot.clickWindow(slot.slot, 0, 0);
+        else console.warn(`No "${kit}" item in ${bot.getWindowTitle()}`);
+        bot.closeWindow(bot.currentWindow);
+        state.nextClaim = Date.now() + minutes * 60_000;
+      },
+    },
+  ];
+}
+
+async function main() {
+  const machine = new BotMachine(claimTasks(), {
+    options: { username: alt },
+    join: { gamemode, login: true },
+    state: { nextClaim: 0 },
+  }).start();
+  script.onExit(() => machine.stop());
+}
+
+main();
+```
+
+## Many alts: collect kits and send them to a main account (forEachBot + BotMachine)
+
+`forEachBot` filters the alts with the standard options (`gamemode`, `altRange`, `ignoreAlts`, `withTags`), joins each one and ends it after the loop body. The body awaits a per-bot BotMachine, so the bot stays online until its tasks are done.
+
+```json
+[{"name":"Alts","options":[{"id":"gamemode","label":"Gamemode","type":"gamemodeSelect"},{"id":"altRange","label":"Alt range","type":"altRange"},{"id":"withTags","label":"Only alts with tags","type":"tagsSelect"},{"id":"ignoreAlts","label":"Ignore alts","type":"altsSelect"}]},{"name":"Transfer","options":[{"id":"mainAccount","label":"Main account","type":"altSelect"},{"id":"transferMode","label":"Transfer with","type":"select","options":[{"label":"/trade","value":"trade"},{"label":"/gift","value":"gift"}],"defaultValue":"trade"},{"id":"kitCommand","label":"Kit command","type":"input","defaultValue":"/kit"},{"id":"kit","label":"Kit item name","type":"input","defaultValue":"Daily"}]}]
+```
+
+```js
+const { BotMachine, script } = require('jnbot');
+
+const { mainAccount, transferMode, kitCommand, kit } = script.settings;
+
+// Build tasks per bot: `once` progress is stored on the task objects.
+function collectTasks() {
+  return [
+    {
+      name: 'claim kit',
+      once: true,
+      when: () => true,
+      run: async ({ bot }) => {
+        const window = await bot.openWindow(kitCommand);
+        if (!window) return;
+        const [slot] = bot.findWindowSlots({ name: kit });
+        if (slot) await bot.clickWindow(slot.slot, 0, 0);
+        bot.closeWindow(window);
+      },
+    },
+    {
+      name: 'send items',
+      when: () => true,
+      run: async ({ bot, machine }) => {
+        await bot.transferItems(transferMode, { username: mainAccount, timeout: 60_000 });
+        machine.finish();
+      },
+    },
+  ];
+}
+
+async function main() {
+  const alts = script.getAlts().filter((alt) => alt.username !== mainAccount);
+  for await (const bot of script.forEachBot(alts, script.settings)) {
+    await new Promise((resolve) =>
+      new BotMachine(collectTasks(), { bot, disableAutoReconnect: true }).onFinish(resolve).start(),
+    );
+  }
+}
+
+main();
+```
+
+## Single alt: AI chat companion (script.llm with a fallback)
+
+Most users have no AI provider set up, so check `isAvailable()` and tell the user what to do instead of failing.
+
+```json
+[{"name":"General","options":[{"id":"alt","label":"Account","type":"altSelect"},{"id":"gamemode","label":"Gamemode","type":"gamemodeSelect"},{"id":"persona","label":"Personality","type":"input","defaultValue":"a friendly, helpful player"}]}]
+```
+
+```js
+const { Bot, script } = require('jnbot');
+
+async function main() {
+  if (!(await script.llm.isAvailable())) {
+    script.notification({ type: 'warning', title: 'AI chat', message: 'Add an AI provider in Settings to use this plugin.' });
+    return script.stop();
+  }
+
+  const bot = await Bot.join({ username: script.settings.alt }, { gamemode: script.settings.gamemode, login: true });
+  const chat = script.llm.createChat({
+    system: `You are ${bot.username}, ${script.settings.persona} on a Minecraft server. Reply in one short line.`,
+    memory: 30,
+  });
+
+  bot.on('chat', async (username, message) => {
+    if (username === bot.username || !message.toLowerCase().includes(bot.username.toLowerCase())) return;
+    bot.chat(await chat.send(`${username}: ${message}`));
+  });
+}
+
+main();
+```
+
+## Action for chains: buy an item
+
+Actions run on a bot that is already online. `args[0]` holds values from earlier chain steps; the returned object adds values for later steps (`{item}` in text options). Return `false` or throw to take the chain's "If it fails" branch.
+
+```json
+[{"name":"General","options":[{"id":"command","label":"Shop command","type":"input","defaultValue":"/shop"},{"id":"item","label":"Item name","type":"input","defaultValue":"Diamond"}]}]
+```
+
+```js
+async function main(bot, settings, args = []) {
+  const previous = args[0] ?? {};
+  const window = await bot.openWindow(settings.command);
+  if (!window) return false;
+
+  const [slot] = bot.findWindowSlots({ name: settings.item });
+  if (!slot) {
+    bot.closeWindow(window);
+    return false;
+  }
+  await bot.clickWindow(slot.slot, 0, 0);
+  bot.closeWindow(window);
+  return { item: settings.item, boughtBy: previous.alt ?? bot.username };
+}
 ```
 
 # Full Plugin API Types
@@ -4093,6 +4302,3 @@ declare function clearTimeout(id: any): void;
 declare function clearInterval(id: any): void;
 declare function clearImmediate(id: any): void;
 ```
-
-
-[IMPORTANT] Use `BotMachine` for the entire bot task. Avoid creating long functions. Split the task up into smaller steps. This will allow the bot to recover from errors like if some action failed or the bot gets suddenly kicked to hub, BotMachine allows you to deal with these scenarios much easier. For the `when` condition, try to find when the bot should perform the action. For example, if the bot doesn't have a window opened -> do window action. Or if specific window must be opened, we can check it using bot.getWindowTitle(). Avoid doing stuff like state.step = "step1" and then checking for state.step === "step1" in the next task.

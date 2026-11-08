@@ -1,12 +1,12 @@
 import * as z from 'zod/v4';
 import type { LlmToolCall, LlmToolSpec } from '../../../../common/llm';
-import { PLUGIN_AUTHORING_GUIDE } from '../../../../common/pluginAuthoringGuideSource';
+import { PLUGIN_AUTHORING_GUIDE, PLUGIN_FULL_EXAMPLES } from '../../../../common/pluginAuthoringGuideSource';
 import { JNBOT_MCP_CONTEXT, JNBOT_REFERENCE_SECTION_IDS } from '../../../../common/pluginMcpReferenceSource';
 
 type Section = (typeof JNBOT_REFERENCE_SECTION_IDS)[number];
 
 /** Every plugin uses these, so they are always in the prompt. */
-const CORE_SECTIONS: Section[] = ['pluginApi', 'pluginOptions', 'botApi'];
+const CORE_SECTIONS: Section[] = ['declarePlugin', 'pluginApi', 'pluginOptions', 'botApi'];
 
 /** Extra sections, added when the request mentions their topic. */
 const TOPIC_SECTIONS: { section: Section; topic: RegExp }[] = [
@@ -18,6 +18,8 @@ const TOPIC_SECTIONS: { section: Section; topic: RegExp }[] = [
 
 export const SECTION_LABELS: Record<Section, string> = {
   authoring: 'authoring guide',
+  examples: 'example plugins',
+  declarePlugin: "require('jnbot') exports",
   botApi: 'Bot API',
   mcClientApi: 'Minecraft client API',
   mcServerApi: 'Minecraft server API',
@@ -62,7 +64,7 @@ export function pluginSystemPrompt(
 ) {
   const reference = compact
     ? JNBOT_MCP_CONTEXT
-    : `${PLUGIN_AUTHORING_GUIDE}\n\n# API reference\n\n${pluginSections(request)
+    : `${PLUGIN_AUTHORING_GUIDE}\n\n${PLUGIN_FULL_EXAMPLES}\n\n# API reference\n\n${pluginSections(request)
       .map((section) => `\`\`\`ts\n${readSection(section)}\n\`\`\``)
       .join('\n\n')}`;
   return `You are an expert JNbot plugin developer. JNbot runs JavaScript plugins in a sandboxed Node.js worker; plugins control Minecraft bots (mineflayer with JNbot extensions) through \`require('jnbot')\`.

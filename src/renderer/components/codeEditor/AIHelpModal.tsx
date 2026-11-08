@@ -6,12 +6,12 @@ import { useNavigate } from 'react-router-dom';
 
 const { Paragraph, Text, Title } = Typography;
 
-const API_REFERENCE_URL = 'https://jnbot.netlify.app/llm-all.txt';
-const AI_CONTEXT_PROMPT = `Start with reading the complete and current JNbot API reference at:
+const CONTEXT_INDEX_URL = 'https://jnbot.netlify.app/llm.txt';
+const AI_CONTEXT_PROMPT = `Start by reading the JNbot context index at:
 
-${API_REFERENCE_URL}
+${CONTEXT_INDEX_URL}
 
-Treat that document as the source of truth for the available APIs, types, runtime constraints, and examples. Base your solution on it, do not invent unsupported methods, and tell me clearly if you cannot access the reference. Then answer the JNbot request I include with this instruction.`;
+It lists the current JNbot reference files. Always read the plugin authoring guide, then the API files the task needs (or the single all-in-one file if you cannot open several links). Treat them as the source of truth for the available APIs, types, runtime constraints, and examples. Base your solution on them, do not invent unsupported methods, and tell me clearly if you cannot access them. Then answer the JNbot request I include with this instruction.`;
 
 interface AIHelpModalProps {
   visible: boolean;

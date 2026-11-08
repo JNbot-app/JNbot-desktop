@@ -77,11 +77,11 @@ async function main(bot, settings, args = []) {
 Record yourself fighting in the JNbot Client, train, then let a bot copy you. Recordings store raw observations, so you can change `features` and train again without recording again.
 
 ```json
-[{"name":"Brain","options":[{"id":"mode","label":"Mode","type":"select","options":[{"label":"Record (JNbot Client)","value":"record"},{"label":"Train","value":"train"},{"label":"Run on bot","value":"run"}],"defaultValue":"record"},{"id":"minutes","label":"Record minutes","type":"input","inputType":"number","defaultValue":"10"}]}]
+[{"name":"Brain","options":[{"id":"mode","label":"Mode","type":"select","options":[{"label":"Record (JNbot Client)","value":"record"},{"label":"Train","value":"train"},{"label":"Run on bot","value":"run"}],"defaultValue":"record"},{"id":"minutes","label":"Record minutes","type":"input","inputType":"number","defaultValue":"10"},{"id":"alt","label":"Bot account","type":"altSelect"}]}]
 ```
 
 ```js
-const { Brain, script } = require('jnbot');
+const { Bot, Brain, script } = require('jnbot');
 
 const brain = new Brain({
   name: 'mob-fighter',
@@ -117,10 +117,9 @@ async function main() {
   } else if (mode === 'train') {
     console.log(await brain.train());
   } else {
-    for await (const bot of script.forEachBot(script.getAlts().slice(0, 1), {})) {
-      script.onExit(brain.run(bot));
-      await new Promise(() => {}); // run until the plugin is stopped
-    }
+    const bot = await Bot.join({ username: script.settings.alt }, { login: true });
+    script.onExit(brain.run(bot));
+    await new Promise(() => {}); // run until the plugin is stopped
   }
 }
 

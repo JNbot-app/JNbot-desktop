@@ -22,7 +22,6 @@ const emptySnapshot: McpActivitySnapshot = {
   status: {
     enabled: false,
     mode: 'off',
-    encryptionAvailable: false,
     connectedClients: 0,
   },
   clients: [],

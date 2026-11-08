@@ -185,7 +185,6 @@ export type McpStatus = {
   endpoint?: string;
   remoteEndpoint?: string;
   sessionStartedAt?: number;
-  encryptionAvailable: boolean;
   connectedClients: number;
   relayConnected?: boolean;
 };

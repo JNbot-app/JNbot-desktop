@@ -4,7 +4,41 @@ Create or update plugins with `save_plugin`; do not merely return source code wh
 
 ## Entrypoints
 
-Normal plugins own their bot lifecycle. Import `script` and read persistent options from `script.settings`.
+Normal plugins own their bot lifecycle. Import `script` and read persistent options from `script.settings`. Pick the join pattern by how many alts the plugin drives:
+
+- **One alt** (an `altSelect` option, a main account, a single bot): drive it with `BotMachine`, which joins, logs in, enters the gamemode and reconnects after kicks. For a short one-off step, `await Bot.join({ username }, { gamemode, login: true })` is enough. Do not use `forEachBot` or `getAlts().slice(0, 1)` for this.
+- **Many alts** (loop over the user's alts with filters such as tags, ranks, `altRange`, ignored alts): use `script.forEachBot(script.getAlts(), script.settings)`. It filters the alts, wires the pause/skip/previous buttons, joins each alt and ends it after the loop body.
+
+```js
+const { BotMachine, script } = require('jnbot');
+
+async function main() {
+  new BotMachine(
+    [
+      {
+        name: 'open kits menu',
+        when: ({ bot, state }) => !state.claimed && !bot.currentWindow,
+        run: ({ bot }) => bot.openWindow('/kit'),
+      },
+      {
+        name: 'claim kit',
+        when: ({ bot, state }) => !state.claimed && bot.getWindowTitle()?.includes('Kits'),
+        run: async ({ bot, state }) => {
+          const [kit] = bot.findWindowSlots({ name: script.settings.kit });
+          if (kit) await bot.clickWindow(kit.slot, 0, 0);
+          state.claimed = true;
+        },
+      },
+      { name: 'done', when: ({ state }) => state.claimed, run: ({ machine }) => machine.stop() }, // stop() also disconnects the bot
+    ],
+    { options: { username: script.settings.alt }, join: { gamemode: script.settings.gamemode, login: true } },
+  )
+    .onFinish(() => script.stop())
+    .start();
+}
+
+main();
+```
 
 ```js
 const { script } = require('jnbot');
@@ -91,8 +125,26 @@ The model focuses on English. All supplied tools must fit within the model conte
 
 Native support must be packaged for the device. Local inference supports desktop builds, Android ARM64, and iOS device and simulator builds. Other Android architectures return `AI_UNSUPPORTED_PLATFORM`. The app command UI and typing previews are not part of this API.
 
-- Use `script.forEachBot(script.getAlts(), script.settings)` for multi-alt scripts; its settings object enables standard alt filters.
+- Use `script.forEachBot(script.getAlts(), script.settings)` only when looping over several alts; its settings object enables the standard alt filters. For one alt use `BotMachine` with `options: { username }` (or `Bot.join`). Inside a `forEachBot` loop you can still hand the yielded bot to `new BotMachine(tasks, { bot })`.
 - Use `await bot.openWindow(command)` rather than sending a command then waiting for a window event.
 - Use `bot.findWindowSlots()` before relying on slot numbers and `await bot.transferItems()` for supported transfer flows.
 - Import JNbot helpers from `require('jnbot')`. Supported sandbox modules include `axios`, `events`, selected Prismarine modules, `vec3`, and `assert`; AI-authored plugins cannot use process, child processes, proxy APIs, account passwords, Fabric clients, or managed servers.
 - [IMPORTANT] Use `BotMachine` for the entire bot task. Avoid creating long functions. Split the task up into smaller steps. This will allow the bot to recover from errors like if some action failed or the bot gets suddenly kicked to hub, BotMachine allows you to deal with these scenarios much easier. For the `when` condition, try to find when the bot should perform the action. For example, if the bot doesn\'t have a window opened -> do window action. Or if specific window must be opened, we can check it using bot.getWindowTitle(). Avoid doing stuff like state.step = "step1" and then checking for state.step === "step1" in the next task.
+
+## Common mistakes
+
+Check the plugin against this list before saving it.
+
+- **`forEachBot` for one account.** `script.forEachBot(script.getAlts().slice(0, 1), ...)` or a loop over a single `altSelect` value. Use `new BotMachine(tasks, { options: { username }, join: { gamemode, login: true } })` or `Bot.join` instead.
+- **Not awaiting work inside a `forEachBot` loop.** The bot is ended as soon as the loop body returns, so starting a BotMachine or registering listeners without awaiting them disconnects the bot immediately. Await the work, e.g. `await new Promise((resolve) => new BotMachine(tasks, { bot }).onFinish(resolve).start())`.
+- **Sharing one task array between machines.** `once` progress is stored on the task objects, so build the tasks in a function and call it per bot.
+- **Step counters in BotMachine state.** `state.step = 2` then `when: ({ state }) => state.step === 2` breaks after a kick or failed action. Guard on what the bot can observe: open window and its title, inventory contents, position, timestamps.
+- **One long linear `async` function.** It cannot recover from kicks, lag or a menu that did not open. Split it into BotMachine tasks.
+- **Sending a command and waiting for `windowOpen`.** Use `const window = await bot.openWindow(command)` and handle `null` (timed out).
+- **Hard-coded slot numbers.** Menus differ per server and update; look items up with `bot.findWindowSlots({ name })` or `{ lore }`.
+- **Hard-coded values the user may want to change.** Commands, item names, accounts, gamemodes, delays and amounts belong in options. Never give passwords, tokens or API keys a default value.
+- **Joining a bot inside an action.** Actions receive an already-connected bot; only normal plugins join.
+- **Deprecated globals.** Import everything from `require('jnbot')` (`script`, `Bot`, `BotMachine`, ...) instead of the global `script`, `join`, `BotMachine` or `BotStatemachine`; use `console.log` instead of `log`.
+- **Using `script.llm` without `await script.llm.isAvailable()`.** Most users have no AI provider; notify them and stop instead of throwing.
+- **Forgetting `main()`.** Normal plugins must call `main()` at the end of the file; actions must not.
+- **Inventing API members.** If a method is not in the reference, it does not exist. Look it up with `get_jnbot_reference` or ask instead of guessing.

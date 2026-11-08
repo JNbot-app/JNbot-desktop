@@ -13,15 +13,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
 const typeRoot = path.join(appRoot, 'src/common/types');
 
+// `topic` picks the split website context file (llm-<topic>.txt) a source lands in.
 const TYPE_SOURCES = [
-  { id: 'botApi', label: 'Bot API', file: path.join(typeRoot, 'botApi.d.ts') },
-  { id: 'mcClientApi', label: 'Minecraft client API', file: path.join(typeRoot, 'McClientApi.d.ts') },
-  { id: 'mcServerApi', label: 'Minecraft server API', file: path.join(typeRoot, 'mcServerApi.d.ts') },
-  { id: 'proxyApi', label: 'JNbot proxy API', file: path.join(typeRoot, 'proxyApi.d.ts') },
-  { id: 'pluginOptions', label: 'Plugin options', file: path.join(typeRoot, 'pluginOptions.d.ts') },
-  { id: 'pluginApi', label: 'JNbot plugin API', file: path.join(typeRoot, 'pluginApi.d.ts') },
-  { id: 'brainApi', label: 'Brain API', file: path.join(typeRoot, 'brainApi.d.ts') },
-  { id: 'declarePlugin', label: 'Plugin declarations', file: path.join(typeRoot, 'declarePlugin.d.ts') },
+  { id: 'botApi', label: 'Bot API', topic: 'bot-api', file: path.join(typeRoot, 'botApi.d.ts') },
+  { id: 'mcClientApi', label: 'Minecraft client API', topic: 'mc-client-api', file: path.join(typeRoot, 'McClientApi.d.ts') },
+  { id: 'mcServerApi', label: 'Minecraft server API', topic: 'mc-server-api', file: path.join(typeRoot, 'mcServerApi.d.ts') },
+  { id: 'proxyApi', label: 'JNbot proxy API', topic: 'proxy-api', file: path.join(typeRoot, 'proxyApi.d.ts') },
+  { id: 'pluginOptions', label: 'Plugin options', topic: 'script-api', file: path.join(typeRoot, 'pluginOptions.d.ts') },
+  { id: 'pluginApi', label: 'JNbot plugin API', topic: 'script-api', file: path.join(typeRoot, 'pluginApi.d.ts') },
+  { id: 'brainApi', label: 'Brain API', topic: 'brain-api', file: path.join(typeRoot, 'brainApi.d.ts') },
+  { id: 'declarePlugin', label: 'Plugin declarations', topic: 'script-api', file: path.join(typeRoot, 'declarePlugin.d.ts') },
+];
+
+const LLM_TOPICS = [
+  { id: 'guide', title: 'Plugin authoring guide', use: 'Start here: entrypoints, single-alt vs multi-alt joining, BotMachine, options, examples.' },
+  { id: 'examples', title: 'Complete example plugins', use: 'Full plugins with option schemas: single-alt BotMachine, multi-alt forEachBot, AI chat, chain action.' },
+  { id: 'script-api', title: 'Script API', use: "`require('jnbot')` exports, `script.*`, BotMachine, Bot.join, option schema types." },
+  { id: 'bot-api', title: 'Bot API', use: 'The mineflayer bot plus JNbot helpers (windows, items, transfers, movement).' },
+  { id: 'mc-client-api', title: 'Minecraft client API', use: 'Driving a real Minecraft client launched with the JNbot Client mod.' },
+  { id: 'mc-server-api', title: 'Minecraft server API', use: 'Managed servers: commands, players, worlds.' },
+  { id: 'proxy-api', title: 'Proxy API', use: 'ProxyServer, sessions, packet pipelines and proxy plugins.' },
+  { id: 'brain-api', title: 'Brain API', use: 'Learned bots: record a player, train, run on a bot.' },
 ];
 
 const MCP_CONTEXT_DECLARATIONS = [
@@ -55,12 +67,12 @@ const GUIDE_CONST = path.join(appRoot, 'src/common/pluginAuthoringGuideSource.ts
 const MCP_REFERENCE_CONST = path.join(appRoot, 'src/common/pluginMcpReferenceSource.ts');
 const GUIDE_SRC = path.join(appRoot, 'src/common/types/plugin-authoring.md');
 const EXAMPLES_SRC = path.join(appRoot, 'src/common/types/plugin-examples.md');
+const FULL_EXAMPLES_SRC = path.join(appRoot, 'src/common/types/plugin-full-examples.md');
 const LLM_OUT = path.join(appRoot, 'assets/llm-all.txt');
-const EXTERNAL_OUTPUTS = [
-  path.resolve(appRoot, '../websitev3/public/llm/llm-all.txt'),
-];
-
-const IMPORTANT_NOTE = '[IMPORTANT] Use `BotMachine` for the entire bot task. Avoid creating long functions. Split the task up into smaller steps. This will allow the bot to recover from errors like if some action failed or the bot gets suddenly kicked to hub, BotMachine allows you to deal with these scenarios much easier. For the `when` condition, try to find when the bot should perform the action. For example, if the bot doesn\'t have a window opened -> do window action. Or if specific window must be opened, we can check it using bot.getWindowTitle(). Avoid doing stuff like state.step = "step1" and then checking for state.step === "step1" in the next task.'
+const WEBSITE_LLM_DIR = path.resolve(appRoot, '../websitev3/public/llm');
+const WEBSITE_URL = 'https://jnbot.netlify.app';
+const INDEX_START = '<!-- jnbot-context-files:start -->';
+const INDEX_END = '<!-- jnbot-context-files:end -->';
 
 const BANNER =
   '// AUTO-GENERATED — do not edit by hand.\n' +
@@ -212,19 +224,20 @@ function compactInterface(source, name, memberNames) {
 
 const sources = TYPE_SOURCES.map(({ label, file }) => prepareSource(label, file));
 const types = `${sources.join('\n\n')}\n`;
-const guide = fs.readFileSync(GUIDE_SRC, 'utf8').replace(/[ \t]+$/gm, '').trim();
-const examples = fs.readFileSync(EXAMPLES_SRC, 'utf8').replace(/[ \t]+$/gm, '').trim();
+const readMarkdown = (file) => fs.readFileSync(file, 'utf8').replace(/[ \t]+$/gm, '').trim();
+const guide = readMarkdown(GUIDE_SRC);
+const examples = readMarkdown(EXAMPLES_SRC);
+const fullExamples = readMarkdown(FULL_EXAMPLES_SRC);
 const authoringContext = [guide, examples].filter(Boolean).join('\n\n');
-const reference = `# JNbot Plugin Authoring Reference\n\n${authoringContext}\n\n# Full Plugin API Types\n\n\`\`\`ts\n${types}\`\`\`\n\n\n${IMPORTANT_NOTE}\n`;
+const reference = `# JNbot Plugin Authoring Reference\n\n${authoringContext}\n\n${fullExamples}\n\n# Full Plugin API Types\n\n\`\`\`ts\n${types}\`\`\`\n`;
 const compactGuide = guide.replace(/```[\s\S]*?```/g, '').replace(/\n{3,}/g, '\n\n').trim();
 const compactApi = MCP_CONTEXT_DECLARATIONS.map(({ id, name, file, members }) => {
   const declaration = compactInterface(fs.readFileSync(file, 'utf8'), name, members);
   return `## ${id}\n\n\`\`\`ts\n${declaration}\n\`\`\``;
 }).join('\n\n');
-const apiReferenceSources = TYPE_SOURCES.filter(({ id }) => id !== 'declarePlugin');
-const referenceSectionIds = ['authoring', ...apiReferenceSources.map(({ id }) => id)];
+const referenceSectionIds = ['authoring', 'examples', ...TYPE_SOURCES.map(({ id }) => id)];
 const referenceSectionMarkers = Object.fromEntries(
-  apiReferenceSources.map(({ id, label }) => [
+  TYPE_SOURCES.map(({ id, label }) => [
     id,
     `// ─── ${label} ───────────────────────────────────────────────────────────`,
   ]),
@@ -246,7 +259,9 @@ writeGenerated(
 );
 writeGenerated(
   GUIDE_CONST,
-  BANNER + 'export const PLUGIN_AUTHORING_GUIDE = ' + JSON.stringify(authoringContext) + ';\n',
+  BANNER +
+    'export const PLUGIN_AUTHORING_GUIDE = ' + JSON.stringify(authoringContext) + ';\n' +
+    'export const PLUGIN_FULL_EXAMPLES = ' + JSON.stringify(fullExamples) + ';\n',
 );
 writeGenerated(
   MCP_REFERENCE_CONST,
@@ -258,7 +273,42 @@ writeGenerated(
 );
 writeGenerated(LLM_OUT, reference);
 
-for (const output of includeExternal ? EXTERNAL_OUTPUTS : []) {
-  if (!fs.existsSync(path.dirname(output))) continue;
-  writeGenerated(output, reference);
+// Website context: llm-all.txt (everything, kept for existing links) plus one
+// file per topic so agents can fetch only what a task needs.
+function topicFile({ id, title }) {
+  const header =
+    `# JNbot context: ${title}\n\n` +
+    `Part of the JNbot LLM context. Index: ${WEBSITE_URL}/llm.txt. Everything in one file: ${WEBSITE_URL}/llm-all.txt.\n`;
+  if (id === 'guide') return `${header}\n${authoringContext}\n`;
+  if (id === 'examples') return `${header}\n${fullExamples}\n`;
+  const body = TYPE_SOURCES.filter((source) => source.topic === id)
+    .map(({ label, file }) => prepareSource(label, file))
+    .join('\n\n');
+  return (
+    `${header}Types may reference declarations from the other API files. Read llm-guide.txt for the patterns to use.\n\n` +
+    `\`\`\`ts\n${body}\n\`\`\`\n`
+  );
+}
+
+function contextIndex(files) {
+  const lines = files.map(
+    ({ topic, content }) =>
+      `- [${topic.title}](${WEBSITE_URL}/llm/llm-${topic.id}.txt) (~${Math.round(content.length / 4000)}k tokens): ${topic.use}`,
+  );
+  lines.push(`- [Everything](${WEBSITE_URL}/llm-all.txt) (~${Math.round(reference.length / 4000)}k tokens): all of the above in one file.`);
+  return `${INDEX_START}\n## JNbot plugin context files\n\nFetch only the files the task needs; types are generated from the app source.\n\n${lines.join('\n')}\n${INDEX_END}`;
+}
+
+if (includeExternal && fs.existsSync(WEBSITE_LLM_DIR)) {
+  writeGenerated(path.join(WEBSITE_LLM_DIR, 'llm-all.txt'), reference);
+  const files = LLM_TOPICS.map((topic) => ({ topic, content: topicFile(topic) }));
+  for (const { topic, content } of files) {
+    writeGenerated(path.join(WEBSITE_LLM_DIR, `llm-${topic.id}.txt`), content);
+  }
+  const indexFile = path.join(WEBSITE_LLM_DIR, 'llm.txt');
+  const index = fs.readFileSync(indexFile, 'utf8');
+  const start = index.indexOf(INDEX_START);
+  const end = index.indexOf(INDEX_END);
+  if (start < 0 || end < 0) throw new Error(`Missing ${INDEX_START} / ${INDEX_END} markers in ${indexFile}`);
+  writeGenerated(indexFile, index.slice(0, start) + contextIndex(files) + index.slice(end + INDEX_END.length));
 }

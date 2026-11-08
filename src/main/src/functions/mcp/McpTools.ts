@@ -545,7 +545,7 @@ export function createMcpTools(manager: McpManager, client: McpClientContext): M
     read(
       'get_jnbot_reference',
       'Get JNbot reference section',
-      'Fetch one complete generated JNbot API reference section. Use it when the authoring guide lacks an API detail; do not guess undocumented members.',
+      'Fetch one complete generated JNbot reference section: `authoring` (guide), `examples` (complete example plugins), `declarePlugin` (require(\'jnbot\') exports such as Bot, BotMachine, join) or an API section. Use it when the authoring guide lacks a detail; do not guess undocumented members.',
       z.object({
         section: z.enum(JNBOT_REFERENCE_SECTION_IDS).describe(`Reference section to return: ${JNBOT_REFERENCE_SECTION_IDS.join(', ')}.`),
       }).strict(),

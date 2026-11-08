@@ -9,7 +9,7 @@
     "build:needle": "node scripts/build-needle.mjs",
     "prepare:needle-mobile": "node scripts/prepare-needle-mobile.mjs",
     "start:cli": "cross-env NODE_ENV=development ./release/app/dist/cli/jnbot",
-    "build": "npm run build:plugin-reference && concurrently \"npm run build:main\" \"npm run build:renderer\"",
+    "build": "npm run sync:plugin-reference && concurrently \"npm run build:main\" \"npm run build:renderer\"",
     "prebuild:main": "node scripts/patch-minecraft-data.mjs",
     "build:main": "node esbuild/esbuild.config.main.prod.js",
     "build:renderer": "rm -rf ./release/app/dist/renderer && vite build --config src/renderer/vite.prod.config.ts",
