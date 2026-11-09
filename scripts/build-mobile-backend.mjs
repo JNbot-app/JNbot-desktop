@@ -22,8 +22,12 @@ const mobileBackend = path.join(
 const electronMockPlugin = {
   name: 'electron-mock',
   setup(build) {
-    build.onResolve({ filter: /^axios$/ }, () => ({
-      path: path.join(root, 'src/mobile-backend/mobileHttp.ts'),
+    // CommonJS wrapper so both `require('axios')` (plugins, legacy JS) and
+    // `import axios from 'axios'` receive the axios object, not the ES namespace.
+    build.onResolve({ filter: /^axios$/ }, () => ({ path: 'axios', namespace: 'mobile-axios' }));
+    build.onLoad({ filter: /.*/, namespace: 'mobile-axios' }, () => ({
+      contents: "module.exports = require('./mobileHttp.ts').default;",
+      loader: 'js', resolveDir: path.join(root, 'src/mobile-backend'),
     }));
     build.onResolve({ filter: /^discord\.js$/ }, () => ({ path: 'discord.js', namespace: 'mobile-discord-disabled' }));
     build.onLoad({ filter: /.*/, namespace: 'mobile-discord-disabled' }, () => ({
