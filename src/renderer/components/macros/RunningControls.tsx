@@ -40,6 +40,7 @@ const RunningControls: FC<{
   const stopButton = (
     <Button
       {...buttonProps}
+      type={buttonProps?.type ?? 'primary'}
       danger
       icon={stopIcon}
       aria-label={stopLabel || 'Stop'}
@@ -55,6 +56,7 @@ const RunningControls: FC<{
   const addButton = (
     <Button
       {...buttonProps}
+      type={buttonProps?.type === 'primary' ? 'default' : buttonProps?.type}
       icon={<PlusOutlined />}
       aria-label="Run another instance"
       loading={starting}

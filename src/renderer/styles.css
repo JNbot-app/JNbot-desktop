@@ -1015,31 +1015,40 @@ textarea.mc-field {
 }
 
 .script-settings-btn {
-  border: none;
-  background-color: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
   padding: 3px 5px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  color: rgba(255, 255, 255, 0.85);
+  background-color: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(6px);
+  border-radius: 8px;
 }
 
-.script-settings-btn:hover {
-  background-color: rgba(255, 255, 255, 0.2);
+.script-settings-btn:hover:not(:disabled) {
+  color: #fff !important;
+  background-color: rgba(255, 255, 255, 0.24) !important;
 }
 
 .script-run-btn {
   height: auto !important;
   padding: 4px 15px;
   font-weight: 500;
-  border-radius: 4px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  transition: all 0.2s ease !important;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
-.script-run-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
+/* Secondary (add-instance) button of the running controls, on the dark overlay */
+.script-card-buttons .script-run-btn.ant-btn-default {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.16);
+  border-color: transparent;
+  backdrop-filter: blur(6px);
+}
+
+.script-card-buttons .script-run-btn.ant-btn-default:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.28);
+  color: #fff;
 }
 
 /* Script modal styles */

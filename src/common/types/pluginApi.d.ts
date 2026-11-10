@@ -742,6 +742,15 @@ export interface ConsoleAPI {
 
 export type Awaitable<T> = T | Promise<T>;
 
+/**
+ * Enters `gamemode` on servers the built-in join flow does not fit. Resolve
+ * once the bot is there; return `false` or throw when it could not get there.
+ */
+export type JoinHandler = (gamemode: string, bot: Bot) => Awaitable<boolean | void>;
+
+/** Reads the bot's current gamemode (scoreboard, tab list, world, ...); null when unknown. */
+export type GamemodeDetector = (bot: Bot) => string | null | undefined;
+
 export interface BotMachine<S extends object = Record<string, unknown>>
   extends BotMachineControls {
   bot: Bot | null;
@@ -918,7 +927,27 @@ export type BotPluginExtensions = {
   mainVersion: number;
   join: (gamemode: string, options?: Record<string, unknown>) => Promise<void>;
   isOnline: () => boolean;
+  /** Current gamemode from the detector, else the last gamemode a join confirmed. */
   getGamemode: () => string | null;
+  /**
+   * Replace how this bot enters a gamemode; used by `bot.join`, `BotMachine`
+   * and `Bot.join({ gamemode })`. Set it from the profile's on-join action,
+   * before any `await`. Pass `null` to restore the built-in flow.
+   *
+   * @example
+   *   bot.setJoinHandler(async (gamemode, bot) => {
+   *     bot.chat(`/warp ${gamemode}`);
+   *     await bot.waitForTicks(40);
+   *   });
+   */
+  setJoinHandler: (handler: JoinHandler | null) => void;
+  /**
+   * Tell `bot.getGamemode()` how to read the current gamemode on this server.
+   *
+   * @example
+   *   bot.setGamemodeDetector((bot) => bot.scoreboard.sidebar?.title ?? null);
+   */
+  setGamemodeDetector: (detector: GamemodeDetector | null) => void;
   itemInfo(item: Item | null): { name: string; info: string };
   login: (password?: string) => Promise<void>; // Only works if you call this in the start of bot
   /**

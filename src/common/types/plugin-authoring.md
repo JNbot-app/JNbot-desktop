@@ -61,6 +61,21 @@ async function main(bot, settings, args = []) {
 }
 ```
 
+When a server's gamemode join or gamemode display does not match JNbot's defaults, override them per bot from the profile's on-join action, before any `await`. `bot.join`, `BotMachine` and `Bot.join({ gamemode })` all use the handler; reconnects, relog retries and sessions keep working. The handler resolves once the bot is in the gamemode and returns `false` or throws when it could not get there. The detector makes `bot.getGamemode()` report the current gamemode; without one it reports the last gamemode a join confirmed.
+
+```js
+async function main(bot) {
+  bot.setGamemodeDetector((bot) => bot.scoreboard.sidebar?.title ?? null);
+  bot.setJoinHandler(async (gamemode, bot) => {
+    await bot.openWindow('/menu');
+    const [item] = bot.findWindowSlots({ name: gamemode });
+    if (!item) return false;
+    await bot.clickWindow(item.slot, 0, 0);
+    await bot.waitForTicks(40);
+  });
+}
+```
+
 In a chain, `args[0]` holds the values returned by earlier steps (plus `alt`, the bot's username). Return an object to add values for later steps, which users can insert into text options as `{name}`. Return `false` or throw to mark the step as failed, so the chain follows its "If it fails" choice. A chain can be started like a plugin with `script.startPlugin({ pluginId: 'chain:<chainId>' })`.
 
 ## Options

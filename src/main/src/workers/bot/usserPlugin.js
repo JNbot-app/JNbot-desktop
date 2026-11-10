@@ -16,6 +16,7 @@ const {
   default: joinGamemode,
 } = require('./statemachines/joinGamemode/joinGamemodeBehaviourV3');
 const { default: workerScript } = require('../lib/workerScript');
+const { installGamemodeApi } = require('./gamemode');
 const alphabet = {
   ᴀ: 'a',
   ʙ: 'b',
@@ -60,7 +61,7 @@ const inject = (bot) => {
     if (blockData) ignoreBlocksIds.add(blockData.id);
   }
 
-  bot.getGamemode = () => null;
+  installGamemodeApi(bot);
 
   bot.__login = async (pass) => {
     const altData = workerScript.settings.altData[bot.username] ?? {}

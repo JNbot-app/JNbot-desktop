@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import BotMachine from '../../src/main/src/workers/bot/statemachines/BotMachine';
 import joinGamemode from '../../src/main/src/workers/bot/statemachines/joinGamemode/joinGamemodeBehaviourV3';
+import { installGamemodeApi } from '../../src/main/src/workers/bot/gamemode';
 
 let mockJoinBehaviour: Record<string, unknown>;
 
@@ -48,7 +49,8 @@ function createBot(
   bot.currentWindow = null;
   bot.entity = null;
   bot.isOnline = jest.fn(() => true);
-  bot.getGamemode = jest.fn(getDetectedGamemode);
+  installGamemodeApi(bot);
+  bot.setGamemodeDetector(getDetectedGamemode);
   bot.waitForTicks = jest.fn(async () => {});
   bot.chat = jest.fn((command: string) => {
     const match = /^\/server (.+)$/.exec(command);
@@ -155,5 +157,42 @@ describe('joining a gamemode', () => {
 
     expect(bot.chat).not.toHaveBeenCalledWith('/server prison');
     expect(bot.getGamemode()).toBe('prison');
+  });
+
+  test('a join handler replaces the built-in flow and confirms the gamemode', async () => {
+    const bot = createBot();
+    const handler = jest.fn(async () => {});
+    bot.setJoinHandler(handler);
+
+    await joinGamemode(bot, 'prison');
+
+    expect(handler).toHaveBeenCalledWith('prison', bot);
+    expect(bot.chat).not.toHaveBeenCalled();
+    expect(bot.getGamemode()).toBe('prison');
+  });
+
+  test('a join handler fails when it returns false or the detector disagrees', async () => {
+    let detected: string | null = null;
+    const bot = createBot(() => detected);
+
+    bot.setJoinHandler(() => false);
+    await expect(joinGamemode(bot, 'prison')).rejects.toThrow('could not reach prison');
+
+    detected = 'lobby';
+    bot.setJoinHandler(() => true);
+    await expect(joinGamemode(bot, 'prison')).rejects.toThrow('could not reach prison');
+    expect(bot.getGamemode()).toBe('lobby');
+  });
+
+  test('assigning getGamemode installs a detector without losing the confirmed fallback', async () => {
+    const bot = createBot();
+    let detected: string | null = null;
+    bot.getGamemode = () => detected;
+
+    await joinGamemode(bot, 'prison');
+    expect(bot.getGamemode()).toBe('prison');
+
+    detected = 'lobby';
+    expect(bot.getGamemode()).toBe('lobby');
   });
 });

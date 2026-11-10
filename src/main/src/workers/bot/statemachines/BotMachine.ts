@@ -16,9 +16,9 @@ import BotSession, {
   type BotSessionSnapshot,
 } from '../BotSession';
 import joinGamemode, {
-  gamemodeMatches,
   type JoinTargets,
 } from './joinGamemode/joinGamemodeBehaviourV3';
+import { gamemodeMatches } from '../gamemode';
 
 export type {
   Action,

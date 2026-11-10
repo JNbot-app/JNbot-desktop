@@ -21,7 +21,7 @@ import {
   EllipsisOutlined,
   ExportOutlined,
   LinkOutlined,
-  PauseOutlined,
+  StopOutlined,
   PushpinFilled,
   PushpinOutlined,
   SyncOutlined,
@@ -333,7 +333,7 @@ const ActionBar: React.FC<{
               pluginId={plugin.pluginId}
               name={plugin.name}
               stopLabel={plugin.scriptType === 'action' ? 'Stop Action' : 'Stop Plugin'}
-              stopIcon={<PauseOutlined />}
+              stopIcon={<StopOutlined />}
             />
           ) : (
             <Button type="primary" icon={<CaretRightOutlined />} onClick={() => onRun()}>
@@ -348,7 +348,6 @@ const ActionBar: React.FC<{
             >
               <Button
                 type={running ? 'default' : 'primary'}
-                danger={running}
                 icon={<EllipsisOutlined />}
               />
             </Dropdown>

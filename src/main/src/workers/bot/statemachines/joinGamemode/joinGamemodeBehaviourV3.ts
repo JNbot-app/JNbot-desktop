@@ -7,7 +7,13 @@ import {
 } from 'common/joinBehaviour';
 import { gamemodeKey } from 'common/profiles';
 import { Bot } from 'main/src/workers/workerTypes';
-import type { Task } from 'common/types/pluginApi';
+import {
+  confirmGamemode,
+  detectedGamemode,
+  gamemodeMatches,
+  getJoinHandler,
+} from '../../gamemode';
+import type { JoinHandler, Task } from 'common/types/pluginApi';
 import BotMachine from '../BotMachine';
 import { BotEvents } from 'common/types/botApi';
 
@@ -29,12 +35,9 @@ import { BotEvents } from 'common/types/botApi';
  *   - A large `move` delta after a join attempt.
  *   - "You are in position N of M" messages → bot is queued, we wait.
  *
- * The join flow is expressed as native {@link BotMachine} tasks — prioritised
- * `{ when, run }` steps where the first match each tick runs. {@link createJoinTasks}
- * returns them ready to splice into a `BotMachine`'s task list (the machine
- * owns the tick loop and shared `state`). For the deprecated `BotStatemachine`,
- * the default export {@link joinGamemode} adapts the very same steps
- * back into a `Statemachine`; new code should prefer {@link createJoinTasks}.
+ * The flow runs as prioritised {@link BotMachine} tasks (`{ when, run }`, the
+ * first match each tick runs). A handler set with `bot.setJoinHandler` replaces
+ * the whole flow for servers these defaults do not fit.
  */
 
 /** Per-attempt bookkeeping shared across ticks. */
@@ -108,56 +111,7 @@ function looksLikeSelector(title: string): boolean {
   return SELECTOR_WINDOW_HINTS.some((h) => t.includes(h));
 }
 
-type GamemodeTracker = {
-  detect: () => string | null | undefined;
-  confirmed: string | null;
-};
-
-const gamemodeTrackers = new WeakMap<Bot, GamemodeTracker>();
-
-function trackGamemode(bot: Bot): GamemodeTracker {
-  const tracked = gamemodeTrackers.get(bot);
-  if (tracked) return tracked;
-
-  const detect = bot.getGamemode.bind(bot);
-  const tracker: GamemodeTracker = { detect, confirmed: null };
-  gamemodeTrackers.set(bot, tracker);
-  bot.getGamemode = () => {
-    const sessionBot = bot.session?.bot;
-    if (sessionBot && sessionBot !== bot) {
-      return sessionBot.getGamemode?.() ?? null;
-    }
-    return detectorValue(tracker) ?? tracker.confirmed;
-  };
-  return tracker;
-}
-
-function detectorValue(tracker: GamemodeTracker): string | null {
-  const detected = tracker.detect();
-  return typeof detected === 'string' && detected.trim() ? detected : null;
-}
-
-function confirmGamemode(bot: Bot, targetKey: string): void {
-  trackGamemode(bot).confirmed = targetKey;
-}
-
-function detectedGamemode(bot: Bot): string | null {
-  return detectorValue(trackGamemode(bot));
-}
-
-export function gamemodeMatches(
-  actual: string | null | undefined,
-  targetKey: string,
-): boolean {
-  if (!actual) return false;
-  return gamemodeKey(actual).includes(gamemodeKey(targetKey));
-}
-
-/**
- * Build the prioritised join steps as native `BotMachine` tasks. Each tick the
- * driving machine runs the first task whose `when()` returns true. The steps
- * `bot.getGamemode()` gate (e.g. {@link createJoinTasks}) wrap these.
- */
+/** The built-in join steps, run by a `BotMachine` until one finishes it. */
 function buildJoinTasks(): Task<JoinTargets>[] {
   const tasks: Task<JoinTargets>[] = [
     {
@@ -181,7 +135,6 @@ function buildJoinTasks(): Task<JoinTargets>[] {
       name: 'Setting up listeners',
       when: ({ state }) => !state.__join_events,
       run: ({ bot, state, machine }) => {
-        trackGamemode(bot);
         const profile = workerScript.getProfile();
         const behaviour = getJoinBehaviour(
           profile?.data,
@@ -381,7 +334,7 @@ function buildJoinTasks(): Task<JoinTargets>[] {
 }
 
 /** Tear down everything the join steps attached to the bot/state. */
-export function runJoinCleanup(bot: Bot | null, state: JoinTargets): void {
+function runJoinCleanup(bot: Bot | null, state: JoinTargets): void {
   if (state.__join_data) {
     state.__join_data.in_queue = false;
     state.__join_data.cmdSent = false;
@@ -407,32 +360,17 @@ export function runJoinCleanup(bot: Bot | null, state: JoinTargets): void {
 }
 
 /**
- * Native `BotMachine` join steps, ready to splice into a machine's task list.
- * Each step is gated on `bot.getGamemode()` so the whole flow goes quiet the
- * moment the bot is actually in the target gamemode — the machine then falls
- * through to the user's own tasks.
- *
- * @example
- *   new BotMachine(
- *     [...createJoinTasks(), ...userTasks],
- *     { join: { gamemode: 'survival' } },
- *   )
- */
-export function createJoinTasks(): Task<JoinTargets>[] {
-  return buildJoinTasks();
-}
-
-/**
- * Legacy adapter: wraps the join steps in a `Statemachine` so the deprecated
- * `BotStatemachine` can still nest it as a behaviour `action`. The
- * `BotStatemachine` provides its own `bot.getGamemode()` gate, so these steps
- * use {@link createJoinTasks} instead.
+ * Enter `gamemode`: through the bot's custom join handler when one is set,
+ * otherwise through the built-in flow. Rejects when the bot cannot get there.
  */
 function joinGamemode(
   bot: Bot,
   gamemode: string,
   options: { optimisticJoin?: boolean } = {},
 ): Promise<void> {
+  const handler = getJoinHandler(bot);
+  if (handler) return runJoinHandler(bot, gamemode, handler);
+
   return new Promise((resolve, reject) => {
     new BotMachine(buildJoinTasks(), {
       bot,
@@ -448,6 +386,23 @@ function joinGamemode(
       })
       .start();
   });
+}
+
+/**
+ * Run a user join handler. Returning `false` or throwing fails the join, as
+ * does a detector that reports another gamemode afterwards.
+ */
+async function runJoinHandler(
+  bot: Bot,
+  gamemode: string,
+  handler: JoinHandler,
+): Promise<void> {
+  const joined = await handler(gamemode, bot);
+  const detected = detectedGamemode(bot);
+  if (joined === false || (detected && !gamemodeMatches(detected, gamemode))) {
+    throw new Error(`${bot.username} could not reach ${gamemode}.`);
+  }
+  confirmGamemode(bot, gamemode);
 }
 
 async function runCommand(
