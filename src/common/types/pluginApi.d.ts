@@ -217,6 +217,8 @@ export type PromptOptions = {
   placeholder?: string;
   defaultValue?: string;
   description?: string;
+  /** Image URL (e.g. a data URI) shown above the input */
+  image?: string;
 };
 
 export type NotificationOptions = {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Button, Input, Modal, Typography } from 'antd';
+import { Button, Flex, Image, Input, Modal, Typography } from 'antd';
 
 const { Text } = Typography;
 
@@ -15,6 +15,7 @@ interface PromptData {
   runtimeScriptId?: number;
   messageAddress?: number;
   description?: string;
+  image?: string;
 }
 
 const Prompt: React.FC = () => {
@@ -82,6 +83,16 @@ const Prompt: React.FC = () => {
           <div style={{ marginBottom: 12 }}>
             <Text type="secondary">{value.description}</Text>
           </div>
+        )}
+        {value.image && (
+          <Flex justify="center" style={{ marginBottom: 12 }}>
+            <Image
+              src={value.image}
+              width={256}
+              preview={false}
+              style={{ imageRendering: 'pixelated' }}
+            />
+          </Flex>
         )}
         <Text>{value.label}</Text>
         <Input

@@ -63,6 +63,7 @@ export function prompt(opts: PromptOptions): Promise<{ response: string }> {
       placeholder: opts.placeholder,
       defaultValue: opts.defaultValue,
       description: opts.description,
+      image: opts.image,
       promptID,
       scriptInstance: workerData.id,
       scriptId: workerData.pluginId,

@@ -119,6 +119,11 @@ function joinGamemodeBehaviourV2() {
           targets.__join_data.joinCommand[3].split('.')[1],
         );
 
+        if(bot.currentWindow) {
+          bot.closeWindow(bot.currentWindow);
+          await bot.waitForTicks(5);
+        }
+
         if (version < minVersion) {
           const msg = `${bot.username} is on version ${bot.version} but ${targets.joinOptions.gamemode} requires ${targets.__join_data.joinCommand?.[3]}`;
           global.log(`[State] ${msg}`, 'warning');
@@ -132,7 +137,7 @@ function joinGamemodeBehaviourV2() {
           })
           if (!response || response === 'stop_script')
             process.exit(0);
-        }
+        }        
       },
     },
     {
@@ -199,18 +204,18 @@ function joinGamemodeBehaviourV2() {
         }
       },
     },
-    {
-      name: 'Closing current window',
-      shouldTrigger: (bot, targets) =>
-        !targets.__join_data.hasFinished &&
-        !bot.getWindowTitle().toLowerCase().includes('server selector'),
-      action: async (bot, targets) => {
-        targets.__join_stuck_counter = 0;
-        console.log('Window: ', bot.getWindowTitle());
-        bot.closeWindow(bot.currentWindow);
-        await bot.waitForTicks(5);
-      },
-    },
+    // {
+    //   name: 'Closing current window',
+    //   shouldTrigger: (bot, targets) =>
+    //     !targets.__join_data.hasFinished &&
+    //     !bot.getWindowTitle().toLowerCase().includes('server selector'),
+    //   action: async (bot, targets) => {
+    //     targets.__join_stuck_counter = 0;
+    //     console.log('Window: ', bot.getWindowTitle());
+    //     bot.closeWindow(bot.currentWindow);
+    //     await bot.waitForTicks(5);
+    //   },
+    // },
     {
       name: 'Clicking on gamemode',
       shouldTrigger: (bot, targets) =>

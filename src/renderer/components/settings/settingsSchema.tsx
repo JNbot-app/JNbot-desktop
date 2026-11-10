@@ -226,6 +226,14 @@ export function getSettingsSchema(): SettingTab[] {
             description: 'Automatically open a browser when V4guard flags you',
           },
           {
+            name: 'Map captcha prompt',
+            key: 'captcha_prompt',
+            type: 'switch',
+            default: false,
+            description:
+              'When a bot holds a map right after joining, show it to you so you can type the captcha code.',
+          },
+          {
             name: 'Auto resource pack accept',
             key: 'autoResourcePackAccept',
             type: 'switch',

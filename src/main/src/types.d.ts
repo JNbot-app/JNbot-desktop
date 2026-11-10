@@ -319,6 +319,7 @@ type AppSettingOption = Partial<
     worker_optimize_for_size?: boolean;
     render_distance?: number;
     reduced_events?: boolean;
+    captcha_prompt?: boolean;
   }
 >;
 

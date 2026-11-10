@@ -316,6 +316,7 @@ export type ScriptPromptPayload = {
   placeholder?: string;
   defaultValue?: string;
   description?: string;
+  image?: string;
   promptID: string;
   messageAddress: number;
   scriptInstance?: string;
