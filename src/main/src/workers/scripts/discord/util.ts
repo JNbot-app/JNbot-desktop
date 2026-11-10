@@ -25,7 +25,7 @@ export const COLOR_WARN = 0xf59e0b;
 
 export const FOOTER = {
   text: 'Powered by JNbot',
-  iconURL: 'https://i.ibb.co/Hf3Z3Z5d/icon.png',
+  iconURL: 'https://raw.githubusercontent.com/JNbot-app/JNbot-desktop/main/assets/icon.png',
 };
 
 export type EmbedKind = 'info' | 'success' | 'error' | 'primary' | 'warn';

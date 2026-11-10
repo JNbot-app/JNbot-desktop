@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react';
-import { Button, Flex, Input, theme } from 'antd';
-import { ArrowUpOutlined } from '@ant-design/icons';
+import { Button, Flex, Input, Tooltip, theme } from 'antd';
+import { ArrowUpOutlined, BulbOutlined } from '@ant-design/icons';
 import type { TextAreaRef } from 'antd/es/input/TextArea';
 import useLlm from '../../hooks/useLlm';
 import useLlmRun, { type LlmRun } from '../../hooks/useLlmRun';
@@ -18,6 +18,8 @@ export interface LlmPromptProps {
   writingLabel?: string;
   /** Show the reply's sentences as an answer under the prompt. */
   showAnswer?: boolean;
+  /** Start as a small link with this label; the field appears on click. */
+  collapsedLabel?: string;
   /** Use this run instead of an own one, to follow its progress (e.g. stream code into an editor). */
   ai?: LlmRun;
   /** Runs the request through `run` (which streams progress). */
@@ -25,15 +27,33 @@ export interface LlmPromptProps {
 }
 
 /** "Describe it" field with live progress. Renders nothing until an AI provider is set up. */
-const LlmPrompt = ({ placeholder, button = 'Generate', examples = [], writingLabel = 'Writing the draft', showAnswer = true, ai: shared, onSubmit }: LlmPromptProps) => {
+const LlmPrompt = ({ placeholder, button = 'Generate', examples = [], writingLabel = 'Writing the draft', showAnswer = true, collapsedLabel, ai: shared, onSubmit }: LlmPromptProps) => {
   const { configured } = useLlm();
   const { token } = theme.useToken();
   const own = useLlmRun();
   const ai = shared ?? own;
   const input = useRef<TextAreaRef>(null);
   const [text, setText] = useState('');
+  const [expanded, setExpanded] = useState(!collapsedLabel);
   const [result, setResult] = useState<LlmResult>();
   if (!configured) return null;
+
+  if (!expanded) {
+    return (
+      <Button
+        type="text"
+        size="small"
+        icon={<BulbOutlined />}
+        onClick={() => {
+          setExpanded(true);
+          setTimeout(() => input.current?.focus());
+        }}
+        style={{ alignSelf: 'flex-start', color: token.colorTextSecondary }}
+      >
+        {collapsedLabel}
+      </Button>
+    );
+  }
 
   const dismiss = () => {
     setResult(undefined);
@@ -57,9 +77,10 @@ const LlmPrompt = ({ placeholder, button = 'Generate', examples = [], writingLab
 
   return (
     <Flex vertical gap={token.marginXS}>
-      <Flex gap={token.marginXS} align="flex-end">
+      <div style={{ position: 'relative' }}>
         <Input.TextArea
           ref={input}
+          variant="filled"
           value={text}
           onChange={(event) => setText(event.target.value)}
           onPressEnter={(event) => {
@@ -67,14 +88,28 @@ const LlmPrompt = ({ placeholder, button = 'Generate', examples = [], writingLab
             event.preventDefault();
             void submit();
           }}
+          onBlur={() => {
+            if (collapsedLabel && !text && !ai.running && !ai.startedAt && !result) setExpanded(false);
+          }}
           placeholder={placeholder}
           autoSize={{ minRows: 1, maxRows: 6 }}
           disabled={ai.running}
+          style={{ paddingRight: 44 }}
         />
-        <Button type="primary" icon={<ArrowUpOutlined />} loading={ai.running} disabled={!text.trim()} onClick={() => submit()}>
-          {button}
-        </Button>
-      </Flex>
+        <Tooltip title={button}>
+          <Button
+            type="primary"
+            shape="circle"
+            size="small"
+            aria-label={button}
+            icon={<ArrowUpOutlined />}
+            loading={ai.running}
+            disabled={!text.trim()}
+            onClick={() => submit()}
+            style={{ position: 'absolute', right: 8, bottom: 6 }}
+          />
+        </Tooltip>
+      </div>
       {!text && !ai.startedAt && examples.length > 0 && (
         <Flex gap={token.marginXXS} wrap>
           {examples.map((example) => (

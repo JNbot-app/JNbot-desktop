@@ -530,6 +530,7 @@ const OptionsView: React.FC<{
     <Flex vertical gap={8}>
       <PresetBar pluginId={plugin.pluginId} />
       <LlmPrompt
+        collapsedLabel="Suggest settings with AI"
         placeholder="Describe the settings, e.g. only farm wheat and go slower"
         button="Suggest"
         writingLabel="Choosing values"
