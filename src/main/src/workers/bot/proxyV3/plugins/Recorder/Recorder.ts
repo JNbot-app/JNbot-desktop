@@ -180,6 +180,15 @@ export class DebugCapture {
     this.packetCount++;
   }
 
+  /** Writes a marker line (`m.marker`) between the packets, e.g. a task start for the replay tests. */
+  mark(name: string, params: Record<string, unknown>): void {
+    if (!this.stream) return;
+    const line = this.#serialize({ n: name, dt: Date.now() - this.#start, p: params, m: { marker: true }, d: 'c2s' });
+    if (line === null) return;
+    this.stream.write(line + '\n');
+    this.#writtenBytes += Buffer.byteLength(line) + 1;
+  }
+
   /**
    * Serializes a packet to one JSON line, tolerant of values `JSON.stringify`
    * chokes on (BigInt longs, Buffers). If serialization still fails the packet

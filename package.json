@@ -46,6 +46,7 @@
     "test:bots:scripts": "node test/protocol/run.js --scripts",
     "test:bots": "npm run test:bots:core && npm run test:bots:scripts && npm run test:scripts",
     "test:fixtures:import": "node test/protocol/import-recording.js",
+    "test:replay": "node test/replay/cli.js",
     "test:all": "npm test",
     "release": "rm -rf release/app/dist release/build && npm run build && npm run package:cli && electron-builder build -wlm -p always && npm run release:win-resources && npm run release:cli && npm run release:source && npm run release:publish",
     "release:beta": "rm -rf release/app/dist release/build && npm run build:mods && npm run build && npm run package:cli && electron-builder build -wlm -p always -c.publish.channel=beta -c.publish.releaseType=draft && npm run release:win-resources && npm run release:cli && npm run release:publish:beta",

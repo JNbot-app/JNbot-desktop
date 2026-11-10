@@ -1,0 +1,460 @@
+diff --git a/node_modules/prismarine-physics/index.js b/node_modules/prismarine-physics/index.js
+index d95ce7f..e35abe1 100644
+--- a/node_modules/prismarine-physics/index.js
++++ b/node_modules/prismarine-physics/index.js
+@@ -10,6 +10,13 @@ function makeSupportFeature (mcData) {
+ 
+ function Physics (mcData, world) {
+   const supportFeature = makeSupportFeature(mcData)
++  const horizontalNegligibleVelocity = mcData.version['>=']('1.21.2')
++  const crouchingPose = mcData.version['>=']('1.14')
++  const axisOrderBySize = mcData.version['>=']('1.14')
++  const modernFluidCheck = mcData.version['>=']('1.13')
++  const candidateStepUp = mcData.version['>=']('1.21')
++  // Player.maybeBackOffFromEdge ignores upward moves, so a sneak-jump can leave the edge (version from memory)
++  const sneakJumpLeavesEdge = mcData.version['>=']('1.20')
+   const blocksByName = mcData.blocksByName
+ 
+   // Block Slipperiness
+@@ -67,7 +74,7 @@ function Physics (mcData, world) {
+     sprintSpeed: 0.3,
+     sneakSpeed: 0.3,
+     stepHeight: 0.6, // how much height can the bot step on without jump
+-    negligeableVelocity: 0.003, // actually 0.005 for 1.8, but seems fine
++    negligeableVelocity: mcData.version['<=']('1.8.9') ? 0.005 : 0.003,
+     soulsandSpeed: 0.4,
+     honeyblockSpeed: 0.4,
+     honeyblockJumpSpeed: 0.4,
+@@ -110,9 +117,25 @@ function Physics (mcData, world) {
+     throw new Error('No liquid gravity settings, have you made sure the liquid gravity features are up to date?')
+   }
+ 
+-  function getPlayerBB (pos) {
++  // Height of the pose the simulated player is in this tick (1.13+ swimming 0.6, 1.14+ crouching 1.5)
++  let poseHeight = 1.8
++  const poseHeights = { standing: 1.8, crouching: crouchingPose ? 1.5 : 1.8, swimming: modernFluidCheck ? 0.6 : 1.8 }
++
++  function getPlayerBB (pos, height = poseHeight) {
+     const w = physics.playerHalfWidth
+-    return new AABB(-w, 0, -w, w, physics.playerHeight, w).offset(pos.x, pos.y, pos.z)
++    return new AABB(-w, 0, -w, w, height, w).offset(pos.x, pos.y, pos.z)
++  }
++
++  /** Player.updatePlayerPose: the wanted pose, or crouching/swimming when it doesn't fit (crawling). */
++  function nextPose (entity, world) {
++    const fits = (pose) => {
++      const bb = getPlayerBB(entity.pos, poseHeights[pose]).contract(1e-7, 1e-7, 1e-7)
++      return getSurroundingBBs(world, bb).every((blockBB) => !blockBB.intersects(bb))
++    }
++    const wanted = entity.swimming ? 'swimming' : entity.control.sneak && !entity.flying ? 'crouching' : 'standing'
++    if (fits(wanted)) return wanted
++    if (fits('crouching')) return 'crouching'
++    return 'swimming'
+   }
+ 
+   function setPositionToBB (bb, pos) {
+@@ -121,6 +144,76 @@ function Physics (mcData, world) {
+     pos.z = bb.minZ + physics.playerHalfWidth
+   }
+ 
++  /**
++   * Moves `bb` by (dx, dy, dz) against `bbs`: Y first, then X and Z. Since 1.14
++   * the larger horizontal axis goes last, so a mostly-Z move slides past a corner.
++   */
++  function collide (bb, dx, dy, dz, bbs) {
++    const moved = bb.clone()
++    for (const blockBB of bbs) dy = blockBB.computeOffsetY(moved, dy)
++    moved.offset(0, dy, 0)
++    const zFirst = axisOrderBySize && Math.abs(dx) < Math.abs(dz)
++    if (zFirst) {
++      for (const blockBB of bbs) dz = blockBB.computeOffsetZ(moved, dz)
++      moved.offset(0, 0, dz)
++    }
++    for (const blockBB of bbs) dx = blockBB.computeOffsetX(moved, dx)
++    moved.offset(dx, 0, 0)
++    if (!zFirst) {
++      for (const blockBB of bbs) dz = blockBB.computeOffsetZ(moved, dz)
++      moved.offset(0, 0, dz)
++    }
++    return { dx, dy, dz, bb: moved }
++  }
++
++  const horizontalSq = (m) => m.dx * m.dx + m.dz * m.dz
++
++  /**
++   * 1.21+ (Entity.collide): try the heights of the nearby collision boxes' edges
++   * up to the step height, lowest first, and keep the first that gets further
++   * horizontally. The player stays at that height (no step back down).
++   */
++  function stepUpByCandidates (world, oldBB, moveX, moveZ, cdx, cdy, cdz, landed) {
++    const base = landed ? oldBB.clone().offset(0, cdy, 0) : oldBB.clone()
++    const query = base.clone().extend(moveX, physics.stepHeight, moveZ)
++    if (!landed) query.extend(0, -1e-5, 0)
++    const bbs = getSurroundingBBs(world, query)
++    const heights = new Set()
++    for (const blockBB of bbs) {
++      for (const y of [blockBB.minY, blockBB.maxY]) {
++        const h = Math.fround(y - base.minY)
++        if (h >= 0 && h !== Math.fround(cdy) && h <= physics.stepHeight) heights.add(h)
++      }
++    }
++    const collided = { dx: cdx, dz: cdz }
++    for (const h of [...heights].sort((a, b) => a - b)) {
++      const step = collide(base, moveX, h, moveZ, bbs)
++      if (horizontalSq(step) > horizontalSq(collided)) {
++        if (landed) step.dy += cdy
++        return step
++      }
++    }
++    return undefined
++  }
++
++  /** Before 1.21: step up the full height, move, then back down; keep it if it got further. */
++  function stepUpLegacy (world, oldBB, moveX, moveY, moveZ, cdx, cdy, cdz) {
++    const bbs = getSurroundingBBs(world, oldBB.clone().extend(moveX, physics.stepHeight, moveZ))
++    let best = collide(oldBB, moveX, physics.stepHeight, moveZ, bbs)
++    const up = collide(oldBB.clone().extend(moveX, 0, moveZ), 0, physics.stepHeight, 0, bbs)
++    if (up.dy < physics.stepHeight) {
++      const across = collide(oldBB.clone().offset(0, up.dy, 0), moveX, 0, moveZ, bbs)
++      across.dy = up.dy
++      if (horizontalSq(across) > horizontalSq(best)) best = across
++    }
++    if (horizontalSq(best) <= cdx * cdx + cdz * cdz) return undefined
++    const raised = oldBB.clone().offset(best.dx, best.dy, best.dz)
++    let down = -best.dy + moveY
++    for (const blockBB of bbs) down = blockBB.computeOffsetY(raised, down)
++    raised.offset(0, down, 0)
++    return { dx: best.dx, dy: best.dy + down, dz: best.dz, bb: raised }
++  }
++
+   function getSurroundingBBs (world, queryBB) {
+     const surroundingBBs = []
+     const cursor = new Vec3(0, 0, 0)
+@@ -172,7 +265,7 @@ function Physics (mcData, world) {
+     const oldVelY = dy
+     let oldVelZ = dz
+ 
+-    if (entity.control.sneak && entity.onGround) {
++    if (entity.control.sneak && entity.onGround && !entity.flying && !(sneakJumpLeavesEdge && dy > 0)) {
+       const step = 0.05
+ 
+       // In the 3 loops bellow, y offset should be -1, but that doesnt reproduce vanilla behavior.
+@@ -202,97 +295,21 @@ function Physics (mcData, world) {
+       }
+     }
+ 
+-    let playerBB = getPlayerBB(pos)
+-    const queryBB = playerBB.clone().extend(dx, dy, dz)
+-    const surroundingBBs = getSurroundingBBs(world, queryBB)
+-    const oldBB = playerBB.clone()
+-
+-    for (const blockBB of surroundingBBs) {
+-      dy = blockBB.computeOffsetY(playerBB, dy)
+-    }
+-    playerBB.offset(0, dy, 0)
+-
+-    for (const blockBB of surroundingBBs) {
+-      dx = blockBB.computeOffsetX(playerBB, dx)
+-    }
+-    playerBB.offset(dx, 0, 0)
+-
+-    for (const blockBB of surroundingBBs) {
+-      dz = blockBB.computeOffsetZ(playerBB, dz)
+-    }
+-    playerBB.offset(0, 0, dz)
+-
+-    // Step on block if height < stepHeight
+-    if (physics.stepHeight > 0 &&
+-      (entity.onGround || (dy !== oldVelY && oldVelY < 0)) &&
+-      (dx !== oldVelX || dz !== oldVelZ)) {
+-      const oldVelXCol = dx
+-      const oldVelYCol = dy
+-      const oldVelZCol = dz
+-      const oldBBCol = playerBB.clone()
+-
+-      dy = physics.stepHeight
+-      const queryBB = oldBB.clone().extend(oldVelX, dy, oldVelZ)
+-      const surroundingBBs = getSurroundingBBs(world, queryBB)
+-
+-      const BB1 = oldBB.clone()
+-      const BB2 = oldBB.clone()
+-      const BB_XZ = BB1.clone().extend(dx, 0, dz)
+-
+-      let dy1 = dy
+-      let dy2 = dy
+-      for (const blockBB of surroundingBBs) {
+-        dy1 = blockBB.computeOffsetY(BB_XZ, dy1)
+-        dy2 = blockBB.computeOffsetY(BB2, dy2)
+-      }
+-      BB1.offset(0, dy1, 0)
+-      BB2.offset(0, dy2, 0)
+-
+-      let dx1 = oldVelX
+-      let dx2 = oldVelX
+-      for (const blockBB of surroundingBBs) {
+-        dx1 = blockBB.computeOffsetX(BB1, dx1)
+-        dx2 = blockBB.computeOffsetX(BB2, dx2)
+-      }
+-      BB1.offset(dx1, 0, 0)
+-      BB2.offset(dx2, 0, 0)
+-
+-      let dz1 = oldVelZ
+-      let dz2 = oldVelZ
+-      for (const blockBB of surroundingBBs) {
+-        dz1 = blockBB.computeOffsetZ(BB1, dz1)
+-        dz2 = blockBB.computeOffsetZ(BB2, dz2)
+-      }
+-      BB1.offset(0, 0, dz1)
+-      BB2.offset(0, 0, dz2)
+-
+-      const norm1 = dx1 * dx1 + dz1 * dz1
+-      const norm2 = dx2 * dx2 + dz2 * dz2
+-
+-      if (norm1 > norm2) {
+-        dx = dx1
+-        dy = -dy1
+-        dz = dz1
+-        playerBB = BB1
+-      } else {
+-        dx = dx2
+-        dy = -dy2
+-        dz = dz2
+-        playerBB = BB2
+-      }
+-
+-      for (const blockBB of surroundingBBs) {
+-        dy = blockBB.computeOffsetY(playerBB, dy)
+-      }
+-      playerBB.offset(0, dy, 0)
+-
+-      if (oldVelXCol * oldVelXCol + oldVelZCol * oldVelZCol >= dx * dx + dz * dz) {
+-        dx = oldVelXCol
+-        dy = oldVelYCol
+-        dz = oldVelZCol
+-        playerBB = oldBBCol
+-      }
++    const oldBB = getPlayerBB(pos)
++    const queryBB = oldBB.clone().extend(dx, dy, dz)
++    let { dx: cdx, dy: cdy, dz: cdz, bb: playerBB } = collide(oldBB, dx, dy, dz, getSurroundingBBs(world, queryBB))
++    const collidedHorizontally = cdx !== oldVelX || cdz !== oldVelZ
++    const landed = cdy !== oldVelY && oldVelY < 0
++
++    if (physics.stepHeight > 0 && (entity.onGround || landed) && collidedHorizontally) {
++      const step = candidateStepUp
++        ? stepUpByCandidates(world, oldBB, oldVelX, oldVelZ, cdx, cdy, cdz, landed)
++        : stepUpLegacy(world, oldBB, oldVelX, oldVelY, oldVelZ, cdx, cdy, cdz)
++      if (step) ({ dx: cdx, dy: cdy, dz: cdz, bb: playerBB } = step)
+     }
++    dx = cdx
++    dy = cdy
++    dz = cdz
+ 
+     // Update flags
+     setPositionToBB(playerBB, pos)
+@@ -474,7 +491,16 @@ function Physics (mcData, world) {
+       const lastY = pos.y
+       let acceleration = physics.liquidAcceleration
+       const inertia = entity.isInWater ? physics.waterInertia : physics.lavaInertia
+-      let horizontalInertia = inertia
++      // 1.13+: sprinting (swimming) in water keeps more speed and ignores water gravity
++      const sprintSwim = modernFluidCheck && entity.isInWater && entity.control.sprint
++      let horizontalInertia = sprintSwim ? 0.9 : inertia
++
++      // 1.13+ Player.travel: swimming steers the vertical speed towards the look direction
++      if (entity.swimming) {
++        const lookY = Math.sin(entity.pitch)
++        const surfaceAbove = !isWater(world.getBlock(pos.offset(0, 0.9, 0)))
++        if (lookY <= 0 || entity.control.jump || !surfaceAbove) vel.y += (lookY - vel.y) * (lookY < -0.2 ? 0.085 : 0.06)
++      }
+ 
+       if (entity.isInWater) {
+         let strider = Math.min(entity.depthStrider, 3)
+@@ -492,7 +518,7 @@ function Physics (mcData, world) {
+       applyHeading(entity, strafe, forward, acceleration)
+       moveEntity(entity, world, vel.x, vel.y, vel.z)
+       vel.y *= inertia
+-      vel.y -= (entity.isInWater ? physics.waterGravity : physics.lavaGravity) * gravityMultiplier
++      if (!sprintSwim) vel.y -= (entity.isInWater ? physics.waterGravity : physics.lavaGravity) * gravityMultiplier
+       vel.x *= horizontalInertia
+       vel.z *= horizontalInertia
+ 
+@@ -573,7 +599,10 @@ function Physics (mcData, world) {
+         acceleration = physics.airborneAcceleration
+         inertia = physics.airborneInertia
+ 
+-        if (entity.control.sprint) {
++        // Player.getFlyingSpeed: creative flight replaces the air acceleration
++        if (entity.flying) {
++          acceleration = entity.flyingSpeed * (entity.control.sprint ? 2 : 1)
++        } else if (entity.control.sprint) {
+           const airSprintFactor = physics.airborneAcceleration * 0.3
+           acceleration += airSprintFactor
+         }
+@@ -667,7 +696,31 @@ function Physics (mcData, world) {
+     return flow.normalize()
+   }
+ 
++  const isWater = (block) => block && (waterIds.includes(block.type) || waterLike.has(block.type) || block.isWaterlogged)
++
++  // 1.13+ FluidState.getHeight: full under more water, else level 0 (source) 8/9 down to 1/9; falling water 8/9
++  function getWaterHeight (world, block) {
++    if (isWater(world.getBlock(block.position.offset(0, 1, 0)))) return 1
++    if (!waterIds.includes(block.type)) return 8 / 9
++    const level = block.metadata
++    return level >= 8 ? 8 / 9 : (8 - level) / 9
++  }
++
+   function getWaterInBB (world, bb) {
++    if (modernFluidCheck) {
++      // 1.13+ Entity.updateFluidHeightAndDoFluidPushing: water whose surface reaches the box
++      const waterBlocks = []
++      const cursor = new Vec3(0, 0, 0)
++      for (cursor.y = Math.floor(bb.minY); cursor.y < Math.ceil(bb.maxY); cursor.y++) {
++        for (cursor.z = Math.floor(bb.minZ); cursor.z < Math.ceil(bb.maxZ); cursor.z++) {
++          for (cursor.x = Math.floor(bb.minX); cursor.x < Math.ceil(bb.maxX); cursor.x++) {
++            const block = world.getBlock(cursor)
++            if (isWater(block) && cursor.y + getWaterHeight(world, block) >= bb.minY) waterBlocks.push(block)
++          }
++        }
++      }
++      return waterBlocks
++    }
+     const waterBlocks = []
+     const cursor = new Vec3(0, 0, 0)
+     for (cursor.y = Math.floor(bb.minY); cursor.y <= Math.floor(bb.maxY); cursor.y++) {
+@@ -705,22 +758,58 @@ function Physics (mcData, world) {
+   physics.simulatePlayer = (entity, world) => {
+     const vel = entity.vel
+     const pos = entity.pos
++    poseHeight = poseHeights[entity.pose] ?? physics.playerHeight
+ 
+-    const waterBB = getPlayerBB(pos).contract(0.001, 0.401, 0.001)
++    const waterBB = getPlayerBB(pos).contract(0.001, modernFluidCheck ? 0.001 : 0.401, 0.001)
+     const lavaBB = getPlayerBB(pos).contract(0.1, 0.4, 0.1)
+ 
+     entity.isInWater = isInWaterApplyCurrent(world, waterBB, vel)
+     entity.isInLava = isMaterialInBB(world, lavaBB, lavaIds)
+ 
+-    // Reset velocity component if it falls under the threshold
+-    if (Math.abs(vel.x) < physics.negligeableVelocity) vel.x = 0
++    // 1.13+ Entity.updateSwimming: start sprinting with the eyes under water, stop when not sprinting in water.
++    // It runs before this tick's input, so it sees whether the player sprinted last tick.
++    if (modernFluidCheck) {
++      const eye = pos.offset(0, { crouching: 1.27, swimming: 0.4 }[entity.pose] ?? 1.62, 0)
++      const eyeBlock = world.getBlock(eye.floored())
++      const underWater = isWater(eyeBlock) && Math.floor(eye.y) + getWaterHeight(world, eyeBlock) > eye.y
++      const startsSwimming = underWater && entity.isInWater && isWater(world.getBlock(pos.floored()))
++      entity.swimming = Boolean(entity.sprinting && (entity.swimming ? entity.isInWater : startsSwimming))
++    }
++    entity.sprinting = entity.control.sprint
++
++    // LocalPlayer.aiStep: double tapping jump toggles flight, which moves up and down with jump and sneak
++    if (entity.jumpTriggerTime > 0) entity.jumpTriggerTime--
++    if (entity.alwaysFlying) {
++      entity.flying = true
++    } else if (entity.mayFly && entity.control.jump && !entity.wasJumping) {
++      if (entity.jumpTriggerTime === 0) {
++        entity.jumpTriggerTime = 7
++      } else if (!entity.swimming) {
++        entity.flying = !entity.flying
++        entity.jumpTriggerTime = 0
++      }
++    }
++    entity.wasJumping = entity.control.jump
++    if (entity.flying) vel.y += (entity.control.jump - entity.control.sneak) * entity.flyingSpeed * 3
++
++    // Reset velocity that falls under the threshold: per axis, but since 1.21.2 the
++    // horizontal velocity as a whole (a slow diagonal glide keeps both axes)
++    if (horizontalNegligibleVelocity) {
++      if (vel.x * vel.x + vel.z * vel.z < physics.negligeableVelocity * physics.negligeableVelocity) {
++        vel.x = 0
++        vel.z = 0
++      }
++    } else {
++      if (Math.abs(vel.x) < physics.negligeableVelocity) vel.x = 0
++      if (Math.abs(vel.z) < physics.negligeableVelocity) vel.z = 0
++    }
+     if (Math.abs(vel.y) < physics.negligeableVelocity) vel.y = 0
+-    if (Math.abs(vel.z) < physics.negligeableVelocity) vel.z = 0
+ 
+     // Handle inputs
+     if (entity.control.jump || entity.jumpQueued) {
+       if (entity.jumpTicks > 0) entity.jumpTicks--
+-      if (entity.isInWater || entity.isInLava) {
++      // Flying players aren't affected by fluids
++      if ((entity.isInWater || entity.isInLava) && !entity.flying) {
+         vel.y += 0.04
+       } else if (entity.onGround && entity.jumpTicks === 0) {
+         const blockBelow = world.getBlock(entity.pos.floored().offset(0, -0.5, 0))
+@@ -739,11 +828,16 @@ function Physics (mcData, world) {
+       entity.jumpTicks = 0 // reset autojump cooldown
+     }
+     entity.jumpQueued = false
++    // 1.13+ LocalPlayer.aiStep: holding sneak in water sinks
++    if (modernFluidCheck && entity.isInWater && entity.control.sneak && !entity.flying) vel.y -= 0.04
+ 
+     let strafe = (entity.control.right - entity.control.left) * 0.98
+     let forward = (entity.control.forward - entity.control.back) * 0.98
+ 
+-    if (entity.control.sneak) {
++    // Since 1.14 the slowdown follows the crouching pose, which only updates at the end of the tick
++    // (LocalPlayer.isMovingSlowly: crouching, or crawling: the swimming pose out of water)
++    const crawling = entity.pose === 'swimming' && !entity.isInWater
++    if (crouchingPose ? entity.pose === 'crouching' || crawling : entity.control.sneak) {
+       strafe *= physics.sneakSpeed
+       forward *= physics.sneakSpeed
+     }
+@@ -762,7 +856,14 @@ function Physics (mcData, world) {
+       }
+     }
+ 
++    // Player.travel: flight ignores gravity and drag, the vertical speed decays instead
++    const flyingVelY = vel.y
+     moveEntityWithHeading(entity, world, strafe, forward)
++    if (entity.flying) {
++      vel.y = flyingVelY * 0.6
++      if (entity.onGround && !entity.alwaysFlying) entity.flying = false // landing ends flight
++    }
++    entity.pose = nextPose(entity, world) // takes effect next tick
+ 
+     return entity
+   }
+@@ -815,9 +916,20 @@ class PlayerState {
+     this.isCollidedHorizontally = bot.entity.isCollidedHorizontally
+     this.isCollidedVertically = bot.entity.isCollidedVertically
+     this.elytraFlying = bot.entity.elytraFlying
++    this.pose = bot.entity.physicsPose ?? 'standing'
++    this.swimming = bot.entity.swimming ?? false
++    this.sprinting = bot.entity.sprintingLastTick ?? false
+     this.jumpTicks = bot.jumpTicks
+     this.jumpQueued = bot.jumpQueued
+     this.fireworkRocketDuration = bot.fireworkRocketDuration
++    // Abilities (the bot keeps them up to date from the server's abilities packet)
++    this.flying = Boolean(bot.entity.flying)
++    this.mayFly = Boolean(bot.entity.mayFly)
++    this.alwaysFlying = bot.game?.gameMode === 'spectator'
++    this.flyingSpeed = bot.entity.flyingSpeed ?? 0.05
++    this.jumpTriggerTime = bot.jumpTriggerTime ?? 0
++    this.wasJumping = bot.wasJumping ?? false
++    this.legacySneakEye = mcData.version['<']('1.14')
+ 
+     // Input only (not modified)
+     this.attributes = bot.entity.attributes
+@@ -861,9 +973,17 @@ class PlayerState {
+     bot.entity.isCollidedHorizontally = this.isCollidedHorizontally
+     bot.entity.isCollidedVertically = this.isCollidedVertically
+     bot.entity.elytraFlying = this.elytraFlying
++    bot.entity.physicsPose = this.pose
++    bot.entity.swimming = this.swimming
++    bot.entity.sprintingLastTick = this.sprinting
+     bot.jumpTicks = this.jumpTicks
+     bot.jumpQueued = this.jumpQueued
+     bot.fireworkRocketDuration = this.fireworkRocketDuration
++    bot.entity.flying = this.flying
++    // The pose sets the eye height (1.14+ crouching, 1.13+ swimming); before 1.14 sneaking lowers it by 0.08
++    bot.entity.eyeHeight = this.pose === 'crouching' ? 1.27 : this.pose === 'swimming' ? 0.4 : this.legacySneakEye && this.control.sneak ? 1.54 : 1.62
++    bot.jumpTriggerTime = this.jumpTriggerTime
++    bot.wasJumping = this.wasJumping
+   }
+ }
+ 
