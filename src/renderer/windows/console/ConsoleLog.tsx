@@ -122,8 +122,9 @@ const ConsoleLog = forwardRef<
             overflowX: 'visible',
           }}
         >
-          <span>
+          <span style={{ whiteSpace: 'nowrap' }}>
             [{timeStr}] [{messageData[2]}]:{' '}
+            {type === LogStatus.ERROR && <ExplainErrorButton error={logText(message)} scriptName={messageData[2]} />}
           </span>
           <div
             style={{
@@ -149,9 +150,6 @@ const ConsoleLog = forwardRef<
               data={message}
             />
           </div>
-          {type === LogStatus.ERROR && (
-            <ExplainErrorButton error={logText(message)} scriptName={messageData[2]} />
-          )}
         </div>
       </div>
     );

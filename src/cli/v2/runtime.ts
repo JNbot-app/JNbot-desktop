@@ -96,6 +96,16 @@ export async function createCliRuntime(host: RuntimeHost = {}): Promise<CliRunti
     webRTCHandler,
   );
   setupGlobals(handler);
+  if (global.isMobileRuntime) {
+    // The phone has its own AI provider, set up like the desktop's.
+    const [{ default: McpManager }, { default: LlmService }] = await Promise.all([
+      import('../../main/src/functions/mcp/McpManager'),
+      import('../../main/src/functions/llm/LlmService'),
+    ]);
+    const mcpManager = new McpManager(handler, macros);
+    handler.clientEvents.mcpManager = mcpManager;
+    handler.llm = handler.clientEvents.llm = new LlmService(handler, mcpManager);
+  }
   const unbindClientEvents = bindClientEventMessaging(Promise.resolve(handler.clientEvents));
   errorHandler.setScriptHandler(handler);
   ipcMain.emit('LOADED', null);

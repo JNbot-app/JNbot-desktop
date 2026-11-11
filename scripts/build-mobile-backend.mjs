@@ -37,6 +37,12 @@ const electronMockPlugin = {
     build.onLoad({ filter: /.*/, namespace: 'mobile-launcher-disabled' }, () => ({
       contents: 'const Unsupported=class { constructor(){ throw new Error("Minecraft launcher/server management is not supported by the mobile runtime."); } }; module.exports=new Proxy({}, { get(){ return Unsupported; } });', loader: 'js',
     }));
+    // Only serves MCP over HTTP, which the phone never starts. Loading it subclasses
+    // the global `Request`, which makes Node load undici and its WebAssembly client.
+    build.onResolve({ filter: /^@modelcontextprotocol\/node$/ }, () => ({ path: 'mcp-node', namespace: 'mobile-mcp-http-disabled' }));
+    build.onLoad({ filter: /.*/, namespace: 'mobile-mcp-http-disabled' }, () => ({
+      contents: 'module.exports={ toNodeHandler(){ throw new Error("MCP over HTTP is not supported by the mobile runtime."); } };', loader: 'js',
+    }));
     build.onResolve({ filter: /^xxhash-wasm$/ }, () => ({ path: 'xxhash-wasm', namespace: 'mobile-wasm-disabled' }));
     build.onLoad({ filter: /.*/, namespace: 'mobile-wasm-disabled' }, () => ({
       contents: 'module.exports=async()=>{ throw new Error("The optional Bedrock xxhash/WASM path is not supported by the mobile runtime."); };', loader: 'js',

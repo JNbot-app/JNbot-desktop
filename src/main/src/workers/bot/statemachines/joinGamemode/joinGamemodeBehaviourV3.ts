@@ -75,7 +75,7 @@ export interface JoinTargets {
   __join_error?: string;
 }
 
-const SELECTOR_WINDOW_HINTS = ['server', 'selector', 'compass', 'navigator'];
+const SELECTOR_WINDOW_HINTS = ['server', 'selector', 'compass', 'navigator', 'play'];
 const QUEUE_POSITION_RE = /position\s+([0-9]+)\s+of\s+([0-9]+)/i;
 const QUEUE_REFRESH_MS = 20_000;
 const MAX_STUCK = 3;
@@ -430,14 +430,15 @@ async function openSelector(
 ) {
   bot.chat('/server');
 
-  await waitForBotEvent(bot, ['windowOpen'], { timeoutMs: 500 });
-  if (bot.currentWindow) return;
-
   // Default to the last hotbar slot if no selector config exists yet (auto mode).
   const slot = behaviour.kind === 'selector' ? behaviour.hotbarSlot : 9;
+
   const quickBarSlot = Math.max(0, Math.min(8, (slot ?? 9) - 1));
-  await bot.setQuickBarSlot?.(quickBarSlot);
-  await sleep(100);
+  if (bot.quickBarSlot !== quickBarSlot ) {
+    await bot.setQuickBarSlot?.(quickBarSlot);
+  }
+  await sleep(50);
+  if(bot.currentWindow) return
   bot.activateItem?.();
   if (state.__join_data) state.__join_data.cmdSent = false;
 }

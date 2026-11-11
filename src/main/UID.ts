@@ -1,5 +1,6 @@
 import {machineIdSync} from 'node-machine-id';
 import fs from 'fs';
+import {randomBytes} from 'crypto';
 import getAppDataPath from 'appdata-path';
 import {join} from 'path';
 let uid:string ;
@@ -18,12 +19,8 @@ function generateFallbackUID(){
 
     filePath = join(filePath, 'uid.txt');
    if (!fs.existsSync(filePath)) {
-     // Random 64 byte string (numbers & lower case letters)
-     uid =
-       'C' +
-       [...Array(63)]
-         .map(() => (~~(Math.random() * 36)).toString(36))
-         .join(''); // self generated uid starts with C
+     // Random 64 char string (hex); self generated uid starts with C
+     uid = 'C' + randomBytes(32).toString('hex').slice(0, 63);
      fs.writeFileSync(filePath, uid);
    } else {
      uid = fs.readFileSync(filePath).toString();

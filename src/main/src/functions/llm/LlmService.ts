@@ -351,7 +351,7 @@ Options: ${JSON.stringify(describeOptions(options, current, choices))}`,
       const source = plugin ? this.mcp.pluginSource(plugin.pluginId) : undefined;
       stream.status(source ? `Reading ${plugin!.name}` : 'Reading the error');
       return this.ask(
-        'You help JNbot users (a Minecraft bot app) understand plugin errors. In a few short sentences say what went wrong in plain language, then how to fix it. If the fix is a code change, show only the changed lines. Use markdown.',
+        'You help JNbot users (a Minecraft bot app) understand plugin errors. In a few short sentences say what went wrong in plain everyday language, as if to someone who cannot code, then how to fix it, preferring fixes they can do in the app (settings, items, game state). Only show code if the fix truly needs a code change, and then only the changed lines. Use markdown.',
         `Error:\n${input.error.slice(0, 4_000)}${source ? `\n\nPlugin source:\n${source.slice(0, 30_000)}` : ''}`,
         stream.options,
       );
@@ -363,7 +363,7 @@ Options: ${JSON.stringify(describeOptions(options, current, choices))}`,
     return this.streamed(origin, input.streamId, (stream) => {
       stream.status('Reading the item');
       return this.ask(
-        'You answer questions about an item on the JNbot marketplace (plugins, chains, triggers and profiles for a Minecraft bot app). Answer only from the item below; if it does not say, say so. Be short and use markdown.',
+        'You answer questions about an item on the JNbot marketplace (plugins, chains, triggers and profiles for a Minecraft bot app). Answer only from the item below; if it does not say, say so. The reader usually does not know how to code: explain in plain everyday language about what it does in the game and what it needs, never quote code, function or variable names, or technical terms unless the reader asked for them. Be short and use markdown.',
         `Item: ${input.title ?? ''}\n${input.description ?? ''}\n\nContent:\n${(input.content ?? '').slice(0, 40_000)}\n\nQuestion: ${input.question}`,
         stream.options,
       );
