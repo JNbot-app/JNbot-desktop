@@ -10,10 +10,11 @@ import {
   Tag,
   Button,
   Progress,
+  Badge,
   Divider,
   Flex,
   Space,
-  Card as AntCard
+  theme,
 } from 'antd';
 import {
   CloseOutlined,
@@ -63,7 +64,7 @@ const ControlBtn: React.FC<{
   onClick: (e: React.MouseEvent) => void;
 }> = ({ icon, title, danger, onClick }) => (
   <Tooltip title={title}>
-    <Button type="text" shape="circle" danger={danger} icon={icon} aria-label={title} onClick={onClick} />
+    <Button type="text" size="small" danger={danger} icon={icon} aria-label={title} onClick={onClick} />
   </Tooltip>
 );
 
@@ -117,19 +118,27 @@ const ScriptRow: React.FC<RowProps> = ({
   const controls = activeScript.controls ?? 0;
   const canToggle = (controls & (ScriptControl.PAUSE | ScriptControl.RESUME)) !== 0;
 
-  return (
-    <AntCard size="small" >
-      <Flex align="center" gap={16}>
-  
+  const { token } = theme.useToken();
 
-        <Flex vertical gap={7} flex={1} style={{ minWidth: 0 }}>
-          <Flex align="center" gap={10}>
+  return (
+    <div
+      style={{
+        padding: `${token.paddingSM}px ${token.padding}px`,
+        background: token.colorFillQuaternary,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: token.borderRadiusLG,
+      }}
+    >
+      <Flex align="center" gap={16}>
+        <Flex vertical gap={6} flex={1} style={{ minWidth: 0 }}>
+          <Flex align="center" gap={12}>
             <Text strong ellipsis style={{ fontSize: 15 }}>
               {activeScript.name}
             </Text>
-            <Tag color={running ? 'success' : 'warning'} style={{ marginInlineEnd: 0 }}>
-              {running ? 'Running' : 'Paused'}
-            </Tag>
+            <Badge
+              status={running ? 'processing' : 'warning'}
+              text={<Text type="secondary" style={{ fontSize: 12 }}>{running ? 'Running' : 'Paused'}</Text>}
+            />
             {activeScript.presetName && (
               <Tag style={{ marginInlineEnd: 0 }}>{activeScript.presetName}</Tag>
             )}
@@ -153,7 +162,7 @@ const ScriptRow: React.FC<RowProps> = ({
           )}
         </Flex>
 
-        <Flex align="center" gap={0}>
+        <Flex align="center" gap={2}>
           {!isMinecraft && (
             <>
               {CONTROL_BUTTONS.filter((c) => controls & c.bit).map((c) => (
@@ -189,7 +198,7 @@ const ScriptRow: React.FC<RowProps> = ({
                   scriptsService.restart(activeScript.instanceId);
                 }}
               />
-              <Divider orientation="vertical" />
+              <Divider orientation="vertical" style={{ margin: '0 4px' }} />
             </>
           )}
           <ControlBtn
@@ -203,7 +212,7 @@ const ScriptRow: React.FC<RowProps> = ({
           />
         </Flex>
       </Flex>
-    </AntCard>
+    </div>
   );
 };
 
@@ -254,7 +263,7 @@ const ActiveScripts: React.FC = () => {
           />
         </div>
       ) : (
-        <Flex vertical gap={12}>
+        <Flex vertical gap={10}>
           {scripts.map((s) => {
             const actions = activeScriptActions[s.instanceId];
             const latestAction = actions?.length ? actions[actions.length - 1].action : undefined;
