@@ -11,9 +11,8 @@ type Start = {
   deadline: number;
   text: string;
   modelUrl?: string;
-  model?: 'main' | 'flash';
+  windowSize?: number;
   reasoning?: boolean;
-  toolFilterThreshold?: number | null;
 };
 type PredictionRequest = Start & {
   tools: ToolDefinition[];
@@ -23,7 +22,6 @@ type PredictionRequest = Start & {
 export type AiRequest =
   | (PredictionRequest & { kind: 'predict' })
   | (Start & { kind: 'extract'; schema: AiSchema; maxNewTokens: number })
-  | (Start & { kind: 'embed' })
   | { kind: 'cancel'; requestId: string };
 
 export type AiResponse =
@@ -32,7 +30,6 @@ export type AiResponse =
       prediction: AiPrediction;
     }
   | { kind: 'extraction'; value: AiJsonObject | null }
-  | { kind: 'embedding'; modelId: string; values: number[] }
   | { kind: 'ended' };
 
 export type AiOperation = (request: AiRequest) => Promise<AiResponse>;

@@ -7,43 +7,51 @@ import { createWriteStream } from 'fs';
 import { aiError } from './schema';
 import descriptor from '../../../../native/needle/model.json';
 
-export type AiModelVariant = 'main' | 'flash';
+export const DEFAULT_WINDOW_SIZE = 512;
+export const MAX_WINDOW_SIZE = 8192;
+
 export interface AiModel {
   id: string;
   cacheId: string;
-  variant: AiModelVariant;
   url: string;
   sha256?: string;
   builtIn: boolean;
+  /** Tokens each decoder layer can attend to. Larger windows help long tool lists. */
+  windowSize: number;
+}
+
+function windowSize(value: unknown): number {
+  if (value === undefined) return DEFAULT_WINDOW_SIZE;
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < 1 ||
+    value > MAX_WINDOW_SIZE
+  )
+    throw aiError(
+      'AI_INVALID_INPUT',
+      `windowSize must be an integer from 1 to ${MAX_WINDOW_SIZE}.`,
+    );
+  return value;
 }
 
 export function resolveModel(
   modelUrl?: unknown,
-  variant: unknown = 'main',
+  requestedWindow?: unknown,
 ): AiModel {
-  if (variant !== 'main' && variant !== 'flash')
-    throw aiError('AI_INVALID_INPUT', 'model must be main or flash.');
   if (modelUrl !== undefined && typeof modelUrl !== 'string')
     throw aiError('AI_INVALID_INPUT', 'modelUrl must be an HTTPS URL.');
-  const configured =
-    variant === 'main'
-      ? descriptor.mainUrl
-      : descriptor.flashUrl || descriptor.mainUrl;
-  const sha256 =
-    (variant === 'main'
-      ? descriptor.mainSha256
-      : descriptor.flashSha256 || descriptor.mainSha256) || undefined;
+  const window = windowSize(requestedWindow);
   const supplied = typeof modelUrl === 'string' ? modelUrl.trim() : '';
-  if (!supplied || supplied === configured) {
-    return {
-      id: `${descriptor.id}-${variant}`,
-      cacheId: `${descriptor.id}-${variant}`,
-      variant,
-      url: configured,
-      sha256,
-      builtIn: true,
-    };
-  }
+  const builtIn: AiModel = {
+    id: descriptor.id,
+    cacheId: descriptor.id,
+    url: descriptor.url,
+    sha256: descriptor.sha256 || undefined,
+    builtIn: true,
+    windowSize: window,
+  };
+  if (!supplied || supplied === descriptor.url) return builtIn;
   let url: URL;
   try {
     url = new URL(supplied);
@@ -53,17 +61,16 @@ export function resolveModel(
   if (url.protocol !== 'https:')
     throw aiError('AI_INVALID_INPUT', 'modelUrl must be an HTTPS URL.');
   url.hash = '';
-  if (configured && url.href === configured)
-    return resolveModel(undefined, variant);
+  if (url.href === descriptor.url) return builtIn;
   const key = createHash('sha256')
     .update(`${descriptor.engineRevision}\n${url.href}`)
     .digest('hex');
   return {
-    id: `jnbot-custom-${key}-${variant}`,
+    id: `jnbot-custom-${key}`,
     cacheId: `jnbot-custom-${key}`,
-    variant,
     url: url.href,
     builtIn: false,
+    windowSize: window,
   };
 }
 
@@ -147,24 +154,17 @@ export async function modelFile(
 ): Promise<string> {
   signal?.throwIfAborted();
   const destination = path.join(directory, model.cacheId, 'model.cact');
-  const candidates = [{ file: destination, sha256: model.sha256 }];
-  if (model.builtIn && model.variant === 'flash')
-    candidates.push({
-      file: path.join(directory, `${descriptor.id}-main`, 'model.cact'),
-      sha256: descriptor.mainSha256 || undefined,
-    });
-  for (const { file, sha256 } of candidates) {
-    try {
-      await fs.access(file);
-      // The digest recorded at download time marks files replaced by a newer release.
-      if (
-        !sha256 ||
-        (await fs.readFile(`${file}.sha256`, 'utf8').catch(() => '')) === sha256
-      )
-        return file;
-    } catch {
-      /* Not installed. */
-    }
+  try {
+    await fs.access(destination);
+    // The digest recorded at download time marks files replaced by a newer release.
+    if (
+      !model.sha256 ||
+      (await fs.readFile(`${destination}.sha256`, 'utf8').catch(() => '')) ===
+        model.sha256
+    )
+      return destination;
+  } catch {
+    /* Not installed. */
   }
   if (!model.url)
     throw aiError(

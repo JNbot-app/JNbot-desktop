@@ -71,7 +71,7 @@ test('blank and explicit default URLs preserve the default model', () => {
 test('custom IDs normalize URLs and preserve version query parameters', () => {
   const model = resolveModel(' HTTPS://Example.com/tuned.cact?v=1#download ');
   expect(model.url).toBe('https://example.com/tuned.cact?v=1');
-  expect(model.id).toMatch(/^jnbot-custom-[a-f0-9]{64}-main$/);
+  expect(model.id).toMatch(/^jnbot-custom-[a-f0-9]{64}$/);
   expect(resolveModel(model.url)).toEqual(model);
   expect(resolveModel('https://example.com/tuned.cact?v=2').id).not.toBe(
     model.id,
@@ -188,30 +188,27 @@ test('cancelling a response stream removes the partial download', async () => {
   );
 });
 
-test('flash prefers its own file, then a compatible installed main file without downloading', async () => {
+test('an installed release is used offline; a replaced or unconfigured release is not', async () => {
   const file = path.join(directory, defaultModel.cacheId, 'model.cact');
   await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, 'main');
+  await fs.writeFile(file, 'model');
   await fs.writeFile(`${file}.sha256`, defaultModel.sha256!);
-  const flash = resolveModel(undefined, 'flash');
-  expect(await modelFile(directory, undefined, flash)).toBe(file);
-  const flashFile = path.join(directory, flash.cacheId, 'model.cact');
-  await fs.mkdir(path.dirname(flashFile));
-  await fs.writeFile(flashFile, 'flash');
-  await fs.writeFile(`${flashFile}.sha256`, flash.sha256!);
-  expect(await modelFile(directory, undefined, flash)).toBe(flashFile);
-  expect(mockGet).not.toHaveBeenCalled();
-});
-test('a flash install cannot satisfy main and unconfigured releases fail without downloads', async () => {
-  const flash = resolveModel(undefined, 'flash');
-  const file = path.join(directory, flash.cacheId, 'model.cact');
-  await fs.mkdir(path.dirname(file));
-  await fs.writeFile(file, 'flash');
+  expect(await modelFile(directory, undefined, defaultModel)).toBe(file);
+  await fs.writeFile(`${file}.sha256`, 'older release');
   await expect(
     modelFile(directory, undefined, { ...defaultModel, url: '' }),
-  ).rejects.toMatchObject({
-    code: 'AI_MODEL',
-  });
-  expect(await fs.readFile(file, 'utf8')).toBe('flash');
+  ).rejects.toMatchObject({ code: 'AI_MODEL' });
   expect(mockGet).not.toHaveBeenCalled();
+});
+
+test('windowSize defaults to 512 and must be an integer from 1 to 8192', () => {
+  expect(defaultModel.windowSize).toBe(512);
+  expect(resolveModel(undefined, 1024)).toEqual({
+    ...defaultModel,
+    windowSize: 1024,
+  });
+  for (const size of [0, -1, 1.5, 8193, '512', null])
+    expect(() => resolveModel(undefined, size)).toThrow(
+      expect.objectContaining({ code: 'AI_INVALID_INPUT' }),
+    );
 });

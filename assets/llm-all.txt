@@ -132,11 +132,13 @@ Cloud AI is available through `script.llm` when the user added an AI provider (C
 
 Local AI is available through `script.ai`. Create an agent with explicit tool names, descriptions, object JSON Schemas, and optional handlers. `predict()` returns proposed calls without executing them. `run()` makes one prediction and executes its accepted calls sequentially, retaining completed results if a later handler fails. Handler results are not sent back to the model. Each input is independent; unchanged tools stay prepared. Agents start with no tools and support `setTools`, `addTool`, `removeTool`, and `dispose`.
 
-Choose `model: 'main'` for accuracy or `model: 'flash'` for lower memory use and faster inference. Main is the default. Both support tool calls and `script.ai.extract(text, schema, options)`, which returns a validated object or `null`. Reasoning is disabled by default. Pass `{ reasoning: true }` to `agent.predict()`, `agent.run()`, or `script.ai.extract()` to generate reasoning before tool calls. Pass `false` or omit the option to skip reasoning; predictions then return `reasoning: null`. `agent.embed(text, options)` returns `{ modelId, values }` using the agent's selected Gemma model, including its custom model URL. It accepts `signal` and `timeoutMs`, works without tools, and cancels when the agent is disposed. `script.ai.embed(text, options)` also remains available. Both embedding methods reject flash with `AI_UNSUPPORTED_FEATURE`. Rebuild stored embeddings when the model ID changes.
+There is one built-in model. It supports tool calls and `script.ai.extract(text, schema, options)`, which returns a validated object or `null`. Reasoning is disabled by default. Pass `{ reasoning: true }` to `agent.predict()`, `agent.run()`, or `script.ai.extract()` to generate reasoning before tool calls; predictions otherwise return `reasoning: null`.
 
-Tool filtering is disabled by default. On main, pass `{ toolFilterThreshold: 0.75 }` to `agent.predict()`, `agent.run()`, or `script.ai.extract()` to retain only tools whose name and description meet that cosine threshold. Values must be finite and between -1 and 1. Omit it or pass `null` to disable it; flash bypasses filtering. Tool vectors are cached in the inference worker, and the query encoding is shared with memory. When no tools survive, inference returns no match without decoding. Calibrate the threshold on your messages: similarity alone does not reliably distinguish placing from breaking, selling from buying, negation, or exact prices. The value 0.75 is an example, not a recommended default.
+`windowSize` sets how many tokens the model can look back on (1 to 8192, default 512). Raise it, for example to 1024, when the tool list plus the message is longer than about 512 tokens; larger windows use more memory and are a little slower. Pass it to `createAgent({ tools, windowSize })` or `extract(text, schema, { windowSize })`.
 
-Pass `modelUrl` to `createAgent({ tools, model, modelUrl })`, `extract(text, schema, { model, modelUrl })`, or `embed(text, { model: 'main', modelUrl })` to use a custom model. The URL must download an HTTPS `.cact` file compatible with the selected variant. Omit it or pass a blank string to use the configured release model. An agent keeps its selected variant and URL. Downloads happen at first inference; creation and tool edits do not load a model. Installed files work offline, and flash can reuse a compatible installed main file. Publish new custom model versions at new URLs. Download or loading failures report an error without substituting another model. AI-authored plugins with external network access disabled cannot select custom models.
+The tool list is prefilled once and cached: later requests with the same tools only process the new message, so keep an agent's tools stable between requests for the fastest responses.
+
+Pass `modelUrl` to `createAgent({ tools, modelUrl })` or `extract(text, schema, { modelUrl })` to use a custom model. The URL must download an HTTPS `.cact` file compatible with the built-in model. Omit it or pass a blank string to use the configured release model. Downloads happen at first inference; creation and tool edits do not load a model. Installed files work offline. Publish new custom model versions at new URLs. Download or loading failures report an error without substituting another model. AI-authored plugins with external network access disabled cannot select custom models.
 
 The model focuses on English. All supplied tools must fit within the model context; registration has no fixed tool count limit. Optional fields can be absent, and confidence can be `null`. Supported schema keywords are the fields of `AiSchema`; unsupported keywords fail at registration. Requests default to a 120-second deadline and 512 output tokens. Options accept `signal`, `timeoutMs`, and `maxNewTokens` where applicable. `run()` has no completion loop or step limit. A running handler cannot recursively call AI. Existing plugin permissions still apply to handlers.
 
@@ -182,7 +184,7 @@ async function main() {
   };
   // Use an HTTPS URL for a compatible fine-tuned .cact model, or leave blank.
   const modelUrl = '';
-  const agent = script.ai.createAgent({ model: 'flash', modelUrl });
+  const agent = script.ai.createAgent({ modelUrl, windowSize: 512 });
   agent.addTool({
     name: 'set_quantity',
     description: 'Set the requested item quantity',
@@ -196,9 +198,7 @@ async function main() {
     console.log(await agent.predict('Set quantity to 7')); // No handler runs.
     const result = await agent.run('Set quantity to 7');
     if (result.status === 'failed') console.log(result.error, result.results);
-    console.log(await script.ai.extract('The quantity is 3', schema, { model: 'flash', modelUrl }));
-    const { modelId, values } = await script.ai.embed('diamond sword', { model: 'main' });
-    console.log(modelId, values.length);
+    console.log(await script.ai.extract('The quantity is 3', schema, { modelUrl }));
     agent.removeTool('set_quantity');
     agent.setTools([]);
   } finally {
@@ -3045,14 +3045,16 @@ interface AiTool {
   handler?: (arguments_: AiJsonObject) => AiJson | void | Promise<AiJson | void>;
 }
 interface AiRequestOptions { signal?: AbortSignal; timeoutMs?: number; }
-/** Select a built-in variant, optionally overriding its compatible HTTPS model download. */
-interface AiModelOptions { model?: 'main' | 'flash'; modelUrl?: string; }
+interface AiModelOptions {
+  /** Optional HTTPS download of a compatible model, replacing the built-in one. */
+  modelUrl?: string;
+  /** Tokens the model can look back on (1-8192). Defaults to 512; raise it for long prompts or large tool lists. */
+  windowSize?: number;
+}
 interface AiPredictOptions extends AiRequestOptions {
   maxNewTokens?: number;
   /** Generate reasoning before tool calls. Defaults to false. */
   reasoning?: boolean;
-  /** Optional Gemma tool cosine threshold in [-1, 1]. Omit or null disables it. Main model only; flash bypasses filtering. */
-  toolFilterThreshold?: number | null;
 }
 type AiRunOptions = AiPredictOptions;
 interface AiCall { name: string; arguments: AiJsonObject; }
@@ -3077,8 +3079,6 @@ interface AiRunResult {
   error?: AiError;
 }
 interface AiAgent {
-  /** Embed text with this agent's Gemma model. Flash rejects with AI_UNSUPPORTED_FEATURE. */
-  embed(text: string, options?: AiRequestOptions): Promise<{ modelId: string; values: number[] }>;
   predict(text: string, options?: AiPredictOptions): Promise<AiPrediction>;
   run(text: string, options?: AiRunOptions): Promise<AiRunResult>;
   setTools(tools: AiTool[]): void;
@@ -3090,7 +3090,6 @@ interface AiAgent {
 interface AiAPI {
   createAgent(options?: AiModelOptions & { tools?: AiTool[] }): AiAgent;
   extract(text: string, schema: AiSchema, options?: AiPredictOptions & AiModelOptions): Promise<AiJsonObject | null>;
-  embed(text: string, options?: AiRequestOptions & AiModelOptions): Promise<{ modelId: string; values: number[] }>;
 }
 
 /** A function the AI may call while answering, e.g. to read the bot's state. */

@@ -27,7 +27,7 @@ static float half(const uint8_t *p) {
                       : std::ldexp(float(m), -24);
     return x & 0x8000 ? -y : y;
 }
-Mapping::Mapping(const char *path, uint64_t offset, uint64_t length) {
+Mapping::Mapping(const char *path) {
 #ifdef _WIN32
     int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, nullptr, 0);
     if (!count)
@@ -36,30 +36,23 @@ Mapping::Mapping(const char *path, uint64_t offset, uint64_t length) {
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide.data(), count);
     HANDLE file = CreateFileW(wide.data(), GENERIC_READ, FILE_SHARE_READ, nullptr,
                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    LARGE_INTEGER file_length{};
-    if (file == INVALID_HANDLE_VALUE || !GetFileSizeEx(file, &file_length) || file_length.QuadPart <= 0 ||
-        uint64_t(file_length.QuadPart) > SIZE_MAX) {
+    LARGE_INTEGER length{};
+    if (file == INVALID_HANDLE_VALUE || !GetFileSizeEx(file, &length) || length.QuadPart <= 0 ||
+        uint64_t(length.QuadPart) > SIZE_MAX) {
         if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
         throw std::runtime_error("Cannot open Needle archive");
     }
-    const uint64_t file_size = uint64_t(file_length.QuadPart);
-    if (offset > file_size || length > file_size - offset) {
-        CloseHandle(file); throw std::invalid_argument("Archive section exceeds file");
-    }
-    size = size_t(length ? length : file_size - offset);
-    SYSTEM_INFO info{}; GetSystemInfo(&info);
-    const uint64_t start = offset / info.dwAllocationGranularity * info.dwAllocationGranularity;
-    mapped_size = size + size_t(offset - start);
     HANDLE mapping = CreateFileMappingW(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
-    void *view = mapping ? MapViewOfFile(mapping, FILE_MAP_READ, DWORD(start >> 32), DWORD(start), mapped_size) : nullptr;
+    void *view = mapping ? MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0) : nullptr;
     if (!view) {
         if (mapping) CloseHandle(mapping);
         CloseHandle(file);
-        throw std::runtime_error("Cannot map model section");
+        throw std::runtime_error("Cannot map Needle archive");
     }
-    file_handle = file; mapping_handle = mapping;
-    mapped_base = static_cast<const uint8_t *>(view);
-    data = mapped_base + size_t(offset - start);
+    file_handle = file;
+    mapping_handle = mapping;
+    size = size_t(length.QuadPart);
+    data = static_cast<const uint8_t *>(view);
 #else
     fd = ::open(path, O_RDONLY);
     struct stat s{};
@@ -68,31 +61,23 @@ Mapping::Mapping(const char *path, uint64_t offset, uint64_t length) {
             ::close(fd);
         throw std::runtime_error("Cannot open Needle archive");
     }
-    const uint64_t file_size = uint64_t(s.st_size);
-    if (offset > file_size || length > file_size - offset) {
-        ::close(fd); fd = -1; throw std::invalid_argument("Archive section exceeds file");
-    }
-    size = size_t(length ? length : file_size - offset);
-    const auto page = uint64_t(sysconf(_SC_PAGESIZE));
-    const uint64_t start = offset / page * page;
-    mapped_size = size + size_t(offset - start);
-    void *p = mmap(nullptr, mapped_size, PROT_READ, MAP_PRIVATE, fd, off_t(start));
+    size = size_t(s.st_size);
+    void *p = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
     if (p == MAP_FAILED) {
-        ::close(fd); fd = -1;
-        throw std::runtime_error("Cannot map model section");
+        ::close(fd);
+        throw std::runtime_error("Cannot map Needle archive");
     }
-    mapped_base = static_cast<const uint8_t *>(p);
-    data = mapped_base + size_t(offset - start);
+    data = static_cast<const uint8_t *>(p);
 #endif
 }
 Mapping::~Mapping() {
 #ifdef _WIN32
-    if (mapped_base) UnmapViewOfFile(mapped_base);
+    if (data) UnmapViewOfFile(data);
     if (mapping_handle) CloseHandle(mapping_handle);
     if (file_handle) CloseHandle(file_handle);
 #else
-    if (mapped_base)
-        munmap(const_cast<uint8_t *>(mapped_base), mapped_size);
+    if (data)
+        munmap(const_cast<uint8_t *>(data), size);
     if (fd >= 0)
         ::close(fd);
 #endif
@@ -143,16 +128,17 @@ void Tensor::row(size_t r, float *out, bool rotated) const {
     }
 }
 Model::Model(const char *path, uint64_t offset, uint64_t length)
-    : mapping(std::make_shared<Mapping>(path, offset, length)) {
+    : mapping(std::make_shared<Mapping>(path)) {
     uint16_t endian = 1;
     if (*reinterpret_cast<uint8_t *>(&endian) != 1)
         throw std::runtime_error("Little-endian host required");
-    if (offset % 64)
+    if (offset % 64 || offset > mapping->size || length > mapping->size - offset)
         throw std::invalid_argument("Archive section exceeds file");
-    length = mapping->size;
+    if (!length)
+        length = mapping->size - offset;
     if (length < 196)
         throw std::invalid_argument("Truncated Needle header");
-    const uint8_t *base = mapping->data;
+    const uint8_t *base = mapping->data + offset;
     std::memcpy(h.data(), base, 192);
     theta = read<float>(base + 192);
     if (h[0] != 0x05e12a84 || !h[1] || h[1] > 100000 || h[2] != 28)
@@ -297,9 +283,24 @@ void Model::validate_decoder() {
         for (int j = 0; j < 5; ++j)
             expect(cursor++, {hn});
         a.factors = cursor;
+        // 2D factors are shared by every group (Kronecker); 3D hold one matrix per group (Monarch).
+        a.grouped = tensor(int32_t(cursor)).ndim == 3;
+        if ((a.grouped && ba > 64) || (i && parsed[0].grouped != a.grouped))
+            throw std::invalid_argument("Unsupported or mixed Monarch Hadamard factors");
         for (int j = 0; j < 3; ++j) {
-            expect(cursor++, {ba, ba});
-            expect(cursor++, {bb, bb});
+            if (a.grouped) {
+                for (uint32_t k = cursor; k < cursor + 2; ++k) {
+                    if (tensors[k].kind != 1)
+                        throw std::invalid_argument("Monarch Hadamard factors must be FP16");
+                    if (sizeof(factor_t) == 2) // read straight from the mapped FP16 payload
+                        std::vector<float>().swap(tensors[k].values);
+                }
+                expect(cursor++, {bb, ba, ba});
+                expect(cursor++, {ba, bb, bb});
+            } else {
+                expect(cursor++, {ba, ba});
+                expect(cursor++, {bb, bb});
+            }
         }
         a.cv = cursor++;
         expect(a.cv, {d, 8});
@@ -343,14 +344,33 @@ void Model::validate_decoder() {
         throw std::invalid_argument("Missing archive tokenizer");
     if (cursor + 1 < tensors.size()) {
         const Tensor &manifest = tensor(cursor++);
-        if (manifest.kind > 2 || manifest.ndim != 1 || manifest.elements > 3)
+        if (manifest.kind > 2 || manifest.ndim != 1 || manifest.elements > 4)
             throw std::invalid_argument("Invalid probe head manifest");
         uint32_t previous = 0;
         for (size_t i = 0; i < manifest.elements; ++i) {
             float code = manifest.scalar(i);
-            if (code < 1 || code > 3 || code != std::floor(code) || code <= previous)
+            if (code < 1 || code > 4 || code != std::floor(code) || code <= previous)
                 throw std::invalid_argument("Invalid probe head code");
             previous = uint32_t(code);
+            if (code == 4) { // runtime LoRA on the five attention projections
+                const uint32_t widths[5][2] = {{d, nh * qd}, {d, nkh * qd}, {d, nkh * vd},
+                                               {d, nh * vd}, {nh * vd, d}};
+                const uint32_t rank = tensor(cursor).shape[1];
+                if (!rank || rank > 256)
+                    throw std::invalid_argument("Invalid runtime LoRA rank");
+                lora = cursor;
+                for (auto &w : widths) {
+                    for (uint32_t k = cursor; k < cursor + 2; ++k) {
+                        if (tensors[k].kind != 1)
+                            throw std::invalid_argument("Runtime LoRA must be FP16");
+                        if (sizeof(factor_t) == 2) // read straight from the mapped FP16 payload
+                            std::vector<float>().swap(tensors[k].values);
+                    }
+                    expect(cursor++, {l, rank, w[0]});
+                    expect(cursor++, {l, rank, w[1]});
+                }
+                continue;
+            }
             const Tensor &p = tensor(cursor), &q = tensor(cursor + 2);
             uint32_t k = p.ndim == 3 ? p.shape[1] : p.shape[0] / (l + 1);
             uint32_t queries = q.shape[0];

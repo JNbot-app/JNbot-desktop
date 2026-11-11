@@ -10,21 +10,6 @@ export function aiError(code: string, message: string): Error & AiError {
   return Object.assign(new Error(message), { code });
 }
 
-export function filterThreshold(value: unknown): number | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (
-    typeof value !== 'number' ||
-    !Number.isFinite(value) ||
-    value < -1 ||
-    value > 1
-  )
-    throw aiError(
-      'AI_INVALID_INPUT',
-      'toolFilterThreshold must be null or a finite number in [-1, 1].',
-    );
-  return value;
-}
-
 export function errorInfo(error: unknown): AiError {
   return {
     code:

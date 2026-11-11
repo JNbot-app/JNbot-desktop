@@ -14,7 +14,7 @@ async function main() {
   };
   // Use an HTTPS URL for a compatible fine-tuned .cact model, or leave blank.
   const modelUrl = '';
-  const agent = script.ai.createAgent({ model: 'flash', modelUrl });
+  const agent = script.ai.createAgent({ modelUrl, windowSize: 512 });
   agent.addTool({
     name: 'set_quantity',
     description: 'Set the requested item quantity',
@@ -28,9 +28,7 @@ async function main() {
     console.log(await agent.predict('Set quantity to 7')); // No handler runs.
     const result = await agent.run('Set quantity to 7');
     if (result.status === 'failed') console.log(result.error, result.results);
-    console.log(await script.ai.extract('The quantity is 3', schema, { model: 'flash', modelUrl }));
-    const { modelId, values } = await script.ai.embed('diamond sword', { model: 'main' });
-    console.log(modelId, values.length);
+    console.log(await script.ai.extract('The quantity is 3', schema, { modelUrl }));
     agent.removeTool('set_quantity');
     agent.setTools([]);
   } finally {

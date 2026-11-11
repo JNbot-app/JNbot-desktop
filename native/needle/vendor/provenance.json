@@ -1,7 +1,6 @@
 {
   "source": "needle_jnbot",
-  "revision": "5d07b0cfad51c10f2de47bf9fbd11adee81682f7",
-  "llamaRevision": "42b021b4dc42be573f1e1463528532fc8294c650",
-  "openblasRevision": "993fad6aebbce34a97d3f8c34d6d79d35b64cc48",
-  "encoderSourceSha256": "736f9deb07975077b181d57de118bf3076ed2160454675447592be4a24c63ba9"
+  "revision": "ab92c5e8d66ad22de22c2232526a5780aca13104",
+  "localChanges": "np_set_window, np_set_prefix and np_prefix_reused (tool-prefix cache)",
+  "openblasRevision": "993fad6aebbce34a97d3f8c34d6d79d35b64cc48"
 }

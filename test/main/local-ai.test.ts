@@ -11,11 +11,12 @@ function fixture() {
     loadModel: jest.fn(async () => undefined),
     init: jest.fn(async () => undefined),
     complete,
-    embed: jest.fn(async () => [1, 0, 0]),
     reset: jest.fn(async () => undefined),
     close: jest.fn(async () => undefined),
   };
   const load = jest.fn(async () => engine);
+  // Default: the model answers with no calls, so extraction returns null.
+  complete.mockResolvedValue(output());
   const service = new AiService(load);
   const client = new AiClient((request) =>
     service.request('plugin-a', request),
@@ -46,32 +47,13 @@ function tool(handler?: AiTool['handler']): AiTool {
   };
 }
 
-test('agent embeddings use the selected model without tools and reject flash', async () => {
-  const { client, engine, load, service } = fixture();
-  try {
-    const flash = client.createAgent({ model: 'flash' });
-    await expect(flash.embed('hello')).rejects.toMatchObject({
-      code: 'AI_UNSUPPORTED_FEATURE',
-    });
-    expect(load).not.toHaveBeenCalled();
-    const modelUrl = 'https://example.com/agent.cact';
-    const agent = client.createAgent({ modelUrl });
-    await expect(agent.embed('hello')).resolves.toEqual({
-      modelId: resolveModel(modelUrl).id,
-      values: [1, 0, 0],
-    });
-    expect(engine.embed).toHaveBeenCalledWith('hello');
-    agent.dispose();
-    await expect(agent.embed('hello')).rejects.toMatchObject({
-      code: 'AI_DISPOSED',
-    });
-  } finally {
-    await service.close();
-  }
-});
+/** A tool-less request that still goes through the shared queue and model loading. */
+function extract(client: AiClient, text: string, options = {}) {
+  return client.extract(text, tool().parameters, options);
+}
 
 test.each(['dispose', 'abort', 'timeout'] as const)(
-  'agent embeddings stop on %s',
+  'agent predictions stop on %s',
   async (cancel) => {
     let started!: () => void;
     const ready = new Promise<void>((resolve) => {
@@ -88,9 +70,9 @@ test.each(['dispose', 'abort', 'timeout'] as const)(
         // Keep backend work pending until the caller cancels.
       });
     });
-    const agent = client.createAgent();
+    const agent = client.createAgent({ tools: [tool()] });
     const controller = new AbortController();
-    const pending = agent.embed('hello', {
+    const pending = agent.predict('hello', {
       signal: controller.signal,
       timeoutMs: cancel === 'timeout' ? 20 : 1000,
     });
@@ -112,15 +94,26 @@ test('reasoning defaults off and can be enabled or disabled for each request', a
   for (const reasoning of [undefined, true, false]) {
     const options = reasoning === undefined ? {} : { reasoning };
     await agent.predict('give', options);
-    expect(complete).toHaveBeenLastCalledWith('give', 512, reasoning ?? false);
+    expect(complete).toHaveBeenLastCalledWith(
+      'give',
+      512,
+      reasoning ?? false,
+      512,
+    );
     expect((await agent.run('give', options)).status).toBe('completed');
-    expect(complete).toHaveBeenLastCalledWith('give', 512, reasoning ?? false);
+    expect(complete).toHaveBeenLastCalledWith(
+      'give',
+      512,
+      reasoning ?? false,
+      512,
+    );
     complete.mockResolvedValueOnce(output('extract'));
     await client.extract('one', tool().parameters, options);
     expect(complete).toHaveBeenLastCalledWith(
       expect.any(String),
       512,
       reasoning ?? false,
+      512,
     );
   }
   await expect(
@@ -168,7 +161,7 @@ test('model choices stay lazy and report the selected ID for empty requests', as
   await service.close();
 });
 
-test('custom models apply to prediction, runs, extraction and embeddings', async () => {
+test('custom models apply to prediction, runs and extraction', async () => {
   const { client, engine, complete, service } = fixture();
   const modelUrl = 'https://example.com/custom.cact?v=1';
   const model = resolveModel(modelUrl);
@@ -181,13 +174,15 @@ test('custom models apply to prediction, runs, extraction and embeddings', async
   expect(await client.extract('two', tool().parameters, { modelUrl })).toEqual({
     quantity: 2,
   });
-  expect((await client.embed('hello', { modelUrl })).modelId).toBe(model.id);
   expect(engine.loadModel).toHaveBeenCalledTimes(1);
   expect(engine.loadModel).toHaveBeenCalledWith(model, expect.any(AbortSignal));
-  expect((await client.embed('default', { modelUrl: ' ' })).modelId).toBe(
-    defaultModel.id,
-  );
+  complete.mockResolvedValue(output());
+  expect(await extract(client, 'default', { modelUrl: ' ' })).toBeNull();
   expect(engine.loadModel).toHaveBeenCalledTimes(2);
+  expect(engine.loadModel).toHaveBeenLastCalledWith(
+    defaultModel,
+    expect.any(AbortSignal),
+  );
   await service.close();
 });
 
@@ -219,7 +214,7 @@ test('different models can load while an independent run awaits its handler', as
     })
     .run('give');
   await started;
-  const embedding = other.embed('default');
+  const extraction = extract(other, 'default');
   await new Promise<void>((resolve) => {
     setImmediate(resolve);
   });
@@ -228,17 +223,16 @@ test('different models can load while an independent run awaits its handler', as
   const result = await running;
   expect(result.modelId).toBe(resolveModel(modelUrl).id);
   expect(result.prediction?.modelId).toBe(result.modelId);
-  expect((await embedding).modelId).toBe(defaultModel.id);
+  expect(await extraction).toBeNull();
   expect(engine.loadModel).toHaveBeenCalledTimes(2);
-  await client.embed('custom again', { modelUrl });
+  await extract(client, 'custom again', { modelUrl });
   expect(engine.loadModel).toHaveBeenCalledTimes(3);
   await service.close();
 });
 
 test('failed model switches do not fall back and leave the queue usable', async () => {
-  const { client, engine, complete, service } = fixture();
-  complete.mockResolvedValue(output());
-  await client.embed('default');
+  const { client, engine, service } = fixture();
+  await extract(client, 'default');
   jest
     .mocked(engine.loadModel)
     .mockRejectedValueOnce(
@@ -251,8 +245,8 @@ test('failed model switches do not fall back and leave the queue usable', async 
   const failed = await agent.run('give');
   expect(failed.error?.code).toBe('AI_MODEL');
   expect(failed.modelId).toBe(resolveModel('https://example.com/bad.cact').id);
-  expect(engine.embed).toHaveBeenCalledTimes(1);
-  await client.embed('default again');
+  expect(engine.complete).toHaveBeenCalledTimes(1);
+  await extract(client, 'default again');
   expect(engine.loadModel).toHaveBeenCalledTimes(3);
   await agent.predict('retry');
   expect(engine.loadModel).toHaveBeenCalledTimes(4);
@@ -276,7 +270,7 @@ test('model loading receives cancellation and releases queued requests', async (
       });
     });
   const controller = new AbortController();
-  const pending = client.embed('cancel', {
+  const pending = extract(client, 'cancel', {
     modelUrl: 'https://example.com/custom.cact',
     signal: controller.signal,
   });
@@ -284,7 +278,11 @@ test('model loading receives cancellation and releases queued requests', async (
   await started;
   controller.abort();
   expect(await rejection).toMatchObject({ code: 'AI_CANCELLED' });
-  expect((await client.embed('next')).modelId).toBe(defaultModel.id);
+  expect(await extract(client, 'next')).toBeNull();
+  expect(engine.loadModel).toHaveBeenLastCalledWith(
+    defaultModel,
+    expect.any(AbortSignal),
+  );
   await service.close();
 });
 
@@ -294,14 +292,16 @@ test('invalid URLs and denied custom selections never reach inference', async ()
     client.createAgent({ modelUrl: 'http://example.com/model' }),
   ).toThrow(/HTTPS/);
   await expect(
-    client.embed('bad', { modelUrl: 'bad URL' }),
+    extract(client, 'bad', { modelUrl: 'bad URL' }),
   ).rejects.toMatchObject({ code: 'AI_INVALID_INPUT' });
   await expect(
     service.request('plugin', {
-      kind: 'embed',
+      kind: 'extract',
       requestId: 'bad',
       deadline: Date.now() + 10_000,
       text: 'bad',
+      schema: tool().parameters,
+      maxNewTokens: 512,
       modelUrl: 42,
     }),
   ).rejects.toMatchObject({ code: 'AI_INVALID_INPUT' });
@@ -313,10 +313,12 @@ test('invalid URLs and denied custom selections never reach inference', async ()
     service.request(
       'restricted',
       {
-        kind: 'embed',
+        kind: 'extract',
         requestId: 'denied',
         deadline: Date.now() + 10_000,
         text: 'bad',
+        schema: tool().parameters,
+        maxNewTokens: 512,
         modelUrl: 'https://example.com/custom.cact',
       },
       false,
@@ -326,7 +328,9 @@ test('invalid URLs and denied custom selections never reach inference', async ()
     restricted.createAgent({ modelUrl: 'https://example.com/custom.cact' }),
   ).toThrow(/network/);
   await expect(
-    restricted.embed('bad', { modelUrl: 'https://example.com/custom.cact' }),
+    extract(restricted, 'bad', {
+      modelUrl: 'https://example.com/custom.cact',
+    }),
   ).rejects.toMatchObject({ code: 'AI_INVALID_INPUT' });
   expect(
     (
@@ -449,19 +453,18 @@ test('one-shot runs preserve schema failures, missing handlers and recursion pro
   expect(handler).toHaveBeenCalledTimes(1);
   complete.mockResolvedValue(output('give'));
   const recursive = client.createAgent({
-    tools: [tool(() => client.embed('again'))],
+    tools: [tool(() => extract(client, 'again'))],
   });
   expect((await recursive.run('give')).error?.code).toBe('AI_REENTRANT');
   await service.close();
 });
 
-test('extraction and embeddings use the shared service; dispose and cancellation settle work', async () => {
+test('extraction uses the shared service; dispose and cancellation settle work', async () => {
   const { client, complete, service, load } = fixture();
   complete.mockResolvedValue(output('extract', 2));
   expect(await client.extract('two', tool().parameters)).toEqual({
     quantity: 2,
   });
-  expect((await client.embed('hello')).values).toEqual([1, 0, 0]);
   expect(load).toHaveBeenCalledTimes(1);
   const disposed = client.createAgent({ tools: [tool()] });
   disposed.dispose();
@@ -536,7 +539,7 @@ test('cancelling other inference leaves a running handler intact', async () => {
     .run('give');
   await started;
   const controller = new AbortController();
-  const pending = client.embed('queued', { signal: controller.signal });
+  const pending = extract(client, 'queued', { signal: controller.signal });
   controller.abort();
   await expect(pending).rejects.toMatchObject({ code: 'AI_CANCELLED' });
   release();
@@ -610,110 +613,36 @@ test('timeouts longer than Node timer capacity do not expire immediately', () =>
   jest.useRealTimers();
 });
 
-test('variants are lazy, default to main, and flash embeddings reject at both API boundaries', async () => {
+test('windowSize defaults to 512, reaches the engine, and invalid sizes never load', async () => {
   const { client, load, complete, engine, service } = fixture();
-  const flash = client.createAgent({ model: 'flash' });
-  expect((await flash.predict('empty')).modelId).toBe(
-    resolveModel(undefined, 'flash').id,
-  );
-  await expect(client.embed('text', { model: 'flash' })).rejects.toMatchObject({
-    code: 'AI_UNSUPPORTED_FEATURE',
-  });
-  await expect(
-    service.request('raw', {
-      kind: 'embed',
-      requestId: 'flash',
-      deadline: Date.now() + 10000,
-      text: 'text',
-      model: 'flash',
-    }),
-  ).rejects.toMatchObject({ code: 'AI_UNSUPPORTED_FEATURE' });
-  const restricted = new AiClient(
-    (request) => service.request('restricted', request, false),
-    false,
-  );
-  await expect(
-    restricted.embed('text', {
-      model: 'flash',
-      modelUrl: 'https://example.com/custom.cact',
-    }),
-  ).rejects.toMatchObject({ code: 'AI_UNSUPPORTED_FEATURE' });
-  expect(load).not.toHaveBeenCalled();
-  expect(() => resolveModel(undefined, 'unknown')).toThrow(/main or flash/);
   complete.mockResolvedValue(output('give'));
-  flash.addTool(tool());
-  await flash.predict('give');
-  expect(engine.loadModel).toHaveBeenLastCalledWith(
-    resolveModel(undefined, 'flash'),
-    expect.any(AbortSignal),
-  );
   await client.createAgent({ tools: [tool()] }).predict('give');
-  expect(engine.loadModel).toHaveBeenLastCalledWith(
-    defaultModel,
-    expect.any(AbortSignal),
-  );
-  const url = 'https://example.com/custom.cact';
-  expect(resolveModel(url, 'flash').cacheId).toBe(
-    resolveModel(url, 'main').cacheId,
-  );
-  expect(resolveModel(url, 'flash').id).not.toBe(resolveModel(url, 'main').id);
-  await service.close();
-});
-
-test('tool filtering defaults off and forwards a threshold for predict, run and extract', async () => {
-  const { client, complete, service } = fixture();
-  const agent = client.createAgent({ tools: [tool(() => 1)] });
-  complete.mockResolvedValue(output('give'));
-  for (const threshold of [undefined, null, 0, -1, 1, 0.75]) {
-    const options = { toolFilterThreshold: threshold };
-    await agent.predict('give', options);
-    const args = threshold == null ? [] : [threshold];
-    expect(complete).toHaveBeenLastCalledWith('give', 512, false, ...args);
-    await agent.run('give', options);
-    expect(complete).toHaveBeenLastCalledWith('give', 512, false, ...args);
-    complete.mockResolvedValueOnce(output('extract'));
-    await client.extract('one', tool().parameters, options);
-    expect(complete).toHaveBeenLastCalledWith(
-      expect.any(String),
-      512,
-      false,
-      ...args,
+  expect(complete).toHaveBeenLastCalledWith('give', 512, false, 512);
+  const wide = client.createAgent({ tools: [tool()], windowSize: 1024 });
+  await wide.predict('give');
+  expect(complete).toHaveBeenLastCalledWith('give', 512, false, 1024);
+  complete.mockResolvedValue(output('extract'));
+  await client.extract('one', tool().parameters, { windowSize: 2048 });
+  expect(complete).toHaveBeenLastCalledWith(expect.any(String), 512, false, 2048);
+  // The window is a runtime option: the same model file stays loaded.
+  expect(engine.loadModel).toHaveBeenCalledTimes(1);
+  expect(load).toHaveBeenCalledTimes(1);
+  for (const windowSize of [0, 1.5, 8193])
+    expect(() => client.createAgent({ windowSize })).toThrow(
+      expect.objectContaining({ code: 'AI_INVALID_INPUT' }),
     );
-  }
+  await expect(
+    service.request('plugin', {
+      kind: 'predict',
+      requestId: 'invalid-window',
+      deadline: Date.now() + 10000,
+      text: 'give',
+      tools: [tool()],
+      revision: 0,
+      maxNewTokens: 512,
+      windowSize: '512',
+    }),
+  ).rejects.toMatchObject({ code: 'AI_INVALID_INPUT' });
+  expect(complete).toHaveBeenCalledTimes(3);
   await service.close();
 });
-
-test.each([NaN, Infinity, -Infinity, -1.01, 1.01, '0.5', true])(
-  'tool filtering rejects invalid thresholds before loading: %p',
-  async (threshold) => {
-    const { load, service } = fixture();
-    // Exercise the untyped transport boundary too.
-    await expect(
-      service.request('plugin', {
-        kind: 'predict',
-        requestId: 'invalid-filter',
-        deadline: Date.now() + 10000,
-        text: 'give',
-        tools: [tool()],
-        revision: 0,
-        maxNewTokens: 512,
-        toolFilterThreshold: threshold,
-      }),
-    ).rejects.toMatchObject({ code: 'AI_INVALID_INPUT' });
-    expect(load).not.toHaveBeenCalled();
-    await service.close();
-  },
-);
-
-test.each([NaN, Infinity, -Infinity, -1.01, 1.01])(
-  'client rejects invalid tool thresholds: %p',
-  async (threshold) => {
-    const { client, load, service } = fixture();
-    const agent = client.createAgent({ tools: [tool()] });
-    await expect(
-      agent.predict('give', { toolFilterThreshold: threshold }),
-    ).rejects.toMatchObject({ code: 'AI_INVALID_INPUT' });
-    expect(load).not.toHaveBeenCalled();
-    await service.close();
-  },
-);

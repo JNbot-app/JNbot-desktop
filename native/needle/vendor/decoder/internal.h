@@ -22,12 +22,17 @@ struct Mapping {
     void *file_handle = nullptr;
     void *mapping_handle = nullptr;
 #endif
-    const uint8_t *mapped_base = nullptr;
-    size_t mapped_size = 0;
-    explicit Mapping(const char *, uint64_t, uint64_t);
+    explicit Mapping(const char *);
     ~Mapping();
     Mapping(const Mapping &) = delete;
 };
+// Monarch factor weights. On ARM they stay FP16 in memory (half the bytes read per token) and
+// are widened to FP32 inside the mixing loops, so results are bit-identical to FP32 storage.
+#if defined(__aarch64__)
+using factor_t = __fp16;
+#else
+using factor_t = float;
+#endif
 struct Tensor {
     uint32_t kind = 0, ndim = 0, group = 0, bits = 0, padded = 0;
     std::array<uint32_t, 4> shape{};
@@ -39,12 +44,17 @@ struct Tensor {
     const float *floats() const {
         return kind == 1 ? values.data() : reinterpret_cast<const float *>(data);
     }
+    const factor_t *factors() const {
+        return sizeof(factor_t) == 2 ? reinterpret_cast<const factor_t *>(data)
+                                     : reinterpret_cast<const factor_t *>(floats());
+    }
     void row(size_t, float *, bool rotated = false) const;
     size_t columns() const { return ndim < 2 ? (ndim ? shape[0] : 1) : shape[1]; }
 };
 struct Layer {
     uint32_t norm, q, k, v, qt, kt, vt, qnorm, knorm, gate, out, post, agate, pre;
     uint32_t diagonals, factors, cv, cu;
+    bool grouped = false; // Monarch: one Hadamard factor matrix per group instead of one shared
 };
 struct Model {
     std::mutex validation_mutex;
@@ -54,6 +64,9 @@ struct Model {
     std::vector<Tensor> tensors;
     std::vector<Layer> layers;
     uint32_t mhc = 0, perms = 0, engrams = 0, final_norm = 0, confidence_head = 0;
+    // First runtime LoRA tensor (0: none). Per attention target q, k, v, gate, out:
+    // A FP16 [layers][rank][in], then B FP16 [layers][rank][out].
+    uint32_t lora = 0;
     Model(const char *, uint64_t, uint64_t);
     const Tensor &tensor(int32_t) const;
     void validate_decoder();
@@ -85,7 +98,11 @@ void softmax(float *, size_t);
 bool sinkhorn_probabilities(float *, size_t);
 void rope(float *, size_t, size_t, float);
 void dense(const float *, const float *, float *, size_t, size_t, size_t);
+// out[count][B cols] += (x[count][A cols] * A[layer]^T) * B[layer]; u holds count*rank floats.
+void lora_add(const Tensor &, const Tensor &, size_t layer, const float *x, size_t count, float *out,
+              float *u);
 void kron(const float *, const Tensor &, const Tensor &, float *, float *);
+void group_mix(const float *, const Tensor &, const Tensor &, float *, float *);
 void attention_prefill(const float *, const float *, const float *, float *, float *,
                        size_t, size_t, size_t, size_t, size_t, size_t, size_t);
 float sigmoid(float);
@@ -129,15 +146,14 @@ struct ConfidencePool {
     float score() const;
     size_t bytes() const;
 };
-// One bounded tool-prefix cache. Request-dependent representation banks are never cached.
-struct PrefixState {
-    size_t requested = 0, layers = 0, reused = 0;
-    bool hit = false;
+// State after the first whole prefill chunks of a prompt, kept so the next request with the
+// same leading tokens (usually the tool list) skips their prefill. Only used without fusion.
+struct PrefixCache {
+    size_t limit = 0, reused = 0;
     std::vector<int32_t> tokens, token_history;
     std::vector<KV> cache;
     std::vector<History> qhist, khist, vhist, ehist;
-    std::vector<std::vector<float>> streams, memories;
-    std::shared_ptr<ConfidencePool> confidence;
+    std::unique_ptr<ConfidencePool> confidence;
 };
 struct Decoder {
     std::shared_ptr<Model> model;
@@ -146,28 +162,29 @@ struct Decoder {
     std::shared_ptr<RepresentationRequest> representation;
     std::unique_ptr<ConfidencePool> confidence;
     size_t position = 0, d, n, nh, nkh, qd, vd, win, hn, sites, block_capacity;
-    PrefixState prefix;
     std::vector<KV> cache;
     std::vector<History> qhist, khist, vhist, ehist;
     std::vector<int32_t> token_history;
     std::vector<uint32_t> p1, p2;
     std::vector<float> scratch, stream, memory, gathered, angles, last_hidden;
+    PrefixCache prefix;
     size_t used = 0;
-    explicit Decoder(std::shared_ptr<Model>, std::shared_ptr<ProjectionWorkers> = {});
+    // window 0 keeps the archive's KV window (header word 3).
+    explicit Decoder(std::shared_ptr<Model>, std::shared_ptr<ProjectionWorkers> = {}, size_t window = 0);
     void reset();
-    void prefix_save();
-    void prefix_restore();
     float *alloc(size_t);
     void run(const int32_t *, size_t, float *, float * = nullptr, Trace = {});
     void chunk(const int32_t *, size_t, float *, Trace);
     void engram(const int32_t *, size_t);
     void attention(size_t, size_t, const float *, float *, Trace);
     void monarch(const Layer &, const float *, float *, size_t count = 1);
+    void save_prefix(const int32_t *, size_t);
+    void restore_prefix();
 };
 } // namespace needle_cpu
 struct np_handle {
     std::shared_ptr<needle_cpu::Model> model;
-    size_t threads = 1;
+    size_t threads = 1, window = 0, prefix = 0;
     std::shared_ptr<needle_cpu::ProjectionWorkers> workers;
     std::unique_ptr<needle_cpu::Math> math;
     std::unique_ptr<needle_cpu::Decoder> decoder;

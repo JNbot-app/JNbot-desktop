@@ -19,10 +19,9 @@ export interface AiEngine {
   complete(
     text: string,
     maxNewTokens: number,
-    reasoning?: boolean,
-    toolFilterThreshold?: number | null,
+    reasoning: boolean,
+    windowSize: number,
   ): Promise<EnginePrediction>;
-  embed(text: string): Promise<number[]>;
   reset(): Promise<void>;
   close(): Promise<void>;
 }
@@ -93,7 +92,7 @@ export class NeedleEngine implements AiEngine {
     this.toolsetKey = undefined;
     const file = await modelFile(this.cacheDirectory, signal, model);
     signal?.throwIfAborted();
-    await this.request({ kind: 'load', file, variant: model.variant });
+    await this.request({ kind: 'load', file });
   }
 
   private fail(error: Error): void {
@@ -123,15 +122,15 @@ export class NeedleEngine implements AiEngine {
   async complete(
     text: string,
     maxNewTokens: number,
-    reasoning = false,
-    toolFilterThreshold: number | null = null,
+    reasoning: boolean,
+    windowSize: number,
   ): Promise<EnginePrediction> {
     const raw = await this.request({
       kind: 'complete',
       text,
       maxNewTokens,
       reasoning,
-      toolFilterThreshold,
+      windowSize,
     });
     if (
       !isObject(raw) ||
@@ -163,22 +162,6 @@ export class NeedleEngine implements AiEngine {
           : null,
       reasoning: typeof raw.reasoning === 'string' ? raw.reasoning : null,
     };
-  }
-
-  async embed(text: string): Promise<number[]> {
-    const values = await this.request({ kind: 'embed', text });
-    if (
-      !Array.isArray(values) ||
-      !values.length ||
-      !values.every(
-        (value) => typeof value === 'number' && Number.isFinite(value),
-      )
-    )
-      throw aiError(
-        'AI_INVALID_OUTPUT',
-        'The model returned invalid embeddings.',
-      );
-    return values;
   }
 
   async reset(): Promise<void> {

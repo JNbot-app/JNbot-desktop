@@ -292,14 +292,16 @@ export interface AiTool {
   handler?: (arguments_: AiJsonObject) => AiJson | void | Promise<AiJson | void>;
 }
 export interface AiRequestOptions { signal?: AbortSignal; timeoutMs?: number; }
-/** Select a built-in variant, optionally overriding its compatible HTTPS model download. */
-export interface AiModelOptions { model?: 'main' | 'flash'; modelUrl?: string; }
+export interface AiModelOptions {
+  /** Optional HTTPS download of a compatible model, replacing the built-in one. */
+  modelUrl?: string;
+  /** Tokens the model can look back on (1-8192). Defaults to 512; raise it for long prompts or large tool lists. */
+  windowSize?: number;
+}
 export interface AiPredictOptions extends AiRequestOptions {
   maxNewTokens?: number;
   /** Generate reasoning before tool calls. Defaults to false. */
   reasoning?: boolean;
-  /** Optional Gemma tool cosine threshold in [-1, 1]. Omit or null disables it. Main model only; flash bypasses filtering. */
-  toolFilterThreshold?: number | null;
 }
 export type AiRunOptions = AiPredictOptions;
 export interface AiCall { name: string; arguments: AiJsonObject; }
@@ -324,8 +326,6 @@ export interface AiRunResult {
   error?: AiError;
 }
 export interface AiAgent {
-  /** Embed text with this agent's Gemma model. Flash rejects with AI_UNSUPPORTED_FEATURE. */
-  embed(text: string, options?: AiRequestOptions): Promise<{ modelId: string; values: number[] }>;
   predict(text: string, options?: AiPredictOptions): Promise<AiPrediction>;
   run(text: string, options?: AiRunOptions): Promise<AiRunResult>;
   setTools(tools: AiTool[]): void;
@@ -337,7 +337,6 @@ export interface AiAgent {
 export interface AiAPI {
   createAgent(options?: AiModelOptions & { tools?: AiTool[] }): AiAgent;
   extract(text: string, schema: AiSchema, options?: AiPredictOptions & AiModelOptions): Promise<AiJsonObject | null>;
-  embed(text: string, options?: AiRequestOptions & AiModelOptions): Promise<{ modelId: string; values: number[] }>;
 }
 
 /** A function the AI may call while answering, e.g. to read the bot's state. */

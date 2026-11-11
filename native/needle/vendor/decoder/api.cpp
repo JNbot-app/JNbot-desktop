@@ -88,36 +88,31 @@ void np_reset(np_handle *h) {
         if (h->representation) h->representation->clear();
     }
 }
-int32_t np_prefix(np_handle *h, size_t count, char *error, size_t capacity) {
+int32_t np_set_window(np_handle *h, size_t window, char *error, size_t capacity) {
     return guard(error, capacity, [&] {
-        require(h, "Missing decoder handle");
+        require(h, "Missing model handle");
         std::lock_guard<std::mutex> lock(h->mutex);
-        require(!h->decoder || h->decoder->position == 0, "Reset before changing tool prefix");
-        if (!h->decoder) {
-            h->math.reset();
-            h->decoder = std::make_unique<Decoder>(h->model, h->workers);
-            h->decoder->fusion = h->fusion;
-            h->decoder->representation = h->representation;
+        require(window <= h->model->h[13], "KV window exceeds the model context");
+        if (window != h->window) {
+            h->window = window;
+            h->decoder.reset(); // rebuilt with the new KV ring on the next eval
         }
-        // Bound cached boundary streams and engrams to 16 MiB, plus one KV snapshot.
-        auto &d = *h->decoder;
-        const size_t chunk_bytes = (d.n + d.sites * 2) * batch_size * d.d * sizeof(float);
-        const size_t cap = (16 * 1024 * 1024 / chunk_bytes) * batch_size;
-        count = std::min(count, cap) / batch_size * batch_size;
-        if (d.prefix.requested != count) d.prefix = {};
-        d.prefix.requested = count;
-        return 0;
+        return int32_t(0);
+    });
+}
+int32_t np_set_prefix(np_handle *h, size_t count, char *error, size_t capacity) {
+    return guard(error, capacity, [&] {
+        require(h, "Missing model handle");
+        std::lock_guard<std::mutex> lock(h->mutex);
+        h->prefix = count;
+        if (h->decoder) h->decoder->prefix.limit = count;
+        return int32_t(0);
     });
 }
 size_t np_prefix_reused(np_handle *h) {
     if (!h) return 0;
     std::lock_guard<std::mutex> lock(h->mutex);
     return h->decoder ? h->decoder->prefix.reused : 0;
-}
-size_t np_prefix_reused_layers(np_handle *h) {
-    if (!h) return 0;
-    std::lock_guard<std::mutex> lock(h->mutex);
-    return h->decoder && h->decoder->prefix.reused ? h->decoder->prefix.layers : 0;
 }
 size_t np_decoded_buffer_bytes(np_handle *h) {
     if (!h)
@@ -234,7 +229,8 @@ int32_t np_eval(np_handle *h, const int32_t *tokens, size_t count, float *output
         require(size >= vocab(h), "Insufficient decoder output capacity");
         if (!h->decoder) {
             h->math.reset();
-            h->decoder = std::make_unique<Decoder>(h->model, h->workers);
+            h->decoder = std::make_unique<Decoder>(h->model, h->workers, h->window);
+            h->decoder->prefix.limit = h->prefix;
             h->decoder->fusion = h->fusion;
             h->decoder->representation = h->representation;
         }

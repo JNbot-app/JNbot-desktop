@@ -63,8 +63,7 @@
     "typecheck:main": "tsc --project src/main/tsconfig.json --noEmit",
     "typecheck:tools": "tsc --project tsconfig.tools.json --noEmit",
     "start:diagnostics": "cross-env SENTRY_DIAGNOSTICS=true npm start",
-    "typecheck": "npm run typecheck:renderer && npm run typecheck:main && npm run typecheck:tools",
-    "export:flash": "node scripts/export-flash.mjs"
+    "typecheck": "npm run typecheck:renderer && npm run typecheck:main && npm run typecheck:tools"
   },
   "repository": {
     "type": "git",

@@ -22,7 +22,6 @@ const request = z.discriminatedUnion('kind', [
     id: z.number().int(),
     kind: z.literal('load'),
     file: z.string(),
-    variant: z.enum(['main', 'flash']),
   }),
   z.object({
     id: z.number().int(),
@@ -38,18 +37,7 @@ const request = z.discriminatedUnion('kind', [
     text: z.string(),
     maxNewTokens: z.number().int().positive(),
     reasoning: z.boolean().default(false),
-    toolFilterThreshold: z
-      .number()
-      .finite()
-      .min(-1)
-      .max(1)
-      .nullable()
-      .optional(),
-  }),
-  z.object({
-    id: z.number().int(),
-    kind: z.literal('embed'),
-    text: z.string(),
+    windowSize: z.number().int().positive(),
   }),
   z.object({ id: z.number().int(), kind: z.enum(['reset', 'close']) }),
 ]);
@@ -79,11 +67,7 @@ try {
       if (operation.kind === 'load') {
         runtime?.close();
         runtime = undefined;
-        runtime = new InferenceRuntime(
-          binding,
-          operation.file,
-          operation.variant,
-        );
+        runtime = new InferenceRuntime(binding, operation.file);
       } else {
         if (!runtime) throw aiError('AI_MODEL', 'Model is not loaded.');
         switch (operation.kind) {
@@ -95,11 +79,8 @@ try {
               operation.text,
               operation.maxNewTokens,
               operation.reasoning,
-              operation.toolFilterThreshold,
+              operation.windowSize,
             );
-            break;
-          case 'embed':
-            value = runtime.embed(operation.text);
             break;
           case 'reset':
             runtime.reset();
