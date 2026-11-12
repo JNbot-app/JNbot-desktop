@@ -7,6 +7,7 @@ import { startBotAutomation } from '../bot/automation';
 import type { AutomationDocument } from '../../../../common/automation';
 import type { MacroInfo, MacroCode } from '../../types';
 import type { Bot } from '../workerTypes';
+import type { RunContext } from './scriptRuntime';
 
 type ScriptActionData = {
   id: string;
@@ -25,6 +26,8 @@ type ActionRequest = {
   args?: any[];
   /** Overrides for the action's plugin options. */
   optionOverrides?: Record<string, unknown>;
+  /** The chain this run belongs to and patches for the machines it creates. */
+  context?: RunContext;
 };
 
 const cache: Record<string, ScriptActionData> = {};
@@ -56,7 +59,7 @@ function fetchActionData(
   });
 }
 
-async function scriptActionRunner({ name, bot, args = [], id, optionOverrides = {} }: ActionRequest): Promise<any> {
+async function scriptActionRunner({ name, bot, args = [], id, optionOverrides = {}, context }: ActionRequest): Promise<any> {
   if (!name && !id) throw new Error('scriptActionRunner: name or id is required');
 
   const actionId = workerData.id + Math.random().toString(36).substring(7);
@@ -92,11 +95,16 @@ async function scriptActionRunner({ name, bot, args = [], id, optionOverrides = 
       );
     }
 
-    return runJS({
+    const options = { ...settings, ...explicitOptions };
+    // Awaited so SCRIPT_ACTION_DONE only fires once the action has finished.
+    return await runJS({
       code: (action.code as any).code ?? (action.code as any),
       scriptInfo: action.info,
-      args: [bot, { ...settings, ...explicitOptions }, args],
+      // Also as `script.settings`, like a plugin started on its own.
+      scriptOptions: options,
+      args: [bot, options, args],
       runAsAction: true,
+      context,
     });
   } finally {
     global.send('SCRIPT_ACTION_DONE', { actionId });

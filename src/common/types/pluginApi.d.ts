@@ -758,6 +758,19 @@ export interface BotMachine<S extends object = Record<string, unknown>>
   addTask(task: Task<S>): BotMachine<S>;
   addTasks(tasks: Task<S>[]): BotMachine<S>;
   once(when: Guard<S>, run: Action<S>, name?: string): BotMachine<S>;
+  /**
+   * Change another plugin's tasks by name (e.g. from `chain.patch`). Each
+   * throws when there is no task with that name.
+   */
+  insertBefore(name: string, task: Task<S>): BotMachine<S>;
+  insertAfter(name: string, task: Task<S>): BotMachine<S>;
+  replaceTask(name: string, task: Task<S>): BotMachine<S>;
+  removeTask(name: string): BotMachine<S>;
+  /** Run `wrap` instead of the task; call `run(ctx)` inside it to run the original. */
+  wrapTask(
+    name: string,
+    wrap: (ctx: TaskContext<S>, run: Action<S>) => Awaitable<void>,
+  ): BotMachine<S>;
   setState(patch: Partial<S>): BotMachine<S>;
   getState(): S;
   setDelay(ms: number): BotMachine<S>;
@@ -774,6 +787,77 @@ export interface BotMachine<S extends object = Record<string, unknown>>
   onError(
     listener: (error: unknown, task: Task<S>, context: TaskContext<S>) => void,
   ): BotMachine<S>;
+}
+
+/** A chain step, as seen through the `chain` API. */
+export interface ChainStepInfo {
+  id: string;
+  name: string;
+  /** Plugin id of the step's action. */
+  scriptId: string;
+  /** The step's option overrides, including those from `chain.setOptions`. */
+  options: Record<string, unknown>;
+  /** False when skipped with `chain.disableStep`; `chain.runStep` still runs it. */
+  enabled: boolean;
+}
+
+/**
+ * The chain a plugin runs in: `require('JNbot').chain`, or `null` outside a
+ * chain. A chain's setup code gets it as `chain`. Steps are referred to by id
+ * or name. Changes (options, patches, disabled or added steps) last until the
+ * chain moves on to the next alt.
+ *
+ * @example
+ * // Setup code: Kit Collector keeps its kits, and Auto Salvage makes room
+ * // whenever its inventory fills up, after which Kit Collector carries on.
+ * chain.setOptions('Kit Collector', { itemTransfer: 'keep' });
+ * chain.patch('Kit Collector', (machine) => {
+ *   machine.wrapTask('Depositing items', async (ctx, run) => {
+ *     if (ctx.bot.inventory.emptySlotCount() < 8) await chain.runStep('Auto Salvage');
+ *     await run(ctx);
+ *   });
+ * });
+ */
+export interface ChainAPI {
+  readonly id: string;
+  readonly name: string;
+  /** The bot the chain runs on right now. */
+  readonly bot: Bot;
+  /** Values returned by earlier steps (plus `alt`), filled into `{key}` placeholders. */
+  readonly data: Record<string, unknown>;
+  /** Every step, in order. */
+  readonly steps: ChainStepInfo[];
+  /** The step running right now (the innermost one when a step runs another). */
+  readonly current: ChainStepInfo | null;
+  /**
+   * Run a step on the chain's bot, exactly as the chain would: with its option
+   * overrides and `setOptions`, then `options` on top. Resolves false when it fails.
+   */
+  runStep(step: string, options?: Record<string, unknown>): Promise<boolean>;
+  /**
+   * Always run a step with these options, on top of its overrides (e.g. to
+   * make sure Kit Collector keeps its kits). Merges with earlier calls.
+   */
+  setOptions(step: string, options: Record<string, unknown>): void;
+  /**
+   * Change the tasks of each `BotMachine` the step starts, right before it
+   * starts. Throwing (e.g. a task name that does not exist) fails the step.
+   */
+  patch(step: string, patch: (machine: BotMachine<any>) => void): void;
+  /** Skip a step when the chain gets to it. */
+  disableStep(step: string): void;
+  enableStep(step: string): void;
+  /** Add a step after `after` (default: at the end). */
+  addStep(
+    step: { scriptId: string; name?: string; options?: Record<string, unknown> },
+    after?: string,
+  ): ChainStepInfo;
+  /** After the current step, go to this step instead. */
+  goTo(step: string): void;
+  /** After the current step, move on to the next alt. */
+  skipAlt(): void;
+  /** After the current step, stop the chain. */
+  stop(): void;
 }
 
 export interface TaskContext<S extends object = Record<string, unknown>> {

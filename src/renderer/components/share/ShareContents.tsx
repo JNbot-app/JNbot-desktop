@@ -11,6 +11,7 @@ import {
   type ShareOverview,
 } from '../../../common/share';
 import { useOfficialServers } from './ServerTargetSelect';
+import CodePreview from './CodePreview';
 
 const Heading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Typography.Text strong style={{ display: 'block', marginBottom: 6 }}>
@@ -260,10 +261,20 @@ const ShareContents: React.FC<{ overview: ShareOverview }> = ({ overview }) => {
       );
       break;
     }
-    case 'chain':
+    case 'chain': {
+      const setup = details.find((section) => section.code !== undefined)?.code;
       body = (
         <>
           <ChainSteps details={details} />
+          {setup !== undefined && (
+            <div>
+              <Heading>Setup code</Heading>
+              <Typography.Text type="secondary">
+                Runs for every alt before the steps and can change how they run.
+              </Typography.Text>
+              <CodePreview code={setup} label="setup code" />
+            </div>
+          )}
           <Facts
             facts={[
               !!detailValue(details, 'Gamemode') && [
@@ -277,6 +288,7 @@ const ShareContents: React.FC<{ overview: ShareOverview }> = ({ overview }) => {
         </>
       );
       break;
+    }
     case 'trigger':
       body = (
         <>

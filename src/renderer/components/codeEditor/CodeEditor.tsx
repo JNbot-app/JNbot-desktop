@@ -7,6 +7,7 @@ import useApp from '../../hooks/useApp';
 import { Spin } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import { MacroInfo } from '../../../main/src/types';
+import { chainIdFromPluginId } from '../../../common/chains';
 //@ts-ignore
 import autoCompleteText from '../../assets/autoComplete/fullApiTypes.txt?raw';
 //@ts-ignore
@@ -17,10 +18,17 @@ import LlmCodePanel, { LLM_CODE_TAB } from './LlmCodePanel';
 
 export type EditorInstance = monaco.editor.IStandaloneCodeEditor;
 
+// A chain's setup code is the body of `async function main(chain, bot)`.
+const chainSetupTypes = `${autoCompleteText}
+declare const chain: ChainAPI;
+declare const bot: Bot;`;
+
 type CodeEditorProps = {
   macroInfo: MacroInfo;
   setMacroInfo: (info: MacroInfo) => void;
   codeRef: React.MutableRefObject<string>;
+  /** Stores the code; called on Ctrl/Cmd+S, every so often, and when leaving. */
+  onSave: (code: string) => void;
   editorRef: React.MutableRefObject<EditorInstance | null>;
 
   activeTab: string | null;
@@ -41,6 +49,7 @@ const CodeEditor: FC<CodeEditorProps> = ({
   setMacroInfo,
   code,
   codeRef,
+  onSave,
   editorRef,
   activeTab,
   editorDetails,
@@ -51,6 +60,8 @@ const CodeEditor: FC<CodeEditorProps> = ({
   const llm = useLlm();
   const libsRef = useRef<monaco.IDisposable[]>([]);
   const hasRuntimeMarker = useRef(false);
+  // Editing a chain's setup code rather than a plugin.
+  const chainSetup = !!chainIdFromPluginId(macroInfo.pluginId);
 
   useEffect(() => () => libsRef.current.forEach((lib) => lib.dispose()), []);
 
@@ -82,20 +93,12 @@ const CodeEditor: FC<CodeEditorProps> = ({
 
   const saveScript = useCallback((forced = false) => {
     const { needUpdate, loaded, lastUpdated } = editorDetails.current;
-    if (
-      needUpdate &&
-      loaded &&
-      (forced || Date.now() - lastUpdated > 60000) &&
-      codeRef.current.length > 0
-    ) {
+    if (needUpdate && loaded && (forced || Date.now() - lastUpdated > 60000)) {
       editorDetails.current.needUpdate = false;
       editorDetails.current.lastUpdated = Date.now();
-      window.ipcRenderer.action('SAVE_MACRO', {
-        pluginId: macroInfo.pluginId,
-        code: { code: codeRef.current },
-      });
+      onSave(codeRef.current);
     }
-  }, [macroInfo.pluginId, codeRef, editorDetails]);
+  }, [onSave, codeRef, editorDetails]);
 
   useEffect(() => {
     if (!macroInfo.pluginId) return;
@@ -127,12 +130,12 @@ const CodeEditor: FC<CodeEditorProps> = ({
       // Profile-UI plugins get a tailored autocomplete that documents the
       // Builder API + `args`. Everything else falls back to the full bot
       // API surface.
-      const lib =
-        macroInfo.scriptType === 'profileUi' ? profileUiTypesText : autoCompleteText;
-      const libName =
+      const [lib, libName] =
         macroInfo.scriptType === 'profileUi'
-          ? 'ProfileUiAutoComplete.d.ts'
-          : 'EditorAutoComplete.d.ts';
+          ? [profileUiTypesText, 'ProfileUiAutoComplete.d.ts']
+          : chainSetup
+            ? [chainSetupTypes, 'ChainSetupAutoComplete.d.ts']
+            : [autoCompleteText, 'EditorAutoComplete.d.ts'];
       // Register the API surface for both JS and TS plugins so autocomplete
       // works regardless of the plugin's language.
       const { typescript } = monaco.languages;
@@ -141,7 +144,7 @@ const CodeEditor: FC<CodeEditorProps> = ({
         typescript.typescriptDefaults.addExtraLib(lib, libName),
       ];
     },
-    [macroInfo.scriptType, editorRef, saveScript],
+    [macroInfo.scriptType, chainSetup, editorRef, saveScript],
   );
 
   const editorLanguage =
@@ -197,7 +200,7 @@ const CodeEditor: FC<CodeEditorProps> = ({
               onClose={() => setActiveTab(null)}
               onTabChange={setActiveTab}
               extraTabs={
-                llm.configured && macroInfo.scriptType !== 'profileUi'
+                llm.configured && macroInfo.scriptType !== 'profileUi' && !chainSetup
                   ? [
                     {
                       key: LLM_CODE_TAB,

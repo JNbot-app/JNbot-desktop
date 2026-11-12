@@ -39,6 +39,7 @@ import BotContextMenu from './BotContextMenu';
 import { usePanelContext } from '../other/botSideBar/SidePanelContextProvider';
 import type { EditorInstance } from './CodeEditor';
 import type { MacroInfo } from '../../../main/src/types';
+import { chainIdFromPluginId } from '../../../common/chains';
 import { VscLayoutSidebarRightOff } from 'react-icons/vsc';
 
 const Nav: FC<{
@@ -82,7 +83,9 @@ const Nav: FC<{
     return () => removeListener();
   }, [onSelectActiveTab]);
 
-  const back = () => navigate('/plugins');
+  // A chain's setup code has no plugin file, settings or options.
+  const chainSetup = !!chainIdFromPluginId(pluginInfo.pluginId);
+  const back = () => navigate(chainSetup ? '/' : '/plugins');
 
   const exportMacro = () => {
     window.ipcRenderer.action('EXPORT_MACRO', {
@@ -109,7 +112,7 @@ const Nav: FC<{
   };
 
   const runnable =
-    pluginInfo.scriptType === 'script' || pluginInfo.scriptType === 'action';
+    !chainSetup && (pluginInfo.scriptType === 'script' || pluginInfo.scriptType === 'action');
   const hasOptions = !!pluginInfo.config?.length;
 
   const openOptions = () =>
@@ -133,7 +136,7 @@ const Nav: FC<{
       label: 'Documentation',
       onClick: () => window.open('https://jnbot.netlify.app/docs', '_blank'),
     },
-    ...(!window.web
+    ...(!window.web && !chainSetup
       ? [
           { type: 'divider' as const },
           {
@@ -176,7 +179,7 @@ const Nav: FC<{
           type="text"
           icon={<ArrowLeftOutlined />}
           onClick={back}
-          aria-label="Back to plugins"
+          aria-label={chainSetup ? 'Back to the dashboard' : 'Back to plugins'}
         />
 
         <div
@@ -199,7 +202,7 @@ const Nav: FC<{
             }}
           >
             <CodeOutlined style={{ marginRight: token.marginXXS }} />
-            {pluginInfo.scriptType} · {pluginInfo.language}
+            {chainSetup ? 'Runs for every alt before the steps' : `${pluginInfo.scriptType} · ${pluginInfo.language}`}
           </Typography.Text>
         </div>
 
@@ -228,7 +231,7 @@ const Nav: FC<{
               </Button>
           )}
 
-          {llm.configured && pluginInfo.scriptType !== 'profileUi' && (
+          {llm.configured && pluginInfo.scriptType !== 'profileUi' && !chainSetup && (
             <Button icon={<RobotOutlined />} onClick={() => onSelectActiveTab(LLM_CODE_TAB)}>
               AI
             </Button>
@@ -257,14 +260,16 @@ const Nav: FC<{
             </Tooltip>
           )}
 
-          <Tooltip title="Plugin settings">
-            <Button
-              type="text"
-              icon={<SettingOutlined />}
-              onClick={() => setPluginSettingsModal(true)}
-              aria-label="Plugin settings"
-            />
-          </Tooltip>
+          {!chainSetup && (
+            <Tooltip title="Plugin settings">
+              <Button
+                type="text"
+                icon={<SettingOutlined />}
+                onClick={() => setPluginSettingsModal(true)}
+                aria-label="Plugin settings"
+              />
+            </Tooltip>
+          )}
 
           <Dropdown trigger={['click']} menu={{ items: moreItems }}>
             <Button type="text" icon={<MoreOutlined />} aria-label="More actions" />

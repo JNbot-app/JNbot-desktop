@@ -78,6 +78,8 @@ async function main(bot) {
 
 In a chain, `args[0]` holds the values returned by earlier steps (plus `alt`, the bot's username). Return an object to add values for later steps, which users can insert into text options as `{name}`. Return `false` or throw to mark the step as failed, so the chain follows its "If it fails" choice. A chain can be started like a plugin with `script.startPlugin({ pluginId: 'chain:<chainId>' })`.
 
+A chain can also store setup code: JavaScript that runs for every alt before the steps, with `chain` and `bot` in scope (`return` and `await` work). Inside it, and in plugins run by a chain (`require('JNbot').chain`, `null` elsewhere), the chain API controls the chain for the current alt: read `steps`, `current`, `bot` and `data`; `setOptions(step, options)` forces options for a step; `runStep(step, options?)` runs a step with its overrides plus yours; `disableStep`/`enableStep`, `addStep`, `goTo`, `skipAlt` and `stop` change what comes next. `chain.patch(step, machine => …)` changes another plugin's `BotMachine` tasks by name (`insertBefore`, `insertAfter`, `replaceTask`, `removeTask`, `wrapTask`) right before it starts, without editing that plugin.
+
 ## Options
 
 Add an option for any value a user may want to change without editing code. Read it as `script.settings.optionId` in normal plugins or `settings.optionId` in actions. Schemas are arrays of named sections. Every option needs a stable URL-safe `id`, a label, and a type. Never set defaults for passwords, tokens, credentials, or API keys.

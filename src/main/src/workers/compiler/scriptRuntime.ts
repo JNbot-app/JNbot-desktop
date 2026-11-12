@@ -1,8 +1,8 @@
 import type { MacroInfo } from '../../types';
-import type { AltUpdateRequest, ScriptAPI } from 'common/types/pluginApi';
+import type { AltUpdateRequest, ChainAPI, ScriptAPI } from 'common/types/pluginApi';
 import * as scriptApi from './scriptApi';
 import workerScript from '../lib/workerScript';
-import BotMachine from '../bot/statemachines/BotMachine';
+import { patchedBotMachine, type MachinePatch } from '../bot/statemachines/BotMachine';
 import Bot from '../bot/Bot';
 import Brain from '../brain/Brain';
 import * as proxyV3 from '../bot/proxyV3';
@@ -10,6 +10,13 @@ import { ScriptControl } from 'common/CommonEnums';
 import WorkerAutomationApi from '../lib/WorkerAutomationApi';
 import AiClient from '../../ai/AiClient';
 import { createLlmApi } from '../lib/LlmApi';
+
+/** What a run gets beyond its plugin: the chain it runs in and patches for its machines. */
+export type RunContext = {
+  chain?: ChainAPI;
+  /** Applied to every BotMachine the run starts; may still grow until then. */
+  patches?: readonly MachinePatch[];
+};
 
 /* ---------- script.* object ----------
  *
@@ -116,7 +123,11 @@ buildScript satisfies (
  * per-run so the package is built per run; everything else is shared.
  */
 
-function buildJNbotPackage(script: ScriptAPI, scriptInfo: MacroInfo) {
+function buildJNbotPackage(
+  script: ScriptAPI,
+  scriptInfo: MacroInfo,
+  context: RunContext,
+) {
   const ai = scriptInfo.security?.ai;
   const denied = class {
     constructor() {
@@ -152,10 +163,11 @@ function buildJNbotPackage(script: ScriptAPI, scriptInfo: MacroInfo) {
       };
   return {
     Bot,
-    BotMachine,
+    BotMachine: patchedBotMachine(context.patches ?? []),
     Brain,
     ...proxy,
     script,
+    chain: context.chain ?? null,
     join: Bot.join,
   };
 }
@@ -234,9 +246,10 @@ function makeSandboxRequire(
 export function buildScriptRuntime(
   scriptInfo: MacroInfo,
   options: Record<string, any> = {},
+  context: RunContext = {},
 ) {
   const script = buildScript(scriptInfo, options);
-  const jnbotPackage = buildJNbotPackage(script, scriptInfo);
+  const jnbotPackage = buildJNbotPackage(script, scriptInfo, context);
   return {
     script,
     jnbotPackage,

@@ -1,5 +1,5 @@
 import { FC, useState, useEffect } from 'react';
-import { Button, Empty, Typography, theme as antTheme } from 'antd';
+import { Button, Empty, theme as antTheme } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -121,9 +121,6 @@ const ChainFlow: FC<ChainFlowProps> = ({ chain, onChange }) => {
           </Button>
         </div>
       </div>
-      <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
-        Each alt runs these steps from top to bottom, then the chain continues with the next alt.
-      </Typography.Text>
     </div>
   );
 };

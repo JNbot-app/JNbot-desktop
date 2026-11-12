@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Button, Flex, Segmented, Tag, Typography, theme } from 'antd';
+import { Flex, Segmented, Tag, Typography, theme } from 'antd';
 import type { SharePluginAction, SharePluginPreview } from '../../../common/share';
+import CodePreview from './CodePreview';
 
 /** Only problems get a tag; signed code is the normal case. */
 const VERIFICATION_TAGS: Record<
@@ -19,7 +19,6 @@ const SharePluginRow: React.FC<{
   onChoice?: (choice: SharePluginAction) => void;
 }> = ({ plugin, choice, onChoice }) => {
   const { token } = theme.useToken();
-  const [showCode, setShowCode] = useState(false);
   const blocked = plugin.state === 'invalid' || plugin.state === 'unsupported';
 
   return (
@@ -84,34 +83,7 @@ const SharePluginRow: React.FC<{
           />
         </Flex>
       )}
-      {plugin.code && (
-        <div>
-          <Button
-            size="small"
-            type="link"
-            style={{ padding: 0 }}
-            onClick={() => setShowCode(!showCode)}
-          >
-            {showCode ? 'Hide code' : 'View code'}
-          </Button>
-          {showCode && (
-            <pre
-              style={{
-                margin: `${token.marginXS}px 0 0`,
-                maxHeight: 320,
-                overflow: 'auto',
-                padding: token.paddingSM,
-                background: token.colorFillTertiary,
-                borderRadius: token.borderRadius,
-                fontSize: token.fontSizeSM,
-                fontFamily: token.fontFamilyCode,
-              }}
-            >
-              {plugin.code}
-            </pre>
-          )}
-        </div>
-      )}
+      {plugin.code && <CodePreview code={plugin.code} />}
     </Flex>
   );
 };

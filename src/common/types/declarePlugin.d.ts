@@ -40,6 +40,8 @@ declare module 'JNbot' {
   const RECORDINGS_PATH: string;
   /** The host-app script API. */
   const script: ScriptAPI;
+  /** The chain this plugin runs in, or `null` outside a chain. */
+  const chain: ChainAPI | null;
   /** Create a bot from a profile and join in one call. */
   const join: (profile: BotProfile, options?: JoinOptions) => Promise<Bot>;
   export {
@@ -58,6 +60,7 @@ declare module 'JNbot' {
     DebugPlugin,
     RECORDINGS_PATH,
     script,
+    chain,
     join,
   };
 }

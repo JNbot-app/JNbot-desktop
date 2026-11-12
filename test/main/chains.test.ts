@@ -1,4 +1,4 @@
-import { chainReadyAt, fillPlaceholders } from '../../src/common/chains';
+import { chainReadyAt, chainSetupToSave, defaultChainSetup, fillPlaceholders } from '../../src/common/chains';
 import type { Reminder } from '../../src/common/cooldowns';
 
 const cooldown = (pluginId: string, time: number, length: number): Reminder => ({
@@ -26,5 +26,23 @@ it('leaves unknown placeholders untouched', () => {
   expect(fillPlaceholders({ msg: '{alt} has {coins}', n: 3 }, { alt: 'Steve' })).toEqual({
     msg: 'Steve has {coins}',
     n: 3,
+  });
+});
+
+describe('chain setup code', () => {
+  const kitChain = { chains: [{ id: '1', name: "Kit's Collector", scriptId: 'kits' }] };
+
+  it('starts from commented-out examples that use the chain\'s steps', () => {
+    const code = defaultChainSetup(kitChain);
+    expect(code).toContain("chain.setOptions('Kit\\'s Collector'");
+    expect(code).toContain("chain.disableStep('Another step')");
+    // Every line is a comment, so the starter code changes nothing.
+    expect(code.split('\n').every((line) => !line.trim() || line.startsWith('//'))).toBe(true);
+  });
+
+  it('stores only code that differs from the starter code', () => {
+    expect(chainSetupToSave(kitChain, defaultChainSetup(kitChain))).toBeUndefined();
+    expect(chainSetupToSave(kitChain, '  ')).toBeUndefined();
+    expect(chainSetupToSave(kitChain, 'chain.stop();')).toBe('chain.stop();');
   });
 });

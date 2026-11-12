@@ -3,7 +3,7 @@ import _eval from 'eval';
 import assert from 'assert';
 import type { MacroInfo } from '../../types';
 import type { ConsoleAPI } from 'common/types/pluginApi';
-import { buildScriptRuntime } from './scriptRuntime';
+import { buildScriptRuntime, type RunContext } from './scriptRuntime';
 import join from '../bot/join';
 import BotStatemachine from '../bot/statemachines/BotStatemachine';
 import Statemachine from '../bot/statemachines/Statemachine';
@@ -26,6 +26,8 @@ export type RunJSOptions = {
   useWorkerRealm?: boolean;
   /** Extra values exposed as top-level globals inside the user code (e.g. EXEC's `exit`, `context`). */
   extraGlobals?: Record<string, any>;
+  /** The chain this run belongs to and patches for the machines it creates. */
+  context?: RunContext;
 };
 
 /* ---------- console / log helpers ---------- */
@@ -48,6 +50,7 @@ export function runJS(options: RunJSOptions): Promise<any> {
     useWorkerRealm = false,
     extraGlobals = {},
     scriptOptions = {},
+    context,
   } = options;
 
   assert(typeof code === 'string', 'runJS: code must be a string');
@@ -70,7 +73,7 @@ export function runJS(options: RunJSOptions): Promise<any> {
     // (require('JNbot')). The same values are still exposed as top-level
     // globals below for backwards compatibility, but are marked @deprecated in
     // the plugin types so new scripts move to the import.
-    const { script, require: sandboxRequire } = buildScriptRuntime(scriptInfo, scriptOptions);
+    const { script, require: sandboxRequire } = buildScriptRuntime(scriptInfo, scriptOptions, context);
 
     const sandbox = {
       // Node globals

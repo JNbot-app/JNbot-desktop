@@ -142,6 +142,8 @@ export interface ShareItemSummary {
 export interface ShareDetailSection {
   title: string;
   rows: Array<{ label: string; value: string }>;
+  /** Code that runs when it is used (e.g. a chain's setup code), to review before installing. */
+  code?: string;
 }
 
 export interface ShareMeta {

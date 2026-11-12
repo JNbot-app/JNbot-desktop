@@ -6,6 +6,7 @@ Guidelines for AI coding agents (and humans) working in this repository.
 - Keep context focused: only load the scripts and dependencies relevant to the task.
 - Run the typecheck only after larger code changes; it is slow.
 - If you have any suggestions or other ideas for improving or adding features that could actually by useful, please add them to your message. 
+- Any changes to the plugin API must be updated to ../docs as well. 
 
 ## Coding
 - Write clean, readable code that follows the existing conventions. Keep it simple and maintainable, and simplify existing code where possible.
