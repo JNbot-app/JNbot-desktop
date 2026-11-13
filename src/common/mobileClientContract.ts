@@ -433,6 +433,7 @@ export type ProfileCreationSection = 'identity' | 'connection' | 'gamemodes' | '
 export type ProfileJoinBehaviour =
   | { kind: 'auto' | 'direct' }
   | { kind: 'command'; command: string }
+  | { kind: 'action'; action?: ProfilePluginReference }
   | { kind: 'selector'; hotbarSlot: number; pick: 'name' | 'slot'; staticSlot?: number };
 
 export type ProfilePluginReference = {

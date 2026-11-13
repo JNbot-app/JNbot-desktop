@@ -40,9 +40,10 @@ function key(value: string, section: ProfileCreationSection): string {
   if (!value.trim() || ['__proto__', 'constructor', 'prototype'].includes(value.toLowerCase())) fail(section, 'Enter a valid name.');
   return value;
 }
-function join(value: unknown): ProfileJoinBehaviour {
+function join(value: unknown, reference: (raw: unknown) => ProfilePluginReference): ProfileJoinBehaviour {
   const v = record(value, 'gamemodes');
   if (v.kind === 'auto' || v.kind === 'direct') return { kind: v.kind };
+  if (v.kind === 'action') return v.action === undefined ? { kind: 'action' } : { kind: 'action', action: reference(v.action) };
   if (v.kind === 'command') return { kind: 'command', command: text(v.command, 'gamemodes', 'a join command') };
   if (v.kind !== 'selector' || (v.pick !== 'name' && v.pick !== 'slot')) fail('gamemodes', 'Choose a valid join method.');
   const hotbarSlot = number(v.hotbarSlot, 'gamemodes', 'hotbar slot (1–9)', 1, 9, true);
@@ -117,7 +118,6 @@ export function parseProfileAdvanced(value: unknown, plugins: readonly ProfilePl
   }
   if (v.kitGamemodes !== undefined) out.kitGamemodes = strings(v.kitGamemodes, 'gamemodes', 'a kit gamemode');
   if (v.defaultGamemode !== undefined) out.defaultGamemode = text(v.defaultGamemode, 'gamemodes', 'a default gamemode', true);
-  if (v.joinBehaviours !== undefined) out.joinBehaviours = Object.fromEntries(Object.entries(record(v.joinBehaviours, 'gamemodes')).map(([k, val]) => [key(k, 'gamemodes'), join(val)]));
   if (v.ranksGkits !== undefined) out.ranksGkits = Object.fromEntries(Object.entries(record(v.ranksGkits, 'ranks')).map(([mode, raw]) => {
     const data = record(raw, 'ranks');
     const ranks = Object.fromEntries(Object.entries(record(data.ranks, 'ranks')).map(([name, rawRank]) => {
@@ -139,6 +139,7 @@ export function parseProfileAdvanced(value: unknown, plugins: readonly ProfilePl
     if (ref.hidden !== undefined) parsed.hidden = boolean(ref.hidden, section);
     return parsed;
   };
+  if (v.joinBehaviours !== undefined) out.joinBehaviours = Object.fromEntries(Object.entries(record(v.joinBehaviours, 'gamemodes')).map(([k, val]) => [key(k, 'gamemodes'), join(val, (raw) => reference(raw, 'gamemodes', ['action']))]));
   for (const section of ['scripts'] as const) {
     if (v[section] === undefined) continue;
     const list = v[section];

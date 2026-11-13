@@ -14,6 +14,7 @@ export const JOIN_KIND_LABELS: Record<JoinBehaviourKind, string> = {
   direct: 'Already there on connect',
   command: 'Run a command',
   selector: 'Open a server selector',
+  action: 'Run an action',
 };
 
 export const JOIN_KIND_DESCRIPTIONS: Record<JoinBehaviourKind, string> = {
@@ -21,6 +22,7 @@ export const JOIN_KIND_DESCRIPTIONS: Record<JoinBehaviourKind, string> = {
   direct: 'No extra steps, connecting to the server already lands the bot in this gamemode.',
   command: 'Run a chat command. Use <gamemode> as a placeholder for the gamemode name.',
   selector: 'Right-click the selector item in the bot’s hotbar, then click the gamemode in the menu.',
+  action: 'Run your own action to reach the gamemode. Use this when the other methods do not work for this server.',
 };
 
 export function makeDefaultBehaviour(kind: JoinBehaviourKind): GamemodeJoinBehaviour {
@@ -33,6 +35,8 @@ export function makeDefaultBehaviour(kind: JoinBehaviourKind): GamemodeJoinBehav
       return { kind: 'command', command: DEFAULT_COMMAND_TEMPLATE };
     case 'selector':
       return { kind: 'selector', hotbarSlot: 9, pick: 'name' };
+    case 'action':
+      return { kind: 'action' };
   }
 }
 

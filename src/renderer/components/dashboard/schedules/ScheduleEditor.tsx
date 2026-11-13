@@ -31,6 +31,7 @@ import { usePanelContext } from '../../other/botSideBar/SidePanelContextProvider
 import { useRunnableScripts } from '../../../hooks/useRunnableScripts';
 import DurationFields from '../cooldowns/DurationFields';
 import ScheduleOverrides from './ScheduleOverrides';
+import ScriptSelect from '../../general/scriptSettings/ScriptSelect';
 
 export default function ScheduleEditor({ schedule }: SchedulePanelData) {
   const { setPanel } = usePanelContext();
@@ -88,18 +89,14 @@ export default function ScheduleEditor({ schedule }: SchedulePanelData) {
   return (
     <Form layout="vertical" onFinish={save}>
       <Form.Item label="Script" htmlFor="schedule-script" required>
-        <Select
+        <ScriptSelect
           id="schedule-script"
-          showSearch
-          optionFilterProp="label"
+          scripts={scripts}
           loading={loading}
           value={pluginId || undefined}
           placeholder="Choose a script"
-          options={scripts.map(({ info }) => ({
-            label: info.name,
-            value: info.pluginId,
-          }))}
-          onChange={(id: string) => {
+          onChange={(next) => {
+            const id = next as string;
             setPluginId(id);
             setOptions({});
             setError(undefined);

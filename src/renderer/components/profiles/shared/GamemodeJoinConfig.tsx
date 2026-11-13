@@ -10,6 +10,7 @@ import {
 } from '../../../../common/joinBehaviour';
 import HotbarSlotPicker from './HotbarSlotPicker';
 import InventorySlotPicker from './InventorySlotPicker';
+import ProfileActionPicker from '../scripts/ProfileActionPicker';
 
 const { Text } = Typography;
 
@@ -21,7 +22,7 @@ interface Props {
 }
 
 const KIND_OPTIONS: { value: JoinBehaviourKind; label: string }[] = (
-  ['auto', 'direct', 'command', 'selector'] as JoinBehaviourKind[]
+  ['auto', 'direct', 'command', 'selector', 'action'] as JoinBehaviourKind[]
 ).map((k) => ({ value: k, label: JOIN_KIND_LABELS[k] }));
 
 const GamemodeJoinConfig = ({ gamemode, value, onChange }: Props) => {
@@ -87,6 +88,22 @@ const GamemodeJoinConfig = ({ gamemode, value, onChange }: Props) => {
             )}
           </Text>
         </div>
+      )}
+
+      {value.kind === 'action' && (
+        <ProfileActionPicker
+          scriptType="action"
+          value={value.action}
+          onChange={(action) => onChange({ kind: 'action', action })}
+          placeholder="Select an action"
+          createModal={{
+            title: 'Create join action',
+            defaultName: `Join ${gamemode || 'gamemode'}`,
+            defaultDescription: `Brings the bot to ${gamemode || 'the gamemode'}.`,
+            helpText:
+              'Creates a JS action. main(bot, settings, [gamemode]) should bring the bot to the gamemode; return false if joining failed. Use Edit code afterwards to write it.',
+          }}
+        />
       )}
 
       {value.kind === 'selector' && (

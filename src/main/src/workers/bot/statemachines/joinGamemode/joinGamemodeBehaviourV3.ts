@@ -27,6 +27,7 @@ import { BotEvents } from 'common/types/botApi';
  *                  the menu, then click the gamemode item (by name) or a
  *                  static slot.
  *   - `auto`     — alternate between command and selector until one sticks.
+ *   - `action`   — run the profile's join action instead (see `profileJoinAction`).
  *
  * Successful entry is judged from several signals so no single source needs
  * to be perfectly reliable:
@@ -368,7 +369,7 @@ function joinGamemode(
   gamemode: string,
   options: { optimisticJoin?: boolean } = {},
 ): Promise<void> {
-  const handler = getJoinHandler(bot);
+  const handler = getJoinHandler(bot) ?? profileJoinAction(gamemode);
   if (handler) return runJoinHandler(bot, gamemode, handler);
 
   return new Promise((resolve, reject) => {
@@ -386,6 +387,19 @@ function joinGamemode(
       })
       .start();
   });
+}
+
+/** The profile's join action for `gamemode`, when its join method is `action`. */
+function profileJoinAction(gamemode: string): JoinHandler | undefined {
+  const behaviour = getJoinBehaviour(workerScript.getProfile()?.data, gamemode);
+  if (behaviour.kind !== 'action') return undefined;
+  const action = workerScript.workerData.joinActions?.[gamemodeKey(gamemode)];
+  return (target, bot) => {
+    if (!action) throw new Error(`The join action for ${target} could not be loaded.`);
+    // Lazy require: the runner loads after join.js to avoid an import cycle.
+    const { runProfileAction } = require('../../extensions/botExtension');
+    return runProfileAction(action, bot, [target]);
+  };
 }
 
 /**

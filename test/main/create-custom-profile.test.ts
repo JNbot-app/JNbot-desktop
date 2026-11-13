@@ -39,12 +39,19 @@ it('persists advanced fields and promotes them to the selected-profile data', ()
   expect(activeSettings).toEqual({ join_delay: 200, server: 'other' });
 });
 
+it('accepts an installed action as a join method', () => {
+  const action = { id: 'join_skyblock', pluginId: 'action', source: { kind: 'plugin' as const, pluginId: 'action' } };
+  const profile = createCustomProfile({ ...basic, advanced: { gamemodes: ['Skyblock'], joinBehaviours: { skyblock: { kind: 'action', action } } } }, [], plugins);
+  expect(profile.data.joinBehaviours.skyblock).toEqual({ kind: 'action', action });
+});
+
 it.each([
   { gamemodes: ['Skyblock', 'skyblock'] },
   { gamemodes: ['Bad mode'] },
   { joinBehaviours: { skyblock: { kind: 'selector', hotbarSlot: 0, pick: 'name' } } },
   { joinBehaviours: { skyblock: { kind: 'selector', hotbarSlot: 1, pick: 'slot', staticSlot: 54 } } },
   { joinBehaviours: { skyblock: { kind: 'command', command: '' } } },
+  { joinBehaviours: { skyblock: { kind: 'action', action: { id: 'join', pluginId: 'run', source: { kind: 'plugin', pluginId: 'run' } } } } },
   { ranksGkits: { skyblock: { ranks: { vip: { price: -1, color: '#FF0000' } }, gkits: {} } } },
   { botExtensionAction: { id: 'bad', pluginId: 'ui', source: { kind: 'plugin', pluginId: 'ui' } } },
   { scripts: [{ id: 'missing', pluginId: 'missing', source: { kind: 'plugin', pluginId: 'missing' } }] },

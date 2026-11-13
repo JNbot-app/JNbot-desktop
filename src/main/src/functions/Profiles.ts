@@ -6,6 +6,8 @@ import { promisify } from 'util';
 import StorageModule from './storage/Storage';
 import {
   CustomProfile,
+  mapProfileScripts,
+  profileScriptRefs,
   ProfilesFile,
   PROFILES_VERSION,
 } from '../../../common/profiles';
@@ -110,12 +112,7 @@ class Profiles_ {
       const { checksum: _checksum, signature: _signature, ...rest } = script;
       return { ...rest, source: { kind: 'plugin', pluginId: script.pluginId } } as T;
     };
-    const next: CustomProfile = {
-      ...profile,
-      scripts: profile.scripts?.map(link),
-      profileUiAction: profile.profileUiAction && link(profile.profileUiAction),
-      botExtensionAction: profile.botExtensionAction && link(profile.botExtensionAction),
-    };
+    const next = mapProfileScripts(profile, link);
     if (linked) this.upsert(next);
   }
 
@@ -281,17 +278,10 @@ class Profiles_ {
     };
 
     try {
-      const scripts = (profile.scripts ?? []).map(rebind);
-      const profileUiAction = profile.profileUiAction
-        ? rebind(profile.profileUiAction) : undefined;
-      const botExtensionAction = profile.botExtensionAction
-        ? rebind(profile.botExtensionAction) : undefined;
       const { scriptBundles: _omit, ...rest } = profile;
-      const portable = portableProfile({
-        ...(rest as CustomProfile), scripts,
-        ...(profileUiAction ? { profileUiAction } : null),
-        ...(botExtensionAction ? { botExtensionAction } : null),
-      });
+      const portable = portableProfile(
+        mapProfileScripts(rest as CustomProfile, rebind),
+      );
       const previous = fs.existsSync(root) ? `${staging}-previous` : null;
       const oldFiles = previous ? fs.readdirSync(root) : [];
       if (previous) fs.renameSync(root, previous);
@@ -333,12 +323,7 @@ class Profiles_ {
     verification: PluginVerification;
   }> {
     const byScriptId = new Map((profile.scriptBundles ?? []).map((b) => [b.scriptId, b]));
-    const candidates: ProfileScript[] = [
-      ...(profile.scripts ?? []),
-      ...(profile.profileUiAction ? [profile.profileUiAction] : []),
-      ...(profile.botExtensionAction ? [profile.botExtensionAction] : []),
-    ];
-    return candidates.flatMap((script) => {
+    return profileScriptRefs(profile).flatMap((script) => {
       const bundle = byScriptId.get(script.id);
       if (!bundle) return [];
       const verification = pluginSecurity().verify({
@@ -457,13 +442,10 @@ class Profiles_ {
         : s;
     };
 
-    const scripts = await Promise.all((profile.scripts ?? []).map(rebind));
-    const profileUiAction = profile.profileUiAction
-      ? await rebind(profile.profileUiAction)
-      : undefined;
-    const botExtensionAction = profile.botExtensionAction
-      ? await rebind(profile.botExtensionAction)
-      : undefined;
+    const rebound = new Map<ProfileScript, ProfileScript>();
+    await Promise.all(
+      profileScriptRefs(profile).map(async (s) => rebound.set(s, await rebind(s))),
+    );
 
     if (failures.length) {
       throw new Error(
@@ -473,10 +455,7 @@ class Profiles_ {
 
     if (!bundles.length) return profile;
     return {
-      ...profile,
-      scripts,
-      ...(profileUiAction ? { profileUiAction } : null),
-      ...(botExtensionAction ? { botExtensionAction } : null),
+      ...mapProfileScripts(profile, (s) => rebound.get(s) ?? s),
       scriptBundles: bundles,
     };
   }
@@ -493,11 +472,7 @@ class Profiles_ {
       if (!result) throw new Error(`Could not back up profile script ${script.id}`);
       bundles.push(result.bundle);
     };
-    for (const script of [
-      ...(portable.scripts ?? []),
-      ...(portable.profileUiAction ? [portable.profileUiAction] : []),
-      ...(portable.botExtensionAction ? [portable.botExtensionAction] : []),
-    ]) await collect(script);
+    for (const script of profileScriptRefs(portable)) await collect(script);
     return bundles.length ? { ...portable, scriptBundles: bundles } : portable;
   }
 

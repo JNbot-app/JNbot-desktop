@@ -100,6 +100,43 @@ export function isPluginDisallowed(
   return !!pluginId && (profile?.disallowedPlugins ?? []).includes(pluginId);
 }
 
+/** Every plugin reference a profile owns, including per-gamemode join actions. */
+export function profileScriptRefs(profile: CustomProfile): ProfileScript[] {
+  return [
+    ...(profile.scripts ?? []),
+    ...(profile.profileUiAction ? [profile.profileUiAction] : []),
+    ...(profile.botExtensionAction ? [profile.botExtensionAction] : []),
+    ...Object.values(profile.data?.joinBehaviours ?? {}).flatMap((b) =>
+      b.kind === 'action' && b.action ? [b.action] : [],
+    ),
+  ];
+}
+
+/** Rewrite every reference listed by {@link profileScriptRefs} with `fn`. */
+export function mapProfileScripts(
+  profile: CustomProfile,
+  fn: (script: ProfileScript) => ProfileScript,
+): CustomProfile {
+  const joinBehaviours = profile.data?.joinBehaviours;
+  return {
+    ...profile,
+    scripts: profile.scripts?.map(fn),
+    profileUiAction: profile.profileUiAction && fn(profile.profileUiAction),
+    botExtensionAction: profile.botExtensionAction && fn(profile.botExtensionAction),
+    ...(joinBehaviours && {
+      data: {
+        ...profile.data,
+        joinBehaviours: Object.fromEntries(
+          Object.entries(joinBehaviours).map(([key, b]) => [
+            key,
+            b.kind === 'action' && b.action ? { ...b, action: fn(b.action) } : b,
+          ]),
+        ),
+      },
+    }),
+  };
+}
+
 /**
  * Merge custom profiles into a JNdata object. The fetched/predefined entries
  * keep their place at the start of `serverList`; custom ids are appended.

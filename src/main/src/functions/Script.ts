@@ -1,6 +1,7 @@
 import { Worker } from 'worker_threads';
 import {
   AppSettings,
+  JNdataDataSection,
   MacroInfo,
   Progress,
   ScriptSettings,
@@ -19,6 +20,7 @@ import { toRunnableJs } from './transpile';
 import { backendMessaging } from '../messaging';
 import { Address, workerScriptAddress } from '../../../common/messaging';
 import type ProfileRuntime from './ProfileRuntime';
+import type { ProfileScript } from '../../../common/profileScripts';
 import { randomUUID } from 'crypto';
 import { getAiService, cancelAiOwner } from '../ai/AiService';
 
@@ -108,12 +110,16 @@ class Script_ extends BotEvents {
   async run() {
 
     const workerPath = workerEntryPath();
-    // Resolve this runtime profile's optional bot-extension code before
+    // Resolve this runtime profile's optional bot-extension and join-action code before
     // spawning the worker. Same plumbing as `profileUiAction` — using
     // `ProfileScripts_` so plugin/bundled/checksum logic is reused. The
     // worker receives the runnable code and plugin metadata (or undefined
     // when nothing is configured or resolution fails).
-    const botExtension = await this.resolveBotExtension();
+    const profileData = this.scriptHandler.settings.getProfile(this.profile.profileKey)?.data;
+    const [botExtension, joinActions] = await Promise.all([
+      this.resolveProfileAction(profileData?.botExtensionAction),
+      this.resolveJoinActions(profileData?.joinBehaviours),
+    ]);
     return new Promise((resolve, reject) => {
       let startupSettled = false;
       const settleStartup = (error?: Error) => {
@@ -166,6 +172,7 @@ class Script_ extends BotEvents {
         actions: this.scriptHandler.getActions(),
         startCount: this.startCount,
         botExtension,
+        joinActions,
         appVersion: app.getVersion(),
         isMobileRuntime: !!global.isMobileRuntime,
       };
@@ -336,14 +343,27 @@ class Script_ extends BotEvents {
     this.activeScripts.send();
   }
 
+  /** Resolve every `action` join method to runnable code, keyed by gamemode. */
+  private async resolveJoinActions(
+    behaviours: JNdataDataSection['joinBehaviours'] | undefined,
+  ): Promise<WorkerDataType['joinActions']> {
+    const entries = await Promise.all(
+      Object.entries(behaviours ?? {}).map(async ([key, b]) =>
+        b.kind === 'action' ? [key, await this.resolveProfileAction(b.action)] as const : null,
+      ),
+    );
+    const resolved = entries.filter((e) => e?.[1]) as [string, { code: string; info: MacroInfo }][];
+    return resolved.length ? Object.fromEntries(resolved) : undefined;
+  }
+
   /**
-   * Resolve this runtime profile's `botExtensionAction` (if any) to runnable
-   * code and metadata for the bot worker. JS/TS only. Returns `undefined`
-   * when nothing can be loaded (with failures logged).
+   * Resolve a profile action reference (bot extension, join action) to
+   * runnable code and metadata for the bot worker. JS/TS only. Returns
+   * `undefined` when nothing can be loaded (with failures logged).
    */
-  private async resolveBotExtension(): Promise<{ code: string; info: MacroInfo } | undefined> {
-    const active = this.scriptHandler.settings.getProfile(this.profile.profileKey);
-    const ref = active?.data?.botExtensionAction;
+  private async resolveProfileAction(
+    ref: ProfileScript | undefined,
+  ): Promise<{ code: string; info: MacroInfo } | undefined> {
     if (
       !ref ||
       this.scriptHandler.isPluginDisallowed(this.profile.profileId, ref.pluginId)
@@ -356,12 +376,12 @@ class Script_ extends BotEvents {
     try {
       const resolved = await scripts.resolve(ref, true);
       if (!resolved) {
-        console.warn('[Script] bot extension could not be resolved');
+        console.warn(`[Script] profile action ${ref.pluginId} could not be resolved`);
         return undefined;
       }
       if (resolved.info.language !== 'js' && resolved.info.language !== 'ts') {
         console.warn(
-          '[Script] bot extension must use JavaScript/TypeScript — skipping',
+          `[Script] profile action ${ref.pluginId} must use JavaScript/TypeScript — skipping`,
         );
         return undefined;
       }
@@ -372,7 +392,7 @@ class Script_ extends BotEvents {
         info: resolved.info,
       };
     } catch (err) {
-      console.warn('[Script] failed to resolve bot extension', err);
+      console.warn(`[Script] failed to resolve profile action ${ref.pluginId}`, err);
       return undefined;
     }
   }

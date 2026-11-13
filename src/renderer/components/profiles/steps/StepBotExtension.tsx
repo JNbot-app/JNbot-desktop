@@ -28,7 +28,7 @@ const StepBotExtension: FC<Props> = ({ value, onChange }) => {
           scriptType="botExtension"
           value={value}
           onChange={onChange}
-          candidatesTitle="Your actions and legacy bot extensions"
+          placeholder="Select an action"
           createModal={{
             title: 'Create bot action',
             defaultName: 'My bot action',
