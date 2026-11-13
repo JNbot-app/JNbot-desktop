@@ -48,7 +48,7 @@ const giftBehaviour = [
     when: ({bot, state}) =>
       bot.getWindowTitle().includes(bot.transferItems.config.giftDepositWindowTitle) &&
       (!hasTradeableItem(bot, state) ||
-        bot.currentWindow.slots[bot.currentWindow.inventoryStart - 10]),
+        bot.currentWindow.slots.slice(0, bot.currentWindow.inventoryStart).every((slot) => slot === null)),
     run: async ({bot}) => {
       bot.closeWindow(bot.currentWindow);
 
@@ -75,8 +75,7 @@ const giftBehaviour = [
         for await (const slot of slots) {
           if (
             !bot.currentWindow ||
-            bot.currentWindow.slots[bot.currentWindow.inventoryStart - 10]
-          )
+                    bot.currentWindow.slots.slice(0, bot.currentWindow.inventoryStart).every((slot) => slot === null))
             break;
           bot.clickWindow(slot, 0, 0);
           await bot.waitForTicks(1);

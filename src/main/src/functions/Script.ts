@@ -314,7 +314,10 @@ class Script_ extends BotEvents {
     }
     if (this.worker) await this.stop();
     this.forceExit = false;
-    await this.run();
+    // Restarts are fire-and-forget; a failed start must not become an unhandled rejection.
+    await this.run().catch((error) =>
+      console.error(`Failed to restart ${this.name}:`, error),
+    );
   }
 
   updateProgress(progress: Progress) {
