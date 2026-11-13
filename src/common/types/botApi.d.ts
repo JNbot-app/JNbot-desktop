@@ -710,7 +710,13 @@ type BotPluginExtensions = {
   mainVersion: number;
   join(gamemode: string, options?: Record<string, unknown>): Promise<void>;
   isOnline(): boolean;
-  itemInfo(item: Item | null): { name: string; info: string };
+  itemInfo: {
+    (item: Item | null): { name: string; info: string };
+    /** Only the custom name (cheaper than the full call). */
+    name(item: Item | null): string;
+    /** Only the lore, lines joined with `\n`. */
+    lore(item: Item | null): string;
+  };
   login(password?: string): Promise<void>;
   /**
    * Run a command and wait for the window it opens.

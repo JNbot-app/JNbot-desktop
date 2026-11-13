@@ -4,6 +4,7 @@
  */
 
 import { reminderDueAt, type Reminder } from './cooldowns';
+import type { PluginOptionSchema } from './types/pluginOptions.d';
 
 /** What a chain does after a step. `step:<id>` jumps to that step. */
 export type ChainNext =
@@ -48,9 +49,14 @@ export type Chain = {
   chains: ChainStep[];
   /**
    * JavaScript run for each alt before its steps, with `chain` (the chain
-   * API) and `bot` in scope — e.g. to set step options or patch a step.
+   * API), `bot` and `options` in scope — e.g. to set step options or patch a step.
    */
   setup?: string;
+  /**
+   * The chain's own options, defined like a plugin's `config`. Their values
+   * are stored with the run settings and given to the setup code as `options`.
+   */
+  config?: PluginOptionSchema;
   /** Display name, mirrored from {@link ChainOptions.name} for the chain list. */
   name?: string;
   /** Legacy nested run settings; new chains store them in `settings.scripts[id]`. */
@@ -134,6 +140,7 @@ export function defaultChainSetup(chain: Pick<Chain, 'chains'>): string {
 // \`chain\` controls this chain and \`bot\` is the alt's bot. Steps are found by name.
 // Remove the // in front of a line to use it.
 // Docs: https://jnbot.netlify.app/docs/plugins/code-based/script#chains
+// \`options\` holds the values of this chain's own options (gear button above).
 
 // Always run a step with some options, whatever the step's own settings say.
 // Use the option ids of the step's plugin:

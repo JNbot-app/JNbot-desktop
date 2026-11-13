@@ -1,6 +1,6 @@
 import { AimOutlined } from '@ant-design/icons';
-import { Button, Dropdown, Tooltip, type MenuProps } from 'antd';
-import { useRef, useState, type FC, type MutableRefObject } from 'react';
+import type { MenuProps } from 'antd';
+import { createElement, useRef, useState, type MutableRefObject } from 'react';
 
 import botEvents from '../../utils/botEvents';
 import useSettingsStore from '../../redux/store';
@@ -69,15 +69,18 @@ function buildItems(
   return items;
 }
 
-/** Inserts live values (position, looked-at block, window slots) from a bot. */
-const BotContextMenu: FC<{
-  editorRef: MutableRefObject<EditorInstance | null>;
-}> = ({ editorRef }) => {
-  const [items, setItems] = useState<MenuItems>([]);
+export const BOT_CONTEXT_KEY = 'bot-context';
+
+/**
+ * Menu entry that inserts live values (position, looked-at block, window slots)
+ * from a bot. Spread `item` into a menu's items, call `load` when that menu's
+ * submenus open and use `onClick` for the clicks.
+ */
+export default function useBotContextMenu(editorRef: MutableRefObject<EditorInstance | null>) {
+  const [items, setItems] = useState<MenuItems>(notice('Reading bot…'));
   const inserts = useRef(new Map<string, string>());
 
-  const load = async (open: boolean) => {
-    if (!open) return;
+  const load = async () => {
     const { selectedBot, activeBots } = useSettingsStore.getState();
     const bot = selectedBot?.MESSAGE_ADDRESS
       ? selectedBot
@@ -94,28 +97,20 @@ const BotContextMenu: FC<{
     }
   };
 
-  const insert: MenuProps['onClick'] = ({ key }) => {
+  const onClick = (key: string) => {
     const editor = editorRef.current;
     const selection = editor?.getSelection();
     const text = inserts.current.get(key);
     if (!editor || !selection || text === undefined) return;
-    editor.executeEdits('bot-context', [
-      { range: selection, text, forceMoveMarkers: true },
-    ]);
+    editor.executeEdits('bot-context', [{ range: selection, text, forceMoveMarkers: true }]);
     editor.focus();
   };
 
-  return (
-    <Dropdown
-      trigger={['click']}
-      menu={{ items, onClick: insert }}
-      onOpenChange={load}
-    >
-      <Tooltip title="Insert from bot">
-        <Button type="text" icon={<AimOutlined />} aria-label="Insert from bot" />
-      </Tooltip>
-    </Dropdown>
-  );
-};
-
-export default BotContextMenu;
+  const item: MenuItems[number] = {
+    key: BOT_CONTEXT_KEY,
+    icon: createElement(AimOutlined),
+    label: 'Insert from bot',
+    children: items,
+  };
+  return { item, load, onClick };
+}

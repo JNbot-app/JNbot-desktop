@@ -169,6 +169,27 @@ describe('chain API', () => {
     expect(runAction.mock.calls.map(([req]) => req.optionOverrides.transfer)).toEqual(['alt1', 'alt2']);
   });
 
+  it("gives the setup code the chain's own options, with their defaults", async () => {
+    runAction.mockResolvedValue(undefined);
+    const options = { name: 'Daily', gamemode: 'any', transfer: 'gift' } as Chain['options'];
+    await runChain({
+      ...chain(steps.slice(1)),
+      options,
+      config: [
+        {
+          name: 'General',
+          options: [
+            { id: 'transfer', label: 'Transfer', type: 'input' },
+            { id: 'salvage', label: 'Salvage', type: 'switch', defaultValue: false },
+          ],
+        },
+      ],
+      setup: "chain.setOptions('Kit Collector', { transfer: options.transfer }); if (!options.salvage) chain.disableStep('3');",
+    });
+    expect(ranSteps()).toEqual(['alt1:kits', 'alt2:kits']);
+    expect(runAction.mock.calls[0][0].optionOverrides.transfer).toBe('gift');
+  });
+
   it('stops the chain when its setup code throws', async () => {
     await runChain({ ...chain(steps.slice(1)), setup: 'chain.setOptions("Nope", {});' });
     expect(ranSteps()).toEqual([]);

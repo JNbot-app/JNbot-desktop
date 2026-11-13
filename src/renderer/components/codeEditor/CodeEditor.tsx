@@ -18,10 +18,12 @@ import LlmCodePanel, { LLM_CODE_TAB } from './LlmCodePanel';
 
 export type EditorInstance = monaco.editor.IStandaloneCodeEditor;
 
-// A chain's setup code is the body of `async function main(chain, bot)`.
+// A chain's setup code is the body of `async function main(chain, bot, options)`.
 const chainSetupTypes = `${autoCompleteText}
 declare const chain: ChainAPI;
-declare const bot: Bot;`;
+declare const bot: Bot;
+/** Values of the chain's own options, by option id. */
+declare const options: Record<string, any>;`;
 
 type CodeEditorProps = {
   macroInfo: MacroInfo;

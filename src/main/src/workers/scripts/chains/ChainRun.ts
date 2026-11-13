@@ -5,6 +5,7 @@ import type { MachinePatch } from '../../bot/statemachines/BotMachine';
 import type { Bot } from '../../workerTypes';
 import type { MacroInfo } from '../../../types';
 import { runJS } from '../../compiler/jsRuntime';
+import { resolvePluginOptions } from '../../bot/plugin/resolvePluginOptions';
 import type { IterateDirective } from '../iterateAlts';
 import scriptActionRunner = require('../../compiler/scriptActions');
 
@@ -52,11 +53,17 @@ export default class ChainRun {
   }
 
   /**
-   * Run the chain's setup code, if any, before the steps. It gets `chain` and
-   * `bot` like the body of a step's `main`. Resolves false when it throws.
+   * Run the chain's setup code, if any, before the steps. It gets `chain`,
+   * `bot` and the values of the chain's own options (also `script.settings`),
+   * resolved like a plugin's. Resolves false when it throws.
    */
   async setup(): Promise<boolean> {
     if (!this.chain.setup?.trim()) return true;
+    // The saved values arrive as the chain's run settings.
+    const options = resolvePluginOptions(
+      { pluginId: this.chain.id, name: this.api.name, config: this.chain.config } as MacroInfo,
+      this.chain.options,
+    );
     const scriptInfo = {
       pluginId: chainPluginId(this.chain.id),
       name: `${this.api.name} setup`,
@@ -66,9 +73,10 @@ export default class ChainRun {
     try {
       await runJS({
         // On one line, so line numbers in errors match the editor.
-        code: `async function main(chain, bot) { ${this.chain.setup}\n}`,
+        code: `async function main(chain, bot, options) { ${this.chain.setup}\n}`,
         scriptInfo,
-        args: [this.api, this.bot],
+        scriptOptions: options,
+        args: [this.api, this.bot, options],
         runAsAction: true,
         context: { chain: this.api },
       });

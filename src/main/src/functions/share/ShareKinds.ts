@@ -367,6 +367,7 @@ type SharedChain = {
   gamemode?: string | null;
   steps: ChainStep[];
   setup?: string;
+  config?: Chain['config'];
 };
 
 /** Longest setup code a shared chain may carry. */
@@ -408,6 +409,7 @@ const chain: ShareKindHandler = {
         gamemode: options.gamemode ?? null,
         steps: source.chains.map(normalizeChainStep),
         ...(source.setup?.trim() ? { setup: source.setup } : {}),
+        ...(source.config?.length ? { config: source.config } : {}),
       } satisfies SharedChain,
       plugins: await exportPlugins(source.chains.map((step) => step.scriptId), ctx, profileKey),
     };
@@ -446,7 +448,8 @@ const chain: ShareKindHandler = {
       (payload.description !== undefined && !isText(payload.description, 300)) ||
       steps.length > 200 ||
       !steps.every(isSharedStep) ||
-      (payload.setup !== undefined && !isText(payload.setup, MAX_SETUP_LENGTH))
+      (payload.setup !== undefined && !isText(payload.setup, MAX_SETUP_LENGTH)) ||
+      (payload.config !== undefined && !Array.isArray(payload.config))
     ) {
       throw new Error('Invalid chain share.');
     }
@@ -460,7 +463,13 @@ const chain: ShareKindHandler = {
     ctx.settings.updateProfileSettings(input.profileKey!, [
       {
         path: ['scripts', 'chains', id],
-        value: { id, name: payload.name, chains: chainSteps, ...(payload.setup ? { setup: payload.setup } : {}) },
+        value: {
+          id,
+          name: payload.name,
+          chains: chainSteps,
+          ...(payload.setup ? { setup: payload.setup } : {}),
+          ...(payload.config?.length ? { config: payload.config } : {}),
+        },
       },
       {
         path: ['scripts', id],

@@ -80,7 +80,7 @@ async function main(bot) {
 
 In a chain, `args[0]` holds the values returned by earlier steps (plus `alt`, the bot's username). Return an object to add values for later steps, which users can insert into text options as `{name}`. Return `false` or throw to mark the step as failed, so the chain follows its "If it fails" choice. A chain can be started like a plugin with `script.startPlugin({ pluginId: 'chain:<chainId>' })`.
 
-A chain can also store setup code: JavaScript that runs for every alt before the steps, with `chain` and `bot` in scope (`return` and `await` work). Inside it, and in plugins run by a chain (`require('JNbot').chain`, `null` elsewhere), the chain API controls the chain for the current alt: read `steps`, `current`, `bot` and `data`; `setOptions(step, options)` forces options for a step; `runStep(step, options?)` runs a step with its overrides plus yours; `disableStep`/`enableStep`, `addStep`, `goTo`, `skipAlt` and `stop` change what comes next. `chain.patch(step, machine => …)` changes another plugin's `BotMachine` tasks by name (`insertBefore`, `insertAfter`, `replaceTask`, `removeTask`, `wrapTask`) right before it starts, without editing that plugin.
+A chain can also store setup code: JavaScript that runs for every alt before the steps, with `chain`, `bot` and `options` in scope (`return` and `await` work); `options` holds the values of the chain's own options, defined with the same schema as a plugin's `config` and set in the chain's settings. Inside it, and in plugins run by a chain (`require('JNbot').chain`, `null` elsewhere), the chain API controls the chain for the current alt: read `steps`, `current`, `bot` and `data`; `setOptions(step, options)` forces options for a step; `runStep(step, options?)` runs a step with its overrides plus yours; `disableStep`/`enableStep`, `addStep`, `goTo`, `skipAlt` and `stop` change what comes next. `chain.patch(step, machine => …)` changes another plugin's `BotMachine` tasks by name (`insertBefore`, `insertAfter`, `replaceTask`, `removeTask`, `wrapTask`) right before it starts, without editing that plugin.
 
 ## Options
 
@@ -3786,7 +3786,13 @@ type BotPluginExtensions = {
    *   bot.setGamemodeDetector((bot) => bot.scoreboard.sidebar?.title ?? null);
    */
   setGamemodeDetector: (detector: GamemodeDetector | null) => void;
-  itemInfo(item: Item | null): { name: string; info: string };
+  itemInfo: {
+    (item: Item | null): { name: string; info: string };
+    /** Only the custom name (cheaper than the full call). */
+    name(item: Item | null): string;
+    /** Only the lore, lines joined with `\n`. */
+    lore(item: Item | null): string;
+  };
   login: (password?: string) => Promise<void>; // Only works if you call this in the start of bot
   /**
    * Send a command that opens a GUI and wait for the matching window. Prefer

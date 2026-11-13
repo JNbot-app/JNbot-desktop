@@ -8,10 +8,12 @@ import {
   selectActiveServerGamemodes,
 } from '../../../redux/settings';
 import { CHAIN_OPTIONS_SCHEME } from './chainOptionsScheme';
+import type { ScriptSettingsSection } from '../../general/scriptSettings/ScriptSettingsProps.d';
 import { usePanelContext } from '../../other/botSideBar/SidePanelContextProvider';
 
 export default function ChainOptions({
   options,
+  config = [],
   creating,
   onSave,
 }: ChainOptionsPanelData) {
@@ -21,7 +23,7 @@ export default function ChainOptions({
   const [form] = Form.useForm<ChainRunOptions>();
   const [values, setValues] = useState(options);
   const gamemodes = useSettingsStore(selectActiveServerGamemodes);
-  const renderOptions = (section: (typeof CHAIN_OPTIONS_SCHEME)[number]) =>
+  const renderOptions = (section: ScriptSettingsSection) =>
     section.options.map((option) => (
       <Option
         key={option.id}
@@ -72,7 +74,8 @@ export default function ChainOptions({
         form={form}
         layout="vertical"
         initialValues={options}
-        onFinish={save}
+        // Not every option type is a form field, so add the tracked values.
+        onFinish={(fields) => save({ ...values, ...fields })}
       >
         {renderOptions(CHAIN_OPTIONS_SCHEME[0])}
         <Form.Item
@@ -86,7 +89,14 @@ export default function ChainOptions({
           />
         </Form.Item>
         <Collapse
+          defaultActiveKey={config.map((section) => section.name)}
           items={[
+            // The chain's own options, defined from its setup code editor.
+            ...(config as ScriptSettingsSection[]).map((section) => ({
+              key: section.name,
+              label: section.name,
+              children: renderOptions(section),
+            })),
             {
               key: 'alts',
               label: 'Alt selection',

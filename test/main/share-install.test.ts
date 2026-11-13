@@ -77,10 +77,11 @@ describe('share installs', () => {
     expect(settings.scripts[id]).toMatchObject({ name: 'v2', altRange: [1, 5] });
   });
 
-  test('a chain brings its setup code along, shown before installing', async () => {
+  test('a chain brings its setup code and options along, shown before installing', async () => {
     const setup = "chain.setOptions('Kit Collector', { itemTransfer: 'keep' });";
+    const config = [{ name: 'General', options: [{ id: 'salvage', label: 'Salvage', type: 'switch' }] }];
     const from = fakeContext({
-      scripts: { chains: { c: { id: 'c', chains: [{ id: '1', name: 'Kits', scriptId: 'kits' }], setup } }, c: { name: 'Kits' } },
+      scripts: { chains: { c: { id: 'c', chains: [{ id: '1', name: 'Kits', scriptId: 'kits' }], setup, config } }, c: { name: 'Kits' } },
     });
     const built = await SHARE_KIND_HANDLERS.chain.build('c', from, 'p');
     const shared = envelope('chain', built.payload);
@@ -88,7 +89,7 @@ describe('share installs', () => {
 
     const settings: Record<string, any> = { scripts: {} };
     const id = await SHARE_KIND_HANDLERS.chain.install(shared, { id: 'x', decisions: [], profileKey: 'p' }, fakeContext(settings));
-    expect(settings.scripts.chains[id].setup).toBe(setup);
+    expect(settings.scripts.chains[id]).toMatchObject({ setup, config });
 
     const broken = envelope('chain', { ...(built.payload as object), setup: { code: setup } });
     await expect(

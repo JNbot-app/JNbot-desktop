@@ -1031,7 +1031,13 @@ export type BotPluginExtensions = {
    *   bot.setGamemodeDetector((bot) => bot.scoreboard.sidebar?.title ?? null);
    */
   setGamemodeDetector: (detector: GamemodeDetector | null) => void;
-  itemInfo(item: Item | null): { name: string; info: string };
+  itemInfo: {
+    (item: Item | null): { name: string; info: string };
+    /** Only the custom name (cheaper than the full call). */
+    name(item: Item | null): string;
+    /** Only the lore, lines joined with `\n`. */
+    lore(item: Item | null): string;
+  };
   login: (password?: string) => Promise<void>; // Only works if you call this in the start of bot
   /**
    * Send a command that opens a GUI and wait for the matching window. Prefer

@@ -24,6 +24,7 @@ const files = [
   'share.ts',
   'statsHistory.ts',
   'triggers.ts',
+  'types/pluginOptions.d.ts',
   'messaging/Address.ts',
   'messaging/Errors.ts',
   'messaging/Protocol.ts',

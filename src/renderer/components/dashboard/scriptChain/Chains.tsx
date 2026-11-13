@@ -35,6 +35,7 @@ const Chains = () => {
     id: string,
     creating: boolean,
     initialOptions: ChainRunOptions,
+    config?: Chain['config'],
   ) => {
     setPanel({
       active: true,
@@ -43,6 +44,7 @@ const Chains = () => {
         id,
         creating,
         options: initialOptions,
+        config,
         onSave: (next: ChainRunOptions) => {
           setChainOptions(id, next);
           if (creating) {
@@ -67,7 +69,7 @@ const Chains = () => {
     });
 
   const edit = () => {
-    if (chain) openOptions(chain.id, false, options ?? toChainOptions(chain));
+    if (chain) openOptions(chain.id, false, options ?? toChainOptions(chain), chain.config);
   };
 
   return (
