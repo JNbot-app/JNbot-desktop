@@ -312,6 +312,31 @@ type MineflayerBot = {
   };
 };
 
+interface ItemQuery extends Iterable<Item> {
+  /** Container slots, then the player inventory (default). */
+  any(): ItemQuery;
+  /** Only the top part of the open window. */
+  container(): ItemQuery;
+  /** Only the player inventory, whether or not a window is open. */
+  inventory(): ItemQuery;
+  hotbar(): ItemQuery;
+  /** Container rows (0-based). With cols, only slots in both. */
+  rows(...rows: number[]): ItemQuery;
+  /** Container columns (0-8). */
+  cols(...cols: number[]): ItemQuery;
+  /** Exact window slot indexes. */
+  slots(...slots: number[]): ItemQuery;
+  first(): Item | null;
+  all(): Item[];
+  has(): boolean;
+  /** Sum of item.count over all matches. */
+  count(): number;
+  /** Clicks the first match; returns it or null. */
+  click(mouseButton?: number, mode?: number): Promise<Item | null>;
+  /** Resolves with the first match once it appears, or null after `ticks` (default 100). */
+  wait(ticks?: number): Promise<Item | null>;
+}
+
 type Bot =  MineflayerBot & {
   botId: number;
   join: (
@@ -339,6 +364,25 @@ type Bot =  MineflayerBot & {
     },
   ) => Promise<void>;
 
+  /** Search items by name/lore/type in the open window and/or inventory. Strings: case-insensitive substring, colors and small caps stripped. Arrays match any entry. */
+  items: (
+    query?:
+      | string
+      | RegExp
+      | (string | RegExp)[]
+      | ((item: Item) => boolean)
+      | {
+          name?: string | RegExp | ((text: string) => boolean) | (string | RegExp)[];
+          lore?: string | RegExp | ((text: string) => boolean) | (string | RegExp)[];
+          type?: string | string[];
+          where?: (item: Item) => boolean;
+          caseSensitive?: boolean;
+        },
+  ) => ItemQuery;
+  /** Strips color codes and small caps and lowercases. */
+  cleanText: (text: string) => string;
+
+  /** @deprecated Use `bot.items(query)`. */
   findWindowSlots: (
     filter: { name?: string; lore?: string } | string,
     options?: {

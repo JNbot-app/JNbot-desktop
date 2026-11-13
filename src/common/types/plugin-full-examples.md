@@ -26,9 +26,8 @@ function claimTasks() {
       name: 'claim kit',
       when: ({ bot, state }) => Date.now() >= state.nextClaim && Boolean(bot.currentWindow),
       run: async ({ bot, state }) => {
-        const [slot] = bot.findWindowSlots({ name: kit });
-        if (slot) await bot.clickWindow(slot.slot, 0, 0);
-        else console.warn(`No "${kit}" item in ${bot.getWindowTitle()}`);
+        if (!(await bot.items(kit).container().click()))
+          console.warn(`No "${kit}" item in ${bot.getWindowTitle()}`);
         bot.closeWindow(bot.currentWindow);
         state.nextClaim = Date.now() + minutes * 60_000;
       },
@@ -71,8 +70,7 @@ function collectTasks() {
       run: async ({ bot }) => {
         const window = await bot.openWindow(kitCommand);
         if (!window) return;
-        const [slot] = bot.findWindowSlots({ name: kit });
-        if (slot) await bot.clickWindow(slot.slot, 0, 0);
+        await bot.items(kit).container().click();
         bot.closeWindow(window);
       },
     },
@@ -145,12 +143,10 @@ async function main(bot, settings, args = []) {
   const window = await bot.openWindow(settings.command);
   if (!window) return false;
 
-  const [slot] = bot.findWindowSlots({ name: settings.item });
-  if (!slot) {
+  if (!(await bot.items(settings.item).container().click())) {
     bot.closeWindow(window);
     return false;
   }
-  await bot.clickWindow(slot.slot, 0, 0);
   bot.closeWindow(window);
   return { item: settings.item, boughtBy: previous.alt ?? bot.username };
 }

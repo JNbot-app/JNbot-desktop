@@ -24,8 +24,7 @@ async function main() {
         name: 'claim kit',
         when: ({ bot, state }) => !state.claimed && bot.getWindowTitle()?.includes('Kits'),
         run: async ({ bot, state }) => {
-          const [kit] = bot.findWindowSlots({ name: script.settings.kit });
-          if (kit) await bot.clickWindow(kit.slot, 0, 0);
+          await bot.items(script.settings.kit).click();
           state.claimed = true;
         },
       },
@@ -68,9 +67,7 @@ async function main(bot) {
   bot.setGamemodeDetector((bot) => bot.scoreboard.sidebar?.title ?? null);
   bot.setJoinHandler(async (gamemode, bot) => {
     await bot.openWindow('/menu');
-    const [item] = bot.findWindowSlots({ name: gamemode });
-    if (!item) return false;
-    await bot.clickWindow(item.slot, 0, 0);
+    if (!(await bot.items(gamemode).click())) return false;
     await bot.waitForTicks(40);
   });
 }
@@ -146,7 +143,7 @@ Native support must be packaged for the device. Local inference supports desktop
 
 - Use `script.forEachBot(script.getAlts(), script.settings)` only when looping over several alts; its settings object enables the standard alt filters. For one alt use `BotMachine` with `options: { username }` (or `Bot.join`). Inside a `forEachBot` loop you can still hand the yielded bot to `new BotMachine(tasks, { bot })`.
 - Use `await bot.openWindow(command)` rather than sending a command then waiting for a window event.
-- Use `bot.findWindowSlots()` before relying on slot numbers and `await bot.transferItems()` for supported transfer flows.
+- Use `bot.items(name)` before relying on slot numbers and `await bot.transferItems()` for supported transfer flows.
 - Import JNbot helpers from `require('jnbot')`. Supported sandbox modules include `axios`, `events`, selected Prismarine modules, `vec3`, and `assert`; AI-authored plugins cannot use process, child processes, proxy APIs, account passwords, Fabric clients, or managed servers.
 - [IMPORTANT] Use `BotMachine` for the entire bot task. Avoid creating long functions. Split the task up into smaller steps. This will allow the bot to recover from errors like if some action failed or the bot gets suddenly kicked to hub, BotMachine allows you to deal with these scenarios much easier. For the `when` condition, try to find when the bot should perform the action. For example, if the bot doesn\'t have a window opened -> do window action. Or if specific window must be opened, we can check it using bot.getWindowTitle(). Avoid doing stuff like state.step = "step1" and then checking for state.step === "step1" in the next task.
 
@@ -160,7 +157,7 @@ Check the plugin against this list before saving it.
 - **Step counters in BotMachine state.** `state.step = 2` then `when: ({ state }) => state.step === 2` breaks after a kick or failed action. Guard on what the bot can observe: open window and its title, inventory contents, position, timestamps.
 - **One long linear `async` function.** It cannot recover from kicks, lag or a menu that did not open. Split it into BotMachine tasks.
 - **Sending a command and waiting for `windowOpen`.** Use `const window = await bot.openWindow(command)` and handle `null` (timed out).
-- **Hard-coded slot numbers.** Menus differ per server and update; look items up with `bot.findWindowSlots({ name })` or `{ lore }`.
+- **Hard-coded slot numbers.** Menus differ per server and update; look items up with `bot.items(name)` or `bot.items({ lore })` (case-insensitive substring, colors stripped). `bot.findWindowSlots` is deprecated.
 - **Hard-coded values the user may want to change.** Commands, item names, accounts, gamemodes, delays and amounts belong in options. Never give passwords, tokens or API keys a default value.
 - **Joining a bot inside an action.** Actions receive an already-connected bot; only normal plugins join.
 - **Deprecated globals.** Import everything from `require('jnbot')` (`script`, `Bot`, `BotMachine`, ...) instead of the global `script`, `join`, `BotMachine` or `BotStatemachine`; use `console.log` instead of `log`.

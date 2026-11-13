@@ -3360,6 +3360,59 @@ type TransferConfigOverrides = {
   [K in keyof TransferConfig]?: Partial<TransferConfig[K]>;
 };
 
+/**
+ * A string matches as a case-insensitive substring; RegExp and functions get the color-stripped text.
+ * An array matches when any entry matches: `['kit', 'confirm']` matches "Starters Kit" and "Confirmation of trade".
+ */
+type ItemTextFilter =
+  | string
+  | RegExp
+  | ((text: string) => boolean)
+  | (string | RegExp | ((text: string) => boolean))[];
+
+/** `bot.items()` filter: a name filter, an item predicate, or an object (all given fields must match). */
+type ItemQueryFilter =
+  | ItemTextFilter
+  | ((item: Item) => boolean)
+  | {
+      /** Custom (display) name. */
+      name?: ItemTextFilter;
+      /** Lore, lines joined with `\n`. */
+      lore?: ItemTextFilter;
+      /** Minecraft item id(s), e.g. `'diamond_sword'`. */
+      type?: string | string[];
+      where?: (item: Item) => boolean;
+      /** Match strings case-sensitively (colors are still stripped). */
+      caseSensitive?: boolean;
+    };
+
+/** Lazy, chainable item search. Scope methods return the same query; iterate with `for…of`. */
+interface ItemQuery extends Iterable<Item> {
+  /** Container slots, then the player inventory (default). Without a window: only the inventory. */
+  any(): ItemQuery;
+  /** Only the top part of the open window; nothing when no window is open. */
+  container(): ItemQuery;
+  /** Only the player inventory, whether or not a window is open. */
+  inventory(): ItemQuery;
+  /** Only the 9 hotbar slots. */
+  hotbar(): ItemQuery;
+  /** Container rows (0-based, 9 slots each). With `cols`, only slots in both. */
+  rows(...rows: number[]): ItemQuery;
+  /** Container columns (0-8). */
+  cols(...cols: number[]): ItemQuery;
+  /** Exact window slot indexes. */
+  slots(...slots: number[]): ItemQuery;
+  first(): Item | null;
+  all(): Item[];
+  has(): boolean;
+  /** Sum of `item.count` over all matches. */
+  count(): number;
+  /** Clicks the first match and returns it, or null when nothing matched. */
+  click(mouseButton?: number, mode?: number): Promise<Item | null>;
+  /** Resolves with the first match as soon as it appears (also in a window opened later), or null after `ticks` (default 100). */
+  wait(ticks?: number): Promise<Item | null>;
+}
+
 type BotPluginExtensions = {
   botId: number;
   mainVersion: number;
@@ -3409,6 +3462,22 @@ type BotPluginExtensions = {
     },
   ) => Promise<unknown | null>;
   transferItems: TransferItemsFn;
+  /**
+   * Search items by name, lore or type in the open window and/or the player inventory.
+   * Strings match as a case-insensitive substring after stripping `§` color codes and
+   * small caps (`'kit'` matches `§6ᴋɪᴛ Warrior`). Results are lazy and plain `Item`s.
+   *
+   * @example
+   *   const kit = bot.items('kit').first();                 // window first, then inventory
+   *   const button = bot.items(['confirm', 'accept']).first(); // any of these
+   *   await bot.items({ name: 'shard', lore: 'buy' }).container().click();
+   *   const diamonds = bot.items({ type: 'diamond' }).inventory().count();
+   *   const confirm = await bot.items('Confirm').wait(40);  // null after 40 ticks
+   */
+  items: (query?: ItemQueryFilter) => ItemQuery;
+  /** Strips color codes and small caps and lowercases, e.g. `'§lᴋɪᴛ'` → `'kit'`. */
+  cleanText: (text: string) => string;
+  /** @deprecated Use `bot.items(query)`, e.g. `bot.items('Diamond').first()`. */
   findWindowSlots: (
     filter: { name?: string; lore?: string } | string,
     options?: {

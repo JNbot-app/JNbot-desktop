@@ -26,8 +26,7 @@ async function main() {
         name: 'claim kit',
         when: ({ bot, state }) => !state.claimed && bot.getWindowTitle()?.includes('Kits'),
         run: async ({ bot, state }) => {
-          const [kit] = bot.findWindowSlots({ name: script.settings.kit });
-          if (kit) await bot.clickWindow(kit.slot, 0, 0);
+          await bot.items(script.settings.kit).click();
           state.claimed = true;
         },
       },
@@ -70,9 +69,7 @@ async function main(bot) {
   bot.setGamemodeDetector((bot) => bot.scoreboard.sidebar?.title ?? null);
   bot.setJoinHandler(async (gamemode, bot) => {
     await bot.openWindow('/menu');
-    const [item] = bot.findWindowSlots({ name: gamemode });
-    if (!item) return false;
-    await bot.clickWindow(item.slot, 0, 0);
+    if (!(await bot.items(gamemode).click())) return false;
     await bot.waitForTicks(40);
   });
 }
@@ -148,7 +145,7 @@ Native support must be packaged for the device. Local inference supports desktop
 
 - Use `script.forEachBot(script.getAlts(), script.settings)` only when looping over several alts; its settings object enables the standard alt filters. For one alt use `BotMachine` with `options: { username }` (or `Bot.join`). Inside a `forEachBot` loop you can still hand the yielded bot to `new BotMachine(tasks, { bot })`.
 - Use `await bot.openWindow(command)` rather than sending a command then waiting for a window event.
-- Use `bot.findWindowSlots()` before relying on slot numbers and `await bot.transferItems()` for supported transfer flows.
+- Use `bot.items(name)` before relying on slot numbers and `await bot.transferItems()` for supported transfer flows.
 - Import JNbot helpers from `require('jnbot')`. Supported sandbox modules include `axios`, `events`, selected Prismarine modules, `vec3`, and `assert`; AI-authored plugins cannot use process, child processes, proxy APIs, account passwords, Fabric clients, or managed servers.
 - [IMPORTANT] Use `BotMachine` for the entire bot task. Avoid creating long functions. Split the task up into smaller steps. This will allow the bot to recover from errors like if some action failed or the bot gets suddenly kicked to hub, BotMachine allows you to deal with these scenarios much easier. For the `when` condition, try to find when the bot should perform the action. For example, if the bot doesn\'t have a window opened -> do window action. Or if specific window must be opened, we can check it using bot.getWindowTitle(). Avoid doing stuff like state.step = "step1" and then checking for state.step === "step1" in the next task.
 
@@ -162,7 +159,7 @@ Check the plugin against this list before saving it.
 - **Step counters in BotMachine state.** `state.step = 2` then `when: ({ state }) => state.step === 2` breaks after a kick or failed action. Guard on what the bot can observe: open window and its title, inventory contents, position, timestamps.
 - **One long linear `async` function.** It cannot recover from kicks, lag or a menu that did not open. Split it into BotMachine tasks.
 - **Sending a command and waiting for `windowOpen`.** Use `const window = await bot.openWindow(command)` and handle `null` (timed out).
-- **Hard-coded slot numbers.** Menus differ per server and update; look items up with `bot.findWindowSlots({ name })` or `{ lore }`.
+- **Hard-coded slot numbers.** Menus differ per server and update; look items up with `bot.items(name)` or `bot.items({ lore })` (case-insensitive substring, colors stripped). `bot.findWindowSlots` is deprecated.
 - **Hard-coded values the user may want to change.** Commands, item names, accounts, gamemodes, delays and amounts belong in options. Never give passwords, tokens or API keys a default value.
 - **Joining a bot inside an action.** Actions receive an already-connected bot; only normal plugins join.
 - **Deprecated globals.** Import everything from `require('jnbot')` (`script`, `Bot`, `BotMachine`, ...) instead of the global `script`, `join`, `BotMachine` or `BotStatemachine`; use `console.log` instead of `log`.
@@ -344,9 +341,8 @@ function claimTasks() {
       name: 'claim kit',
       when: ({ bot, state }) => Date.now() >= state.nextClaim && Boolean(bot.currentWindow),
       run: async ({ bot, state }) => {
-        const [slot] = bot.findWindowSlots({ name: kit });
-        if (slot) await bot.clickWindow(slot.slot, 0, 0);
-        else console.warn(`No "${kit}" item in ${bot.getWindowTitle()}`);
+        if (!(await bot.items(kit).container().click()))
+          console.warn(`No "${kit}" item in ${bot.getWindowTitle()}`);
         bot.closeWindow(bot.currentWindow);
         state.nextClaim = Date.now() + minutes * 60_000;
       },
@@ -389,8 +385,7 @@ function collectTasks() {
       run: async ({ bot }) => {
         const window = await bot.openWindow(kitCommand);
         if (!window) return;
-        const [slot] = bot.findWindowSlots({ name: kit });
-        if (slot) await bot.clickWindow(slot.slot, 0, 0);
+        await bot.items(kit).container().click();
         bot.closeWindow(window);
       },
     },
@@ -463,12 +458,10 @@ async function main(bot, settings, args = []) {
   const window = await bot.openWindow(settings.command);
   if (!window) return false;
 
-  const [slot] = bot.findWindowSlots({ name: settings.item });
-  if (!slot) {
+  if (!(await bot.items(settings.item).container().click())) {
     bot.closeWindow(window);
     return false;
   }
-  await bot.clickWindow(slot.slot, 0, 0);
   bot.closeWindow(window);
   return { item: settings.item, boughtBy: previous.alt ?? bot.username };
 }
@@ -3839,6 +3832,59 @@ type TransferConfigOverrides = {
   [K in keyof TransferConfig]?: Partial<TransferConfig[K]>;
 };
 
+/**
+ * A string matches as a case-insensitive substring; RegExp and functions get the color-stripped text.
+ * An array matches when any entry matches: `['kit', 'confirm']` matches "Starters Kit" and "Confirmation of trade".
+ */
+type ItemTextFilter =
+  | string
+  | RegExp
+  | ((text: string) => boolean)
+  | (string | RegExp | ((text: string) => boolean))[];
+
+/** `bot.items()` filter: a name filter, an item predicate, or an object (all given fields must match). */
+type ItemQueryFilter =
+  | ItemTextFilter
+  | ((item: Item) => boolean)
+  | {
+      /** Custom (display) name. */
+      name?: ItemTextFilter;
+      /** Lore, lines joined with `\n`. */
+      lore?: ItemTextFilter;
+      /** Minecraft item id(s), e.g. `'diamond_sword'`. */
+      type?: string | string[];
+      where?: (item: Item) => boolean;
+      /** Match strings case-sensitively (colors are still stripped). */
+      caseSensitive?: boolean;
+    };
+
+/** Lazy, chainable item search. Scope methods return the same query; iterate with `for…of`. */
+interface ItemQuery extends Iterable<Item> {
+  /** Container slots, then the player inventory (default). Without a window: only the inventory. */
+  any(): ItemQuery;
+  /** Only the top part of the open window; nothing when no window is open. */
+  container(): ItemQuery;
+  /** Only the player inventory, whether or not a window is open. */
+  inventory(): ItemQuery;
+  /** Only the 9 hotbar slots. */
+  hotbar(): ItemQuery;
+  /** Container rows (0-based, 9 slots each). With `cols`, only slots in both. */
+  rows(...rows: number[]): ItemQuery;
+  /** Container columns (0-8). */
+  cols(...cols: number[]): ItemQuery;
+  /** Exact window slot indexes. */
+  slots(...slots: number[]): ItemQuery;
+  first(): Item | null;
+  all(): Item[];
+  has(): boolean;
+  /** Sum of `item.count` over all matches. */
+  count(): number;
+  /** Clicks the first match and returns it, or null when nothing matched. */
+  click(mouseButton?: number, mode?: number): Promise<Item | null>;
+  /** Resolves with the first match as soon as it appears (also in a window opened later), or null after `ticks` (default 100). */
+  wait(ticks?: number): Promise<Item | null>;
+}
+
 type BotPluginExtensions = {
   botId: number;
   mainVersion: number;
@@ -3888,6 +3934,22 @@ type BotPluginExtensions = {
     },
   ) => Promise<unknown | null>;
   transferItems: TransferItemsFn;
+  /**
+   * Search items by name, lore or type in the open window and/or the player inventory.
+   * Strings match as a case-insensitive substring after stripping `§` color codes and
+   * small caps (`'kit'` matches `§6ᴋɪᴛ Warrior`). Results are lazy and plain `Item`s.
+   *
+   * @example
+   *   const kit = bot.items('kit').first();                 // window first, then inventory
+   *   const button = bot.items(['confirm', 'accept']).first(); // any of these
+   *   await bot.items({ name: 'shard', lore: 'buy' }).container().click();
+   *   const diamonds = bot.items({ type: 'diamond' }).inventory().count();
+   *   const confirm = await bot.items('Confirm').wait(40);  // null after 40 ticks
+   */
+  items: (query?: ItemQueryFilter) => ItemQuery;
+  /** Strips color codes and small caps and lowercases, e.g. `'§lᴋɪᴛ'` → `'kit'`. */
+  cleanText: (text: string) => string;
+  /** @deprecated Use `bot.items(query)`, e.g. `bot.items('Diamond').first()`. */
   findWindowSlots: (
     filter: { name?: string; lore?: string } | string,
     options?: {
