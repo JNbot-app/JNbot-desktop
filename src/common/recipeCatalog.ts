@@ -399,9 +399,10 @@ export const recipeActionCatalog: RecipeActionDefinition[] = [
           { label: 'Trade', value: 'trade' },
           { label: 'Gift', value: 'gift' },
           { label: 'Window', value: 'window' },
+          { label: 'Trash', value: 'trash' },
         ],
       }),
-      input('username', 'Player or command', 'string'),
+      input('username', 'Player or command (empty for trash)', 'string'),
     ],
   },
   {

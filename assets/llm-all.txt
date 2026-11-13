@@ -3758,7 +3758,86 @@ interface TransferItemsFn {
   window: (options?: TransferItemsOptions) => Promise<boolean>;
   tradeWithKeys: (options?: TransferItemsOptions) => Promise<boolean>;
   trash: (options?: TransferItemsOptions) => Promise<boolean>;
+  /** This bot's server-specific transfer config; see {@link TransferConfig}. */
+  config: TransferConfig;
+  /**
+   * Deep-merge overrides into this bot's transfer config. Call it from the
+   * server's bot extension when a server changes its trade/gift/trash GUI.
+   *
+   * @example
+   *   bot.transferItems.configure({
+   *     gift: { command: '/send {username}', confirmButton: ['lime_dye', 'confirm'] },
+   *     trash: { windowTitle: ['bin'] },
+   *   });
+   */
+  configure: (overrides: TransferConfigOverrides) => TransferConfig;
+  /** Restore the built-in defaults. */
+  resetConfig: () => TransferConfig;
 }
+
+/**
+ * Text pattern, matched case-insensitively with color codes stripped. Strings
+ * may contain `{username}`. Pass a list to accept several titles/texts.
+ */
+type TextMatcher = string | ((text: string) => boolean) | TextMatcher[];
+/** Like {@link TextMatcher}, checked against the item id, display name and lore. */
+type ItemMatcher = string | ((item: Item, bot: Bot) => boolean) | ItemMatcher[];
+
+interface TransferConfig {
+  trade: {
+    /** @default '/trade {username}' */
+    command: string;
+    /** @default ['{username}'] */
+    windowTitle: TextMatcher;
+    /** Your accept button, searched on your side of the window. @default 'glass' */
+    acceptButton: ItemMatcher;
+    /** Fallback accept slot. @default 45 */
+    acceptSlot: number;
+    /** Accept button state meaning that side accepted. @default green/lime glass */
+    acceptedButton: ItemMatcher;
+    /** Columns (from the left) that form your side. @default 4 */
+    offerColumns: number;
+    /** Slots from your accept button to the partner's. @default 6 */
+    partnerAcceptOffset: number;
+  };
+  tradeWithKeys: {
+    /** Button that opens / cycles the key page. */
+    keyButton: ItemMatcher;
+    /** @default 36 */
+    keySlot: number;
+    /** @default 'tripwire_hook' */
+    keyItem: ItemMatcher;
+    /** @default 27 */
+    acceptSlot: number;
+    /** Other names a key type shows up as. @default { vote: ['voting'] } */
+    keyAliases: Record<string, string[]>;
+  };
+  gift: {
+    /** @default '/gift {username}' */
+    command: string;
+    /** @default ['{username}'] */
+    windowTitle: TextMatcher;
+    /** @default ['are you sure'] */
+    confirmWindowTitle: TextMatcher;
+    confirmButton: ItemMatcher;
+    /** Fallback confirm slot. @default 11 */
+    confirmSlot: number;
+    /** @default ['select items to send'] */
+    depositWindowTitle: TextMatcher;
+  };
+  trash: {
+    /** @default '/trash' */
+    command: string;
+    /** @default ['trash', 'disposal'] */
+    windowTitle: TextMatcher;
+    /** Searched in the bottom row once the window is full. @default 'delete all items' */
+    confirmButton: ItemMatcher;
+  };
+}
+
+type TransferConfigOverrides = {
+  [K in keyof TransferConfig]?: Partial<TransferConfig[K]>;
+};
 
 type BotPluginExtensions = {
   botId: number;

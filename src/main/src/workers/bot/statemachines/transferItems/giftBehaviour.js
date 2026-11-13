@@ -1,98 +1,66 @@
-const { hasTradeableItem } = require('./transferUtil');
+const {
+  closeWindow,
+  containerIsEmpty,
+  fill,
+  findSlot,
+  hasTransferableItem,
+  transferableSlots,
+  windowTitleMatches,
+} = require('./transferUtil');
+
+const cfg = (bot) => bot.transferItems.config.gift;
+const inDepositWindow = (bot) => windowTitleMatches(bot, cfg(bot).depositWindowTitle);
+const inConfirmWindow = (bot) => windowTitleMatches(bot, cfg(bot).confirmWindowTitle);
 
 const giftBehaviour = [
   {
     name: 'Opening gift window',
-    when: ({bot}) => !bot.currentWindow,
-    run: async ({bot, state, machine}) => {
-      if (!hasTradeableItem(bot, state)) {
+    when: ({ bot }) => !bot.currentWindow,
+    run: async ({ bot, state, machine }) => {
+      if (!hasTransferableItem(bot, state)) return machine.finish();
+      await bot.openWindow(fill(cfg(bot).command, state), { timeout: 10_000 });
+      if (!bot.currentWindow) {
+        log(`[${bot.username}] Failed to open the gift window`, 'error');
         machine.finish();
-      } else {
-        await bot.openWindow('/gift ' + state.username, {timeout: 10_000});
-
-        if (!bot.currentWindow) {
-          log('[' + bot.username + '] Failed to open gift window', 'error');
-          machine.finish();
-        }
-      }
-    },
-  },
-
-  {
-    name: 'Accepting gift',
-    when: ({bot}) =>
-      bot.getWindowTitle().includes(bot.transferItems.config.giftConfirmWindowTitle),
-    run: ({bot}) => {
-      let slot_index = null;
-      for (let i = 0; i < bot.currentWindow.inventoryStart; i++) {
-        const slot = bot.currentWindow.slots[i];
-        
-        if (
-          slot &&
-          (slot.metadata === 13 || slot?.name === 'green_terracotta' || bot.itemInfo(slot).name.toLowerCase().includes("confirm"))
-        ) {
-          slot_index = i;
-          break;
-        }
-      }
-      if (slot_index === null) {
-        global.log('Could not find accept button in gift window: ' + bot.getWindowTitle(), 'warning');
-        bot.clickWindow(11, 0, 0);
-      } else {
-        bot.clickWindow(slot_index, 0, 0);
       }
     },
   },
   {
-    name: 'Finished depositing item',
-    when: ({bot, state}) =>
-      bot.getWindowTitle().includes(bot.transferItems.config.giftDepositWindowTitle) &&
-      (!hasTradeableItem(bot, state) ||
-        bot.currentWindow.slots.slice(0, bot.currentWindow.inventoryStart).every((slot) => slot === null)),
-    run: async ({bot}) => {
+    name: 'Confirming gift',
+    when: ({ bot }) => inConfirmWindow(bot),
+    run: ({ bot }) => {
+      let slot = findSlot(bot, cfg(bot).confirmButton);
+      if (slot === null) {
+        log(`Couldn't find the gift confirm button in "${bot.getWindowTitle()}"`, 'warning');
+        slot = cfg(bot).confirmSlot;
+      }
+      bot.clickWindow(slot, 0, 0);
+    },
+  },
+  {
+    name: 'Sending gift',
+    when: ({ bot, state }) =>
+      inDepositWindow(bot) && (!hasTransferableItem(bot, state) || containerIsEmpty(bot)),
+    run: async ({ bot }) => {
       bot.closeWindow(bot.currentWindow);
-
       await bot.onceWithTimeout('windowOpen', 20);
     },
   },
   {
     name: 'Depositing items',
-    when: ({bot}) =>
-      bot.getWindowTitle().includes(bot.transferItems.config.giftDepositWindowTitle),
-    run: async ({bot, state}) => {
-      let slots = [];
-      for (
-        let i = bot.currentWindow.inventoryStart;
-        i < bot.currentWindow.inventoryEnd;
-        i++
-      ) {
-        const slot = bot.currentWindow.slots[i];
-        if (slot && state.itemFilter(slot)) {
-          slots.push(i);
-        }
-      }
-      if (slots.length > 0) {
-        for await (const slot of slots) {
-          if (
-            !bot.currentWindow ||
-                    bot.currentWindow.slots.slice(0, bot.currentWindow.inventoryStart).every((slot) => slot === null))
-            break;
-          bot.clickWindow(slot, 0, 0);
-          await bot.waitForTicks(1);
-        }
+    when: ({ bot }) => inDepositWindow(bot),
+    run: async ({ bot, state }) => {
+      for (const slot of transferableSlots(bot, state)) {
+        if (!bot.currentWindow || containerIsEmpty(bot)) return;
+        bot.clickWindow(slot, 0, 0);
+        await bot.waitForTicks(1);
       }
     },
   },
   {
     name: 'Closing incorrect window',
-    when: ({bot, state}) => {
-      const title = bot.getWindowTitle();
-      return !title.includes(state.username) && !title.includes(bot.transferItems.config.giftConfirmWindowTitle.toLowerCase());
-    },
-    run: async ({bot}) => {
-      bot.closeWindow(bot.currentWindow);
-      await bot.waitForTicks(5);
-    },
+    when: ({ bot, state }) => !windowTitleMatches(bot, cfg(bot).windowTitle, state),
+    run: ({ bot }) => closeWindow(bot),
   },
 ];
 
