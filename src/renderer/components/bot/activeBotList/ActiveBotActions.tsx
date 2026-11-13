@@ -17,6 +17,7 @@ import {
   relogBot,
   resumeBot,
   pauseBot,
+  joinBotNow,
 } from './botActionConfigs';
 
 export const ActiveBotActions: React.FC<ActiveBotActionsProps> = ({
@@ -27,12 +28,26 @@ export const ActiveBotActions: React.FC<ActiveBotActionsProps> = ({
 
   const status = bot.status;
   const isPaused = bot.paused;
+  const btnSize = 'small';
 
-  // A queued bot does not have a bot messenger yet
-  if (status === 'queued') return null;
+  // A queued bot does not have a bot messenger yet; it can only skip the queue.
+  if (status === 'queued') {
+    return (
+      <Button
+        onClick={(e) => {
+          e.stopPropagation();
+          joinBotNow(bot);
+        }}
+        type="text"
+        size={btnSize}
+        style={{ flexShrink: 0 }}
+      >
+        Join now
+      </Button>
+    );
+  }
 
   const config = SCRIPT_ACTION_BUTTONS[bot.SCRIPT_NAME];
-  const btnSize = 'small';
 
   return (
     <Space

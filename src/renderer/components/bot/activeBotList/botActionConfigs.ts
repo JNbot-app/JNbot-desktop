@@ -36,6 +36,14 @@ export const SCRIPT_ACTION_BUTTONS: Record<string, Record<string, boolean>> = {
   },
 };
 
+/** Skip the join delay for a queued bot (it has no bot messenger yet). */
+export const joinBotNow = (bot: ActiveBot): void => {
+  if (bot.RUNTIME_PROFILE_ID === undefined) return;
+  window.messenger.profileAction(bot.RUNTIME_PROFILE_ID, 'JOIN_BOT_NOW', {
+    botId: bot.botId,
+  });
+};
+
 export const stopBot = (bot: ActiveBot): void => {
   if (!bot.MESSAGE_ADDRESS) return;
   window.messenger.send('STOP_BOT', bot.MESSAGE_ADDRESS as any, {

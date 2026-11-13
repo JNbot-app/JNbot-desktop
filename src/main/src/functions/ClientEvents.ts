@@ -561,6 +561,8 @@ class ClientEvents_ {
         });
         return true;
       }
+      case 'JOIN_BOT_NOW':
+        return runtime.activeBots.joinBotNow(Number(data?.botId));
       case 'LAUNCH_MINECRAFT':
         return this.scriptHandler.minecraftManager.launchMinecraft(data, {
           profileId,
@@ -1529,6 +1531,11 @@ class ClientEvents_ {
     data?: any;
     returnValue?: number;
   }) {
+    return this.profileIdRequired();
+  }
+
+  /** Skip the join delay for a queued bot. */
+  JOIN_BOT_NOW(_data: { botId: number }) {
     return this.profileIdRequired();
   }
 

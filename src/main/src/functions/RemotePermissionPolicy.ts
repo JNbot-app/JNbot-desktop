@@ -56,7 +56,7 @@ const clientActions = buildRestrictions([
     ],
   ],
   [[USE_SCRIPTS, USE_ACCOUNTS], ['START_SCRIPT', 'LAUNCH_MINECRAFT']],
-  [USE_ACTIVE_BOTS, ['BOT_ACTION']],
+  [USE_ACTIVE_BOTS, ['BOT_ACTION', 'JOIN_BOT_NOW']],
   [
     MANAGE_PLUGINS,
     [
@@ -154,7 +154,7 @@ const profileActions = buildRestrictions([
     ],
   ],
   [[USE_SCRIPTS, USE_ACCOUNTS], ['START_SCRIPT', 'LAUNCH_MINECRAFT']],
-  [USE_ACTIVE_BOTS, ['BOT_ACTION']],
+  [USE_ACTIVE_BOTS, ['BOT_ACTION', 'JOIN_BOT_NOW']],
   [MANAGE_PLUGINS, ['DELETE_MACRO']],
   [MANAGE_PROFILES, ['EXPORT_PORTABLE_PROFILE']],
   ['unsupported-remote', ['OPEN_CONSOLE_LOGS']],
