@@ -736,7 +736,7 @@ type BotPluginExtensions = {
     },
   ): Promise<Window | null>;
   transferItems(
-    mode: number | 'trade' | 'gift' | 'window' | 'tradeWithKeys',
+    mode: number | 'trade' | 'gift' | 'window' | 'trash',
     options: {
       username?: string;
       command?: string;
@@ -744,8 +744,9 @@ type BotPluginExtensions = {
       filter?: string[];
       itemFilter?: (item: Item) => boolean;
       keep?: boolean;
+      sendKeys?: boolean;
       keys?: string[];
-      forceTradeKeys?: boolean;
+      forceKeys?: boolean;
       timeout?: number | null;
       shiftClick?: boolean;
     },

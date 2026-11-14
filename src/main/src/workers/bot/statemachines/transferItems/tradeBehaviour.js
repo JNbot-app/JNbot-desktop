@@ -4,25 +4,13 @@ const {
   findSlot,
   hasTransferableItem,
   itemMatches,
+  parseKeys,
   textMatches,
   transferableSlots,
   windowTitleMatches,
 } = require('./transferUtil');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** "vote,10" -> ['vote', 10]; invalid entries are skipped. */
-function parseKeys(keys = []) {
-  return keys.flatMap((entry) => {
-    if (typeof entry !== 'string') {
-      log('Invalid key format, use "<keyType>,<amount>" (e.g. "vote,10")', 'error');
-      return [];
-    }
-    const [key, amount] = entry.toLowerCase().split(',');
-    const count = parseInt(amount?.replace(/\D/g, ''), 10);
-    return key && count > 0 ? [[key.trim(), count]] : [];
-  });
-}
 
 /** Slot ids of your side of the trade: the rows above the accept button. */
 function offerSlots(acceptSlot, columns) {
@@ -39,7 +27,6 @@ function offerSlots(acceptSlot, columns) {
  */
 function createTradeBehaviour({ withKeys = false } = {}) {
   const cfg = (bot) => bot.transferItems.config.trade;
-  const keyCfg = (bot) => bot.transferItems.config.tradeWithKeys;
   const slotOf = (bot, offset) => bot.currentWindow.slots[offset];
 
   const accepted = (bot, slot) => itemMatches(bot, slotOf(bot, slot), cfg(bot).acceptedButton);
@@ -49,7 +36,7 @@ function createTradeBehaviour({ withKeys = false } = {}) {
   const keyItemSlots = (bot, state) => {
     const slots = [];
     for (let i = state.keyTypesStart; i < bot.currentWindow.inventoryStart; i++) {
-      if (itemMatches(bot, slotOf(bot, i), keyCfg(bot).keyItem)) slots.push(i);
+      if (itemMatches(bot, slotOf(bot, i), cfg(bot).keyItem)) slots.push(i);
     }
     return slots;
   };
@@ -62,22 +49,21 @@ function createTradeBehaviour({ withKeys = false } = {}) {
     state.acceptSlot = findSlot(bot, config.acceptButton, acceptSearch);
     if (state.acceptSlot === null) {
       log("Couldn't find the trade accept button, using the default slot", 'warning');
-      state.acceptSlot = withKeys ? keyCfg(bot).acceptSlot : config.acceptSlot;
+      state.acceptSlot = withKeys ? config.keyAcceptSlot : config.acceptSlot;
     }
     state.offerSlots = offerSlots(state.acceptSlot, config.offerColumns);
     if (!withKeys) return;
 
-    const keys = keyCfg(bot);
     const keyItemSlotsDesc = Array.from(
       { length: bot.currentWindow.inventoryStart },
       (_, i) => bot.currentWindow.inventoryStart - 1 - i,
     );
     state.keySlot =
-      findSlot(bot, keys.keyButton, [...sideSlots].reverse()) ??
-      findSlot(bot, keys.keyItem, keyItemSlotsDesc);
+      findSlot(bot, config.keyButton, [...sideSlots].reverse()) ??
+      findSlot(bot, config.keyItem, keyItemSlotsDesc);
     if (state.keySlot === null) {
       log("Couldn't find the key button, using the default slot", 'warning');
-      state.keySlot = keys.keySlot;
+      state.keySlot = config.keySlot;
     }
     state.keyTypesStart = state.keySlot + 9 - (state.keySlot % 9);
     state.pendingKeys = parseKeys(state.keys);
@@ -88,7 +74,7 @@ function createTradeBehaviour({ withKeys = false } = {}) {
       name: 'Opening trade window',
       when: ({ bot }) => !bot.currentWindow,
       run: async ({ bot, state, machine }) => {
-        const keysLeft = withKeys && state.forceTradeKeys;
+        const keysLeft = state.forceKeys;
         if (!keysLeft && !hasTransferableItem(bot, state)) return machine.finish();
         await bot.openWindow(fill(cfg(bot).command, state));
       },
@@ -112,7 +98,7 @@ function createTradeBehaviour({ withKeys = false } = {}) {
     {
       name: 'Accepting trade',
       when: ({ bot, state }) =>
-        !(withKeys && state.forceTradeKeys) &&
+        !state.forceKeys &&
         (!hasTransferableItem(bot, state) ||
           tradeIsFull(bot, state) ||
           partnerAccepted(bot, state)),
@@ -138,7 +124,7 @@ function createTradeBehaviour({ withKeys = false } = {}) {
         when: ({ state }) => state.pendingKeys.length > 0,
         run: async ({ bot, state }) => {
           const [key, amount] = state.pendingKeys[0];
-          const names = [key, ...(keyCfg(bot).keyAliases[key] ?? [])];
+          const names = [key, ...(bot.transferItems.config.keyAliases[key] ?? [])];
           const slot = keyItemSlots(bot, state).find((i) =>
             textMatches(bot.itemInfo.name(slotOf(bot, i)), names),
           );
@@ -163,7 +149,7 @@ function createTradeBehaviour({ withKeys = false } = {}) {
     name: 'Depositing items',
     when: () => true,
     run: async ({ bot, state }) => {
-      state.forceTradeKeys = false;
+      state.forceKeys = false;
       for (const slot of transferableSlots(bot, state)) {
         if (!bot.currentWindow || tradeIsFull(bot, state) || partnerAccepted(bot, state)) return;
         bot.clickWindow(slot, 0, 0);

@@ -2,20 +2,19 @@ const assert = require('assert');
 const { getOrAskTransferToUsername } = require('../lib/MissingDataHandler');
 const { default: BotMachine } = require('./statemachines/BotMachine');
 const createTradeBehaviour = require('./statemachines/transferItems/tradeBehaviour');
-const giftBehaviour = require('./statemachines/transferItems/giftBehaviour');
+const createGiftBehaviour = require('./statemachines/transferItems/giftBehaviour');
 const createWindowBehaviour = require('./statemachines/transferItems/windowBehaviour');
 const { cloneConfig, mergeConfig } = require('./statemachines/transferItems/transferConfig');
 
-// Index = legacy numeric mode id.
+// Index = legacy numeric mode id; 'tradeWithKeys' is kept as an alias of trade + sendKeys.
 const MODES = ['keep', 'trade', 'gift', 'window', 'tradeWithKeys', 'trash'];
 const BEHAVIOURS = {
-  trade: () => createTradeBehaviour(),
-  gift: () => giftBehaviour,
+  trade: (withKeys) => createTradeBehaviour({ withKeys }),
+  gift: (withKeys) => createGiftBehaviour({ withKeys }),
   window: () => createWindowBehaviour(),
-  tradeWithKeys: () => createTradeBehaviour({ withKeys: true }),
   trash: () => createWindowBehaviour({ trash: true }),
 };
-const NEEDS_USERNAME = new Set(['trade', 'gift', 'tradeWithKeys']);
+const NEEDS_USERNAME = new Set(['trade', 'gift']);
 const DEFAULT_KEYS = ['vote,10', 'rare,5', 'ultra,2', 'god,1'];
 
 /** Whether an inventory item should be transferred. */
@@ -38,30 +37,30 @@ function createItemFilter({ ignore = [], filter = [], itemFilter = null, keep = 
 
 const inject = (bot) => {
   async function transferItems(mode, options = {}) {
-    const name = typeof mode === 'number' ? MODES[mode] : mode;
+    let name = typeof mode === 'number' ? MODES[mode] : mode;
     assert(MODES.includes(name), `Unknown transfer mode "${mode}", use one of: ${MODES.join(', ')}`);
     if (name === 'keep') return;
     assert(options && typeof options === 'object', 'Options must be an object');
 
     const { command, keys = DEFAULT_KEYS, timeout = null, shiftClick = true } = options;
-    let { username, forceTradeKeys = true } = options;
+    let { username, sendKeys = false, forceKeys = options.forceTradeKeys ?? true } = options;
+    if (name === 'tradeWithKeys') [name, sendKeys] = ['trade', true];
     if (NEEDS_USERNAME.has(name)) {
       if (typeof username !== 'string') username = await getOrAskTransferToUsername();
       assert(typeof username === 'string', 'No username was provided for item transfer');
     }
     assert(!command || (typeof command === 'string' && command.startsWith('/')), 'A command must start with "/"');
     assert(Array.isArray(keys), 'Keys must be an array of "<keyType>,<amount>" strings');
-    if (name !== 'tradeWithKeys') forceTradeKeys = false;
 
     return new Promise((resolve) => {
       let timeoutId = null;
-      const machine = new BotMachine(BEHAVIOURS[name](), {
+      const machine = new BotMachine(BEHAVIOURS[name](sendKeys), {
         state: {
           username,
           command,
           keys,
           shiftClick,
-          forceTradeKeys,
+          forceKeys: sendKeys && forceKeys,
           itemFilter: createItemFilter(options),
         },
         bot,

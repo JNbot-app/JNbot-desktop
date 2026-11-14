@@ -963,13 +963,12 @@ export type TransferItemMode =
   | 'trade'
   | 'gift'
   | 'window'
-  | 'tradeWithKeys'
   | 'trash'
   | 0
   | 1
   | 2
   | 3
-  | 4
+  | 4 // legacy: trade with `sendKeys: true`
   | 5;
 
 export interface TransferItemsOptions {
@@ -979,8 +978,9 @@ export interface TransferItemsOptions {
   filter?: (string | number)[];
   itemFilter?: (item: Item) => boolean;
   keep?: boolean; // whether to pass/keep the item if not filtered
-  keys?: string[]; // How many items it should click on each key ("<keyType>,<amount>")
-  forceTradeKeys?: boolean; // Whether to force trade keys even when no other items are in player inventory
+  sendKeys?: boolean; // Also send crate keys (trade/gift only). @default false
+  keys?: string[]; // Keys to send with `sendKeys` ("<keyType>,<amount>")
+  forceKeys?: boolean; // Send the keys even when no other items are in the player inventory. @default true
   timeout?: number | null;
   shiftClick?: boolean; // Whether to shift click items into window (windowBehaviour only)
 }
@@ -991,7 +991,7 @@ export interface TransferItemsFn {
     options?: TransferItemsOptions,
   ): Promise<void>;
   (
-    mode: 'trade' | 'gift' | 'window' | 'tradeWithKeys' | 'trash' | 1 | 2 | 3 | 4 | 5,
+    mode: 'trade' | 'gift' | 'window' | 'trash' | 1 | 2 | 3 | 4 | 5,
     options?: TransferItemsOptions,
   ): Promise<boolean>;
   (
@@ -1001,7 +1001,6 @@ export interface TransferItemsFn {
   trade: (options?: TransferItemsOptions) => Promise<boolean>;
   gift: (options?: TransferItemsOptions) => Promise<boolean>;
   window: (options?: TransferItemsOptions) => Promise<boolean>;
-  tradeWithKeys: (options?: TransferItemsOptions) => Promise<boolean>;
   trash: (options?: TransferItemsOptions) => Promise<boolean>;
   /** This bot's server-specific transfer config; see {@link TransferConfig}. */
   config: TransferConfig;
@@ -1044,18 +1043,14 @@ export interface TransferConfig {
     offerColumns: number;
     /** Slots from your accept button to the partner's. @default 6 */
     partnerAcceptOffset: number;
-  };
-  tradeWithKeys: {
-    /** Button that opens / cycles the key page. */
+    /** With `sendKeys`: button that opens / cycles the key page. */
     keyButton: ItemMatcher;
-    /** @default 36 */
+    /** With `sendKeys`: fallback key button slot. @default 36 */
     keySlot: number;
     /** @default 'tripwire_hook' */
     keyItem: ItemMatcher;
-    /** @default 27 */
-    acceptSlot: number;
-    /** Other names a key type shows up as. @default { vote: ['voting'] } */
-    keyAliases: Record<string, string[]>;
+    /** With `sendKeys`: fallback accept slot. @default 27 */
+    keyAcceptSlot: number;
   };
   gift: {
     /** @default '/gift {username}' */
@@ -1069,6 +1064,8 @@ export interface TransferConfig {
     confirmSlot: number;
     /** @default ['select items to send'] */
     depositWindowTitle: TextMatcher;
+    /** With `sendKeys`: item name that opens the key page. @default 'send crate keys' */
+    keyButton: string | RegExp | (string | RegExp)[];
   };
   trash: {
     /** @default '/trash' */
@@ -1078,6 +1075,8 @@ export interface TransferConfig {
     /** Searched in the bottom row once the window is full. @default 'delete all items' */
     confirmButton: ItemMatcher;
   };
+  /** Other names a key type shows up as. @default { vote: ['voting'] } */
+  keyAliases: Record<string, string[]>;
 }
 
 export type TransferConfigOverrides = {

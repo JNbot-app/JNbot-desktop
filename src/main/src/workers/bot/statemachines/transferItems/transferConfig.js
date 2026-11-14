@@ -24,15 +24,13 @@ const defaultTransferConfig = {
     offerColumns: 4,
     /** Slots between your accept button and the partner's. */
     partnerAcceptOffset: 6,
-  },
-  tradeWithKeys: {
+    // Used with `sendKeys`; servers with virtual keys use a different trade window.
     /** Button that opens / cycles the virtual key page. */
     keyButton: ['cycle through', 'click to manage crate key'],
     keySlot: 36,
     keyItem: 'tripwire_hook',
-    acceptSlot: 27,
-    /** Extra names a key type may show up as, e.g. vote keys called "voting". */
-    keyAliases: { vote: ['voting'] },
+    /** Accept slot used when no accept button is found while sending keys. */
+    keyAcceptSlot: 27,
   },
   gift: {
     command: '/gift {username}',
@@ -42,12 +40,16 @@ const defaultTransferConfig = {
     /** Used when no confirm button is found. */
     confirmSlot: 11,
     depositWindowTitle: ['select items to send'],
+    /** Deposit window item that opens the key page (used with `sendKeys`). */
+    keyButton: 'send crate keys',
   },
   trash: {
     command: '/trash',
     windowTitle: ['trash', 'disposal'],
     confirmButton: 'delete all items',
   },
+  /** Extra names a key type may show up as, e.g. vote keys called "voting". */
+  keyAliases: { vote: ['voting'] },
 };
 
 /** Deep-merges `overrides` into `config`; arrays and functions are replaced. */

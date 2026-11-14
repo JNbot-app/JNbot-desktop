@@ -46,6 +46,19 @@ const containerIsEmpty = (bot) =>
 const hasFreeContainerSlot = (bot) =>
   bot.currentWindow.slots.slice(0, bot.currentWindow.inventoryStart).includes(null);
 
+/** "vote,10" -> ['vote', 10]; invalid entries are skipped. */
+function parseKeys(keys = []) {
+  return keys.flatMap((entry) => {
+    if (typeof entry !== 'string') {
+      log('Invalid key format, use "<keyType>,<amount>" (e.g. "vote,10")', 'error');
+      return [];
+    }
+    const [key, amount] = entry.toLowerCase().split(',');
+    const count = parseInt(amount?.replace(/\D/g, ''), 10);
+    return key && count > 0 ? [[key.trim(), count]] : [];
+  });
+}
+
 async function closeWindow(bot, ticks = 5) {
   if (bot.currentWindow) bot.closeWindow(bot.currentWindow);
   await bot.waitForTicks(ticks);
@@ -62,4 +75,5 @@ module.exports = {
   containerIsEmpty,
   hasFreeContainerSlot,
   closeWindow,
+  parseKeys,
 };
