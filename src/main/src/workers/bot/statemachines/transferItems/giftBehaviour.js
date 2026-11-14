@@ -3,6 +3,7 @@ const {
   containerIsEmpty,
   fill,
   findSlot,
+  hasFreeContainerSlot,
   hasTransferableItem,
   parseKeys,
   transferableSlots,
@@ -12,6 +13,7 @@ const {
 const cfg = (bot) => bot.transfer.config.gift;
 const inDepositWindow = (bot) => windowTitleMatches(bot, cfg(bot).depositWindowTitle);
 const inConfirmWindow = (bot) => windowTitleMatches(bot, cfg(bot).confirmWindowTitle);
+const giftIsFull = (bot) => !hasFreeContainerSlot(bot, cfg(bot).depositSlots);
 const keyItems = (bot, name) => bot.items({ name, lore: cfg(bot).keysOwnedLore }).container();
 /** The number the pattern's first group captures in the item's lore, or 0. */
 function loreNumber(bot, item, pattern) {
@@ -46,7 +48,8 @@ async function sendGift(bot) {
 function createGiftBehaviour({ withKeys = false } = {}) {
   const keysPending = (state) => withKeys && state.pendingKeys.length > 0;
   const readyToSend = (bot, state) =>
-    inDepositWindow(bot) && (!hasTransferableItem(bot, state) || containerIsEmpty(bot));
+    inDepositWindow(bot) &&
+    (!hasTransferableItem(bot, state) || containerIsEmpty(bot) || giftIsFull(bot));
 
   const keyTasks = [
     {
@@ -110,7 +113,7 @@ function createGiftBehaviour({ withKeys = false } = {}) {
       when: ({ bot }) => inDepositWindow(bot),
       run: async ({ bot, state }) => {
         for (const slot of transferableSlots(bot, state)) {
-          if (!bot.currentWindow || containerIsEmpty(bot)) return;
+          if (!bot.currentWindow || containerIsEmpty(bot) || giftIsFull(bot)) return;
           bot.clickWindow(slot, 0, 0);
           await bot.waitForTicks(1);
         }

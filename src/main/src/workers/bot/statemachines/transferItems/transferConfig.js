@@ -40,6 +40,8 @@ const defaultTransferConfig = {
     /** Used when no confirm button is found. */
     confirmSlot: 11,
     depositWindowTitle: ['select items to send'],
+    /** Deposit window: the first this many slots hold the gift; it is full when none is free. */
+    depositSlots: 18,
     /** Deposit window item that opens the key page (used when sending keys). */
     keyButton: 'send crate keys',
     /** Key page: lore with the number of keys you own; the first group captures the number. */

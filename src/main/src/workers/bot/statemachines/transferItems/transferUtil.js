@@ -50,8 +50,9 @@ function findSlot(bot, matcher, slotIds) {
 const containerIsEmpty = (bot) =>
   bot.currentWindow.slots.slice(0, bot.currentWindow.inventoryStart).every((s) => !s);
 
-const hasFreeContainerSlot = (bot) =>
-  bot.currentWindow.slots.slice(0, bot.currentWindow.inventoryStart).includes(null);
+/** Whether one of the first `slots` container slots (default all) is free. */
+const hasFreeContainerSlot = (bot, slots = bot.currentWindow.inventoryStart) =>
+  bot.currentWindow.slots.slice(0, slots).includes(null);
 
 /** { keyName: 'vote', amount: 10 } (or legacy "vote,10") -> ['vote', 10]; invalid entries are skipped. */
 function parseKeys(keys = []) {
