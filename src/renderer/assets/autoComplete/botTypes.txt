@@ -335,7 +335,90 @@ interface ItemQuery extends Iterable<Item> {
   click(mouseButton?: number, mode?: number): Promise<Item | null>;
   /** Resolves with the first match once it appears, or null after `ticks` (default 100). */
   wait(ticks?: number): Promise<Item | null>;
+  /** Whether the item passes this query's filters (scope ignored). */
+  matches(item: Item | null): boolean;
+  /** Transfer the matching inventory items, e.g. `bot.items({ type: 'diamond' }).transfer('trade', 'Zola')`. */
+  transfer: TransferCall;
 }
+
+type TransferMode = 'keep' | 'trade' | 'gift' | 'window' | 'trash';
+
+interface TransferOptions {
+  /** Inventory items to transfer: a bot.items filter, or a list of them (any may match). Default: every item. */
+  items?: ItemQueryFilter | ItemQuery | (ItemQueryFilter | ItemQuery)[];
+  /** Inventory items to never transfer: a bot.items filter, or a list of them (any may match). */
+  exclude?: ItemQueryFilter | ItemQuery | (ItemQueryFilter | ItemQuery)[];
+  /** trade/gift: receiving player (asked when missing). */
+  username?: string;
+  /** window: command that opens the window. */
+  command?: string;
+  /** trade/gift: crate keys to send along. */
+  keys?: { keyName: string; amount: number }[];
+  /** Send the keys even when there are no items to transfer. Default true. */
+  keysWithoutItems?: boolean;
+  /** Give up after this many ms (result.completed is then false). */
+  timeout?: number | null;
+  /** window: shift-click items in. Default true. */
+  shiftClick?: boolean;
+}
+
+interface TransferResult {
+  /** False when the transfer hit its timeout. */
+  completed: boolean;
+  /** Items that left the inventory, per item id. */
+  items: { name: string; displayName: string; count: number }[];
+  count: number;
+}
+
+interface TransferState {
+  /** Transferable items in the player inventory (live). */
+  items: ItemQuery;
+  itemFilter: (item: Item) => boolean;
+  keys: { keyName: string; amount: number }[];
+  options: Record<string, any>;
+  [target: string]: any;
+}
+
+interface TransferCall {
+  (mode: 'trade' | 'gift', username?: string, options?: TransferOptions): Promise<TransferResult>;
+  (mode: 'window', command: string, options?: TransferOptions): Promise<TransferResult>;
+  (mode: TransferMode, options?: TransferOptions): Promise<TransferResult>;
+  (mode: string, target?: any, options?: TransferOptions & Record<string, any>): Promise<TransferResult>;
+}
+
+interface TransferFn extends TransferCall {
+  trade(username?: string, options?: TransferOptions): Promise<TransferResult>;
+  gift(username?: string, options?: TransferOptions): Promise<TransferResult>;
+  window(command: string, options?: TransferOptions): Promise<TransferResult>;
+  trash(options?: TransferOptions): Promise<TransferResult>;
+  readonly modes: string[];
+  /** Add (or replace) a mode for this bot; `target` names the required parameter. */
+  addMode(
+    name: string,
+    definition: {
+      target?: string;
+      keys?: boolean;
+      tasks: any[] | ((state: TransferState) => any[]);
+    },
+  ): void;
+  config: any;
+  configure: (overrides: any) => any;
+  resetConfig: () => any;
+}
+
+type ItemQueryFilter =
+  | string
+  | RegExp
+  | (string | RegExp)[]
+  | ((item: Item) => boolean)
+  | {
+      /** Custom name, or the vanilla name when the item isn't renamed. */
+      name?: string | RegExp | ((text: string) => boolean) | (string | RegExp)[];
+      lore?: string | RegExp | ((text: string) => boolean) | (string | RegExp)[];
+      type?: string | string[];
+      where?: (item: Item) => boolean;
+      caseSensitive?: boolean;
+    };
 
 type Bot =  MineflayerBot & {
   botId: number;
@@ -348,6 +431,9 @@ type Bot =  MineflayerBot & {
   login: (password?: string) => Promise<void>; // Only works if you call this in the start of bot
 
   getRank: () => string | undefined;
+  /** Move inventory items: `bot.transfer('gift', 'Zola', { items, exclude, keys })`. */
+  transfer: TransferFn;
+  /** @deprecated Use `bot.transfer(mode, target, options)`. */
   transferItems: (
     mode: number | 'trade' | 'gift' | 'window' | 'tradeWithKeys',
     options: {
@@ -365,20 +451,7 @@ type Bot =  MineflayerBot & {
   ) => Promise<void>;
 
   /** Search items by name/lore/type in the open window and/or inventory. Strings: case-insensitive substring, colors and small caps stripped. Arrays match any entry. */
-  items: (
-    query?:
-      | string
-      | RegExp
-      | (string | RegExp)[]
-      | ((item: Item) => boolean)
-      | {
-          name?: string | RegExp | ((text: string) => boolean) | (string | RegExp)[];
-          lore?: string | RegExp | ((text: string) => boolean) | (string | RegExp)[];
-          type?: string | string[];
-          where?: (item: Item) => boolean;
-          caseSensitive?: boolean;
-        },
-  ) => ItemQuery;
+  items: (query?: ItemQueryFilter) => ItemQuery;
   /** Strips color codes and small caps and lowercases. */
   cleanText: (text: string) => string;
 

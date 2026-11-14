@@ -143,7 +143,7 @@ Native support must be packaged for the device. Local inference supports desktop
 
 - Use `script.forEachBot(script.getAlts(), script.settings)` only when looping over several alts; its settings object enables the standard alt filters. For one alt use `BotMachine` with `options: { username }` (or `Bot.join`). Inside a `forEachBot` loop you can still hand the yielded bot to `new BotMachine(tasks, { bot })`.
 - Use `await bot.openWindow(command)` rather than sending a command then waiting for a window event.
-- Use `bot.items(name)` before relying on slot numbers and `await bot.transferItems()` for supported transfer flows.
+- Use `bot.items(name)` before relying on slot numbers and `await bot.transfer(mode, target, { items, exclude, keys })` (or `bot.items(query).transfer(mode, target)`) to trade, gift, store or trash items.
 - Import JNbot helpers from `require('jnbot')`. Supported sandbox modules include `axios`, `events`, selected Prismarine modules, `vec3`, and `assert`; AI-authored plugins cannot use process, child processes, proxy APIs, account passwords, Fabric clients, or managed servers.
 - [IMPORTANT] Use `BotMachine` for the entire bot task. Avoid creating long functions. Split the task up into smaller steps. This will allow the bot to recover from errors like if some action failed or the bot gets suddenly kicked to hub, BotMachine allows you to deal with these scenarios much easier. For the `when` condition, try to find when the bot should perform the action. For example, if the bot doesn\'t have a window opened -> do window action. Or if specific window must be opened, we can check it using bot.getWindowTitle(). Avoid doing stuff like state.step = "step1" and then checking for state.step === "step1" in the next task.
 

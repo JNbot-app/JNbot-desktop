@@ -12,7 +12,7 @@ const {
 const OWNED = /keys own:\s*(\d+)/i;
 const SENDING = /keys being sent:\s*(\d+)/i;
 
-const cfg = (bot) => bot.transferItems.config.gift;
+const cfg = (bot) => bot.transfer.config.gift;
 const inDepositWindow = (bot) => windowTitleMatches(bot, cfg(bot).depositWindowTitle);
 const inConfirmWindow = (bot) => windowTitleMatches(bot, cfg(bot).confirmWindowTitle);
 const keyItems = (bot, name) => bot.items({ name, lore: OWNED }).container();
@@ -21,7 +21,7 @@ const loreNumber = (bot, item, pattern) =>
 
 /** Adds `amount` of `key` to the gift, one click per key. */
 async function addKey(bot, key, amount) {
-  const names = [key, ...(bot.transferItems.config.keyAliases[key] ?? [])];
+  const names = [key, ...(bot.transfer.config.keyAliases[key] ?? [])];
   const item = keyItems(bot, names).first();
   if (!item) return log(`Couldn't find ${key} keys, sending the gift without them`, 'warning');
 

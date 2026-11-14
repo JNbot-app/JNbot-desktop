@@ -2,13 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Card,
-  Collapse,
+  Dropdown,
   Empty,
   Form,
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Switch,
@@ -34,10 +33,13 @@ import {
   CodeOutlined,
   ColumnWidthOutlined,
   DeleteOutlined,
+  DownOutlined,
+  EyeInvisibleOutlined,
   EditOutlined,
   FontSizeOutlined,
   HolderOutlined,
   KeyOutlined,
+  MoreOutlined,
   PlusOutlined,
   RobotOutlined,
   SlidersOutlined,
@@ -1736,9 +1738,8 @@ const SettingsBuilder: React.FC<SettingsBuilderProps> = ({
     index?: number;
   }>({ open: false });
 
-  const [activeKeys, setActiveKeys] = useState<string[]>(() =>
-    sections.map((_, i) => String(i)),
-  );
+  const [closed, setClosed] = useState<Set<string>>(new Set());
+  const [deleteSectionIndex, setDeleteSectionIndex] = useState<number>();
 
   const allIds = useMemo(
     () => sections.flatMap((s) => s.options.map((o) => o.id)),
@@ -1774,7 +1775,6 @@ const SettingsBuilder: React.FC<SettingsBuilderProps> = ({
         options: [],
         collapsed: values.collapsed,
       });
-      setActiveKeys((keys) => [...keys, String(next.length - 1)]);
     }
     onChange(next);
     setSectionModal({ open: false });
@@ -1819,8 +1819,18 @@ const SettingsBuilder: React.FC<SettingsBuilderProps> = ({
 
   // ----- drag and drop -----
   const onDragEnd = (result: DropResult) => {
-    if (!result.destination) return;
-    const { source, destination } = result;
+    const { source, destination, type } = result;
+    if (!destination) return;
+
+    if (type === 'SECTION') {
+      if (source.index === destination.index) return;
+      const next = [...sections];
+      const [moved] = next.splice(source.index, 1);
+      next.splice(destination.index, 0, moved);
+      onChange(next);
+      return;
+    }
+
     const sourceSection = parseInt(source.droppableId.split('-')[1], 10);
     const destSection = parseInt(destination.droppableId.split('-')[1], 10);
     if (Number.isNaN(sourceSection) || Number.isNaN(destSection)) return;
@@ -1831,19 +1841,21 @@ const SettingsBuilder: React.FC<SettingsBuilderProps> = ({
     onChange(next);
   };
 
-  const settingItemStyle: React.CSSProperties = {
+  const toggleSection = (name: string) =>
+    setClosed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(name)) next.add(name);
+      return next;
+    });
+
+  const handleStyle: React.CSSProperties = {
+    cursor: 'grab',
+    color: token.colorTextQuaternary,
     display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    padding: '10px 12px',
-    marginBottom: 8,
-    borderRadius: token.borderRadius,
-    border: `1px solid ${token.colorBorderSecondary}`,
-    background: token.colorFillQuaternary,
+    fontSize: 14,
   };
 
   const renderSettingRow = (
-    _section: ScriptSettingsSection,
     sectionIndex: number,
     setting: ScriptSettingProps,
     settingIndex: number,
@@ -1857,38 +1869,48 @@ const SettingsBuilder: React.FC<SettingsBuilderProps> = ({
         {...dragProvided.draggableProps}
         style={{
           ...dragProvided.draggableProps.style,
-          ...settingItemStyle,
-          background: isDragging
-            ? token.colorPrimaryBg
-            : settingItemStyle.background,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '10px 16px',
+          borderTop: `1px solid ${token.colorBorderSecondary}`,
+          background: isDragging ? token.colorPrimaryBg : token.colorBgContainer,
+          cursor: 'pointer',
         }}
+        onClick={() => openEditSetting(sectionIndex, settingIndex)}
       >
         <span
           {...dragProvided.dragHandleProps}
-          style={{
-            cursor: 'grab',
-            color: token.colorTextTertiary,
-            display: 'flex',
-          }}
+          style={handleStyle}
+          onClick={(e) => e.stopPropagation()}
         >
           <HolderOutlined />
         </span>
-        <Tag color={meta.color} icon={meta.icon} style={{ margin: 0 }}>
-          {meta.label}
-        </Tag>
+        <Tooltip title={meta.label}>
+          <Tag
+            variant="filled"
+            color={meta.color}
+            style={{ margin: 0, padding: '2px 8px', fontSize: 14 }}
+          >
+            {meta.icon}
+          </Tag>
+        </Tooltip>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Text strong ellipsis style={{ maxWidth: 260 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <Text strong ellipsis style={{ maxWidth: 300 }}>
               {setting.label}
+              {setting.required && (
+                <Text type="danger" style={{ marginLeft: 4 }}>
+                  *
+                </Text>
+              )}
             </Text>
-            <Text type="secondary" code style={{ fontSize: 12 }}>
+            <Text
+              type="secondary"
+              style={{ fontSize: 12, fontFamily: token.fontFamilyCode }}
+            >
               {setting.id}
             </Text>
-            {setting.required && (
-              <Tag color="red" style={{ margin: 0 }}>
-                required
-              </Tag>
-            )}
           </div>
           {setting.tooltip && (
             <Text
@@ -1900,52 +1922,188 @@ const SettingsBuilder: React.FC<SettingsBuilderProps> = ({
             </Text>
           )}
         </div>
-        <Space>
-          <Tooltip title="Edit">
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => openEditSetting(sectionIndex, settingIndex)}
-            />
-          </Tooltip>
-          <Popconfirm
-            title="Delete this option?"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => deleteSetting(sectionIndex, settingIndex)}
+        <span onClick={(e) => e.stopPropagation()}>
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                { key: 'edit', label: 'Edit', icon: <EditOutlined /> },
+                {
+                  key: 'delete',
+                  label: 'Delete',
+                  icon: <DeleteOutlined />,
+                  danger: true,
+                },
+              ],
+              onClick: ({ key }) =>
+                key === 'edit'
+                  ? openEditSetting(sectionIndex, settingIndex)
+                  : deleteSetting(sectionIndex, settingIndex),
+            }}
           >
-            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
+            <Button type="text" size="small" icon={<MoreOutlined />} />
+          </Dropdown>
+        </span>
+      </div>
+    );
+  };
+
+  const renderSection = (
+    section: ScriptSettingsSection,
+    sectionIndex: number,
+    dragProvided: DraggableProvided,
+    isDragging: boolean,
+  ) => {
+    const isClosed = closed.has(section.name);
+    const count = section.options.length;
+    return (
+      <div
+        ref={dragProvided.innerRef}
+        {...dragProvided.draggableProps}
+        style={{
+          ...dragProvided.draggableProps.style,
+          marginBottom: 16,
+          border: `1px solid ${
+            isDragging ? token.colorPrimary : token.colorBorderSecondary
+          }`,
+          borderRadius: token.borderRadiusLG,
+          background: token.colorBgContainer,
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '12px 16px',
+            background: token.colorFillQuaternary,
+            cursor: 'pointer',
+          }}
+          onClick={() => toggleSection(section.name)}
+        >
+          <span
+            {...dragProvided.dragHandleProps}
+            style={handleStyle}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <HolderOutlined />
+          </span>
+          <Text strong style={{ fontSize: token.fontSizeLG }}>
+            {section.name}
+          </Text>
+          <Text type="secondary">
+            {count} {count === 1 ? 'option' : 'options'}
+          </Text>
+          {section.collapsed && (
+            <Tooltip title="Collapsed by default for users">
+              <EyeInvisibleOutlined style={{ color: token.colorTextTertiary }} />
+            </Tooltip>
+          )}
+          <div style={{ flex: 1 }} />
+          <span onClick={(e) => e.stopPropagation()}>
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [
+                  { key: 'edit', label: 'Edit section', icon: <EditOutlined /> },
+                  {
+                    key: 'delete',
+                    label: 'Delete section',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                  },
+                ],
+                onClick: ({ key }) =>
+                  key === 'edit'
+                    ? openEditSection(sectionIndex)
+                    : setDeleteSectionIndex(sectionIndex),
+              }}
+            >
+              <Button type="text" size="small" icon={<MoreOutlined />} />
+            </Dropdown>
+          </span>
+          <DownOutlined
+            rotate={isClosed ? -90 : 0}
+            style={{ color: token.colorTextTertiary, fontSize: 12 }}
+          />
+        </div>
+
+        {!isClosed && (
+          <Droppable droppableId={`section-${sectionIndex}`} type="OPTION">
+            {(droppableProvided) => (
+              <div
+                ref={droppableProvided.innerRef}
+                {...droppableProvided.droppableProps}
+              >
+                {section.options.map((setting, settingIndex) => (
+                  <Draggable
+                    key={setting.id}
+                    draggableId={`${sectionIndex}-${setting.id}`}
+                    index={settingIndex}
+                  >
+                    {(rowProvided, snapshot) =>
+                      renderSettingRow(
+                        sectionIndex,
+                        setting,
+                        settingIndex,
+                        rowProvided,
+                        snapshot.isDragging,
+                      )
+                    }
+                  </Draggable>
+                ))}
+                {droppableProvided.placeholder}
+                <div
+                  style={{
+                    padding: '6px 12px',
+                    borderTop: `1px solid ${token.colorBorderSecondary}`,
+                  }}
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<PlusOutlined />}
+                    onClick={() => openAddSetting(sectionIndex)}
+                  >
+                    Add option
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Droppable>
+        )}
       </div>
     );
   };
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <Title level={4} style={{ marginBottom: 4 }}>
-          {title}
-        </Title>
-        {description && (
-          <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            {description}
-          </Paragraph>
-        )}
-      </div>
-
-      <Space
+      <div
         style={{
-          width: '100%',
+          display: 'flex',
+          alignItems: 'flex-start',
           justifyContent: 'space-between',
-          marginBottom: 12,
+          gap: 16,
+          marginBottom: 16,
         }}
       >
-  
-        <Button type="primary" icon={<PlusOutlined />} onClick={openAddSection}>
-          Add Section
-        </Button>
-      </Space>
+        <div>
+          <Title level={4} style={{ marginBottom: 4 }}>
+            {title}
+          </Title>
+          {description && (
+            <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              {description}
+            </Paragraph>
+          )}
+        </div>
+        {sections.length > 0 && (
+          <Button icon={<PlusOutlined />} onClick={openAddSection}>
+            Add section
+          </Button>
+        )}
+      </div>
 
       {sections.length === 0 ? (
         <Card>
@@ -1961,117 +2119,49 @@ const SettingsBuilder: React.FC<SettingsBuilderProps> = ({
         </Card>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
-          <Collapse
-            activeKey={activeKeys}
-            onChange={(k) =>
-              setActiveKeys(Array.isArray(k) ? (k as string[]) : [k as string])
-            }
-            items={sections.map((section, sectionIndex) => ({
-              key: String(sectionIndex),
-              label: (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 12,
-                  }}
-                >
-                  <Space>
-                    <Text strong>{section.name}</Text>
-                    <Tag color="blue">
-                      {section.options.length}{' '}
-                      {section.options.length === 1 ? 'option' : 'options'}
-                    </Tag>
-                    {section.collapsed && <Tag>collapsed by default</Tag>}
-                  </Space>
-                  <Space onClick={(e) => e.stopPropagation()}>
-                    <Tooltip title="Edit section">
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<EditOutlined />}
-                        onClick={() => openEditSection(sectionIndex)}
-                      />
-                    </Tooltip>
-                    <Popconfirm
-                      title="Delete this section and all its options?"
-                      okButtonProps={{ danger: true }}
-                      onConfirm={() => deleteSection(sectionIndex)}
-                    >
-                      <Button
-                        type="text"
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                      />
-                    </Popconfirm>
-                  </Space>
-                </div>
-              ),
-              children: (
-                <Droppable droppableId={`section-${sectionIndex}`}>
-                  {(droppableProvided) => (
-                    <div
-                      ref={droppableProvided.innerRef}
-                      {...droppableProvided.droppableProps}
-                    >
-                      {section.options.length === 0 ? (
-                        <Empty
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          description="No options in this section"
-                          style={{ padding: '12px 0' }}
-                        >
-                          <Button
-                            type="dashed"
-                            icon={<PlusOutlined />}
-                            onClick={() => openAddSetting(sectionIndex)}
-                          >
-                            Add Option
-                          </Button>
-                        </Empty>
-                      ) : (
-                        <>
-                          {section.options.map((setting, settingIndex) => (
-                            <Draggable
-                              key={setting.id}
-                              draggableId={`${sectionIndex}-${setting.id}`}
-                              index={settingIndex}
-                            >
-                              {(dragProvided, snapshot) =>
-                                renderSettingRow(
-                                  section,
-                                  sectionIndex,
-                                  setting,
-                                  settingIndex,
-                                  dragProvided,
-                                  snapshot.isDragging,
-                                )
-                              }
-                            </Draggable>
-                          ))}
-                          {droppableProvided.placeholder}
-                          <Button
-                            type="dashed"
-                            block
-                            icon={<PlusOutlined />}
-                            onClick={() => openAddSetting(sectionIndex)}
-                            style={{ marginTop: 4 }}
-                          >
-                            Add Option
-                          </Button>
-                        </>
-                      )}
-                      {section.options.length === 0 &&
-                        droppableProvided.placeholder}
-                    </div>
-                  )}
-                </Droppable>
-              ),
-            }))}
-          />
+          <Droppable droppableId="sections" type="SECTION">
+            {(droppableProvided) => (
+              <div
+                ref={droppableProvided.innerRef}
+                {...droppableProvided.droppableProps}
+              >
+                {sections.map((section, sectionIndex) => (
+                  <Draggable
+                    key={section.name}
+                    draggableId={`section:${section.name}`}
+                    index={sectionIndex}
+                  >
+                    {(dragProvided, snapshot) =>
+                      renderSection(
+                        section,
+                        sectionIndex,
+                        dragProvided,
+                        snapshot.isDragging,
+                      )
+                    }
+                  </Draggable>
+                ))}
+                {droppableProvided.placeholder}
+              </div>
+            )}
+          </Droppable>
         </DragDropContext>
       )}
+
+      <Modal
+        open={deleteSectionIndex !== undefined}
+        title="Delete section?"
+        okText="Delete"
+        okButtonProps={{ danger: true }}
+        onCancel={() => setDeleteSectionIndex(undefined)}
+        onOk={() => {
+          if (deleteSectionIndex !== undefined) deleteSection(deleteSectionIndex);
+          setDeleteSectionIndex(undefined);
+        }}
+      >
+        This also deletes the section&apos;s{' '}
+        {sections[deleteSectionIndex ?? 0]?.options.length ?? 0} option(s).
+      </Modal>
 
       <SectionModal
         open={sectionModal.open}

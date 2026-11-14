@@ -110,6 +110,15 @@ interface Window {
   craftingResultSlot: number;
   requiresConfirmation: boolean;
   selectedItem: Item | null;
+  /** Number of empty slots in the inventory section of the window. */
+  emptySlotCount(): number;
+  /** Index of the first empty slot in [start, end), or null if there is none. */
+  firstEmptySlotRange(start: number, end: number): number | null;
+  /** Index of the last empty slot in [start, end], or null if there is none. */
+  lastEmptySlotRange(start: number, end: number): number | null;
+  firstEmptyHotbarSlot(): number | null;
+  firstEmptyContainerSlot(): number | null;
+  firstEmptyInventorySlot(hotbarFirst?: boolean): number | null;
 }
 
 interface RecipeItem {
@@ -735,6 +744,7 @@ type BotPluginExtensions = {
       signal?: { aborted: boolean };
     },
   ): Promise<Window | null>;
+  /** @deprecated Use `bot.transfer(mode, target, options)`. */
   transferItems(
     mode: number | 'trade' | 'gift' | 'window' | 'trash',
     options: {

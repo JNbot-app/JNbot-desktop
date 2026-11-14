@@ -1,5 +1,5 @@
 // Default item-transfer config. Servers tweak it from their bot extension with
-// `bot.transferItems.configure({ gift: { command: '/send {username}' } })`.
+// `bot.transfer.configure({ gift: { command: '/send {username}' } })`.
 //
 // Texts are matched case-insensitively with color codes stripped. A window
 // title or item matcher is a list (any entry may match), a single string or

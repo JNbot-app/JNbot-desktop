@@ -958,6 +958,141 @@ export interface BotMachineOptions<S extends object = Record<string, unknown>> {
  * as `any`.
  * ======================================================================== */
 
+/** Transfer mode for `bot.transfer`; `'keep'` does nothing (handy for a mode setting). */
+export type TransferMode = 'keep' | 'trade' | 'gift' | 'window' | 'trash';
+
+/**
+ * A `bot.items()` filter or query. A list holding filter objects matches when any entry matches,
+ * e.g. `['kit', { type: 'clock' }, (item) => item.count < 5]`; a list of only strings is a name list.
+ */
+export type TransferItemFilter = ItemQueryFilter | ItemQuery | (ItemQueryFilter | ItemQuery)[];
+
+/** A crate key to send with a trade or gift. */
+export interface TransferKey {
+  /** Key type as shown in game, e.g. `'vote'`, `'rare'`. */
+  keyName: string;
+  amount: number;
+}
+
+export interface TransferOptions {
+  /** Inventory items to transfer, as a `bot.items()` filter (or a list of them, any may match). Default: every item. */
+  items?: TransferItemFilter;
+  /** Inventory items to never transfer, as a `bot.items()` filter (or a list of them, any may match). */
+  exclude?: TransferItemFilter;
+  /** trade/gift: the receiving player. Asked for when missing. */
+  username?: string;
+  /** window: the command that opens the window, e.g. `'/ec'`. */
+  command?: string;
+  /** trade/gift: crate keys to send along. */
+  keys?: TransferKey[];
+  /** Send the `keys` even when there are no items to transfer. @default true */
+  keysWithoutItems?: boolean;
+  /** Give up after this many ms; the result then has `completed: false`. */
+  timeout?: number | null;
+  /** window: shift-click items in instead of dragging them. @default true */
+  shiftClick?: boolean;
+}
+
+/** What a transfer moved out of the inventory. */
+export interface TransferResult {
+  /** False when the transfer hit its `timeout`. */
+  completed: boolean;
+  /** Items that left the inventory, per item id. */
+  items: { name: string; displayName: string; count: number }[];
+  /** Total number of items that left the inventory. */
+  count: number;
+}
+
+/** BotMachine state of a transfer; custom modes read it in their tasks. */
+export interface TransferState {
+  /** The transferable items in the player inventory (live; slots match the open window). */
+  items: ItemQuery;
+  itemFilter: (item: Item) => boolean;
+  keys: TransferKey[];
+  /** Every option passed to `bot.transfer`, also custom ones. */
+  options: TransferOptions & Record<string, unknown>;
+  /** The mode's target, under its `target` name (e.g. `state.username`). */
+  [target: string]: unknown;
+}
+
+export interface TransferModeDefinition {
+  /** Name of the required parameter, also accepted as the plain second argument. `'username'` is asked for when missing; `'command'` must start with `/`. */
+  target?: string;
+  /** Whether the mode accepts `keys`. @default false */
+  keys?: boolean;
+  /** The BotMachine tasks; they must call `machine.finish()` when done. */
+  tasks: Task<TransferState>[] | ((state: TransferState) => Task<TransferState>[]);
+}
+
+/** The second argument is the mode's target (username, command, ...) or the options. */
+export interface TransferCall {
+  (mode: 'trade' | 'gift', username?: string, options?: TransferOptions): Promise<TransferResult>;
+  (mode: 'window', command: string, options?: TransferOptions): Promise<TransferResult>;
+  (mode: TransferMode, options?: TransferOptions): Promise<TransferResult>;
+  /** A mode added with `bot.transfer.addMode`. */
+  (mode: string, target?: unknown, options?: TransferOptions & Record<string, unknown>): Promise<TransferResult>;
+}
+
+/**
+ * Transfer inventory items. Resolves with what left the inventory.
+ *
+ * @example
+ *   await bot.transfer('gift', 'Zola');                                  // everything
+ *   await bot.transfer('trade', 'Zola', { items: { type: 'diamond' } });
+ *   await bot.transfer('gift', 'Zola', { keys: [{ keyName: 'vote', amount: 3 }] });
+ *   await bot.transfer('window', '/ec', { exclude: { lore: 'soulbound' } });
+ *   await bot.transfer('trash', { exclude: ['kit', { type: 'clock' }] });
+ *   await bot.items({ lore: 'rare' }).transfer('gift', 'Zola');         // only matching items
+ *   const { count } = await bot.transfer('trash');                      // number of items trashed
+ */
+export interface TransferFn extends TransferCall {
+  trade(username?: string, options?: TransferOptions): Promise<TransferResult>;
+  gift(username?: string, options?: TransferOptions): Promise<TransferResult>;
+  window(command: string, options?: TransferOptions): Promise<TransferResult>;
+  trash(options?: TransferOptions): Promise<TransferResult>;
+  /** Every mode this bot supports, including added ones. */
+  readonly modes: string[];
+  /**
+   * Add (or replace) a mode for this bot, e.g. from the server's bot extension.
+   * It also gets a shortcut: `bot.transfer.<name>(target, options)`.
+   *
+   * @example
+   *   bot.transfer.addMode('auction', {
+   *     target: 'price',
+   *     tasks: [
+   *       { name: 'Done', when: ({ state }) => !state.items.has(), run: ({ machine }) => machine.finish() },
+   *       {
+   *         name: 'Listing item',
+   *         when: () => true,
+   *         run: async ({ bot, state }) => {
+   *           await bot.equip(state.items.first(), 'hand');
+   *           bot.chat(`/ah sell ${state.price}`);
+   *           await bot.waitForTicks(20);
+   *         },
+   *       },
+   *     ],
+   *   });
+   *   await bot.items('diamond').transfer('auction', 500);
+   */
+  addMode(name: string, definition: TransferModeDefinition): void;
+  /** This bot's server-specific transfer config; see {@link TransferConfig}. */
+  config: TransferConfig;
+  /**
+   * Deep-merge overrides into this bot's transfer config. Call it from the
+   * server's bot extension when a server changes its trade/gift/trash GUI.
+   *
+   * @example
+   *   bot.transfer.configure({
+   *     gift: { command: '/send {username}', confirmButton: ['lime_dye', 'confirm'] },
+   *     trash: { windowTitle: ['bin'] },
+   *   });
+   */
+  configure: (overrides: TransferConfigOverrides) => TransferConfig;
+  /** Restore the built-in defaults. */
+  resetConfig: () => TransferConfig;
+}
+
+/** @deprecated Use {@link TransferMode} with `bot.transfer`. */
 export type TransferItemMode =
   | 'keep'
   | 'trade'
@@ -971,6 +1106,7 @@ export type TransferItemMode =
   | 4 // legacy: trade with `sendKeys: true`
   | 5;
 
+/** @deprecated Use {@link TransferOptions} with `bot.transfer`. */
 export interface TransferItemsOptions {
   username?: string;
   command?: string;
@@ -985,6 +1121,7 @@ export interface TransferItemsOptions {
   shiftClick?: boolean; // Whether to shift click items into window (windowBehaviour only)
 }
 
+/** @deprecated Use {@link TransferFn} (`bot.transfer`). */
 export interface TransferItemsFn {
   (
     mode: 'keep' | 0,
@@ -1002,21 +1139,10 @@ export interface TransferItemsFn {
   gift: (options?: TransferItemsOptions) => Promise<boolean>;
   window: (options?: TransferItemsOptions) => Promise<boolean>;
   trash: (options?: TransferItemsOptions) => Promise<boolean>;
-  /** This bot's server-specific transfer config; see {@link TransferConfig}. */
+  /** Same as `bot.transfer.config`. */
   config: TransferConfig;
-  /**
-   * Deep-merge overrides into this bot's transfer config. Call it from the
-   * server's bot extension when a server changes its trade/gift/trash GUI.
-   *
-   * @example
-   *   bot.transferItems.configure({
-   *     gift: { command: '/send {username}', confirmButton: ['lime_dye', 'confirm'] },
-   *     trash: { windowTitle: ['bin'] },
-   *   });
-   */
-  configure: (overrides: TransferConfigOverrides) => TransferConfig;
-  /** Restore the built-in defaults. */
-  resetConfig: () => TransferConfig;
+  configure: TransferFn['configure'];
+  resetConfig: TransferFn['resetConfig'];
 }
 
 /**
@@ -1043,13 +1169,13 @@ export interface TransferConfig {
     offerColumns: number;
     /** Slots from your accept button to the partner's. @default 6 */
     partnerAcceptOffset: number;
-    /** With `sendKeys`: button that opens / cycles the key page. */
+    /** When sending keys: button that opens / cycles the key page. */
     keyButton: ItemMatcher;
-    /** With `sendKeys`: fallback key button slot. @default 36 */
+    /** When sending keys: fallback key button slot. @default 36 */
     keySlot: number;
     /** @default 'tripwire_hook' */
     keyItem: ItemMatcher;
-    /** With `sendKeys`: fallback accept slot. @default 27 */
+    /** When sending keys: fallback accept slot. @default 27 */
     keyAcceptSlot: number;
   };
   gift: {
@@ -1064,7 +1190,7 @@ export interface TransferConfig {
     confirmSlot: number;
     /** @default ['select items to send'] */
     depositWindowTitle: TextMatcher;
-    /** With `sendKeys`: item name that opens the key page. @default 'send crate keys' */
+    /** When sending keys: item name that opens the key page. @default 'send crate keys' */
     keyButton: string | RegExp | (string | RegExp)[];
   };
   trash: {
@@ -1098,7 +1224,7 @@ export type ItemQueryFilter =
   | ItemTextFilter
   | ((item: Item) => boolean)
   | {
-      /** Custom (display) name. */
+      /** Custom name, or the vanilla name (e.g. "Golden Apple") when the item isn't renamed. */
       name?: ItemTextFilter;
       /** Lore, lines joined with `\n`. */
       lore?: ItemTextFilter;
@@ -1134,6 +1260,17 @@ export interface ItemQuery extends Iterable<Item> {
   click(mouseButton?: number, mode?: number): Promise<Item | null>;
   /** Resolves with the first match as soon as it appears (also in a window opened later), or null after `ticks` (default 100). */
   wait(ticks?: number): Promise<Item | null>;
+  /** Whether `item` passes this query's name/lore/type/where filters (the scope is ignored). */
+  matches(item: Item | null): boolean;
+  /**
+   * Transfer the matching inventory items; same as `bot.transfer` with `items` set to this query.
+   * Only the filters count: items always come from the player inventory.
+   *
+   * @example
+   *   await bot.items({ type: 'diamond' }).transfer('trade', 'Zola');
+   *   await bot.items('kit').transfer('trash');
+   */
+  transfer: TransferCall;
 }
 
 export type BotPluginExtensions = {
@@ -1184,6 +1321,9 @@ export type BotPluginExtensions = {
       signal?: { aborted: boolean };
     },
   ) => Promise<unknown | null>;
+  /** Move inventory items by trade, gift, a server window or trash; see {@link TransferFn}. */
+  transfer: TransferFn;
+  /** @deprecated Use `bot.transfer(mode, target, options)` or `bot.items(...).transfer(...)`. */
   transferItems: TransferItemsFn;
   /**
    * Search items by name, lore or type in the open window and/or the player inventory.

@@ -78,7 +78,7 @@ function collectTasks() {
       name: 'send items',
       when: () => true,
       run: async ({ bot, machine }) => {
-        await bot.transferItems(transferMode, { username: mainAccount, timeout: 60_000 });
+        await bot.transfer(transferMode, mainAccount, { timeout: 60_000 });
         machine.finish();
       },
     },

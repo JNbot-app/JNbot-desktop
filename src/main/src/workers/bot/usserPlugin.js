@@ -56,11 +56,14 @@ const stripText = (text) =>
 const cleanText = (text) => stripText(String(text ?? '')).toLowerCase();
 
 // Cleaned name/lore per item; slot updates replace the Item object, so entries never go stale.
+// The name falls back to the vanilla name when the item isn't renamed.
 const itemTextCache = new WeakMap();
 function itemText(item, field) {
   let entry = itemTextCache.get(item);
   if (!entry) itemTextCache.set(item, (entry = {}));
-  return (entry[field] ??= stripText(itemInfo[field](item)));
+  return (entry[field] ??= stripText(
+    itemInfo[field](item) || (field === 'name' && item.displayName) || '',
+  ));
 }
 
 // string → case-insensitive substring; RegExp/function → tested on the color-stripped text;
@@ -164,8 +167,10 @@ class ItemQuery {
     }
   }
 
-  _matches(item) {
+  /** Whether `item` passes the name/lore/type/where filters (scope is ignored). */
+  matches(item) {
     return (
+      !!item &&
       (!this._type || this._type(item)) &&
       (!this._name || this._name(itemText(item, 'name'))) &&
       (!this._lore || this._lore(itemText(item, 'lore'))) &&
@@ -178,7 +183,7 @@ class ItemQuery {
     if (!slots) return;
     for (const i of this._indexes()) {
       const item = slots[i];
-      if (item && this._matches(item)) yield item;
+      if (this.matches(item)) yield item;
     }
   }
 
@@ -210,6 +215,12 @@ class ItemQuery {
     const item = this.first();
     if (item) await this._bot.clickWindow(item.slot, button, mode);
     return item;
+  }
+
+  /** Transfers the matching inventory items; see `bot.transfer`. */
+  transfer(mode, target, options) {
+    if (target && typeof target === 'object') [target, options] = [undefined, target];
+    return this._bot.transfer(mode, target, { ...options, items: this });
   }
 
   /** Resolves with the first match as soon as one appears, or null after `ticks`. */

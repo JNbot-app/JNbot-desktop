@@ -46,16 +46,16 @@ const containerIsEmpty = (bot) =>
 const hasFreeContainerSlot = (bot) =>
   bot.currentWindow.slots.slice(0, bot.currentWindow.inventoryStart).includes(null);
 
-/** "vote,10" -> ['vote', 10]; invalid entries are skipped. */
+/** { keyName: 'vote', amount: 10 } (or legacy "vote,10") -> ['vote', 10]; invalid entries are skipped. */
 function parseKeys(keys = []) {
   return keys.flatMap((entry) => {
-    if (typeof entry !== 'string') {
-      log('Invalid key format, use "<keyType>,<amount>" (e.g. "vote,10")', 'error');
+    let [key, amount] = typeof entry === 'string' ? entry.split(',') : [entry?.keyName, entry?.amount];
+    const count = parseInt(String(amount ?? '').replace(/\D/g, ''), 10);
+    if (typeof key !== 'string' || !key.trim() || !(count > 0)) {
+      log(`Invalid key ${JSON.stringify(entry)}, use { keyName: 'vote', amount: 10 }`, 'error');
       return [];
     }
-    const [key, amount] = entry.toLowerCase().split(',');
-    const count = parseInt(amount?.replace(/\D/g, ''), 10);
-    return key && count > 0 ? [[key.trim(), count]] : [];
+    return [[key.trim().toLowerCase(), count]];
   });
 }
 

@@ -26,7 +26,7 @@ function offerSlots(acceptSlot, columns) {
  * virtual crate keys in `state.keys` before depositing items.
  */
 function createTradeBehaviour({ withKeys = false } = {}) {
-  const cfg = (bot) => bot.transferItems.config.trade;
+  const cfg = (bot) => bot.transfer.config.trade;
   const slotOf = (bot, offset) => bot.currentWindow.slots[offset];
 
   const accepted = (bot, slot) => itemMatches(bot, slotOf(bot, slot), cfg(bot).acceptedButton);
@@ -124,7 +124,7 @@ function createTradeBehaviour({ withKeys = false } = {}) {
         when: ({ state }) => state.pendingKeys.length > 0,
         run: async ({ bot, state }) => {
           const [key, amount] = state.pendingKeys[0];
-          const names = [key, ...(bot.transferItems.config.keyAliases[key] ?? [])];
+          const names = [key, ...(bot.transfer.config.keyAliases[key] ?? [])];
           const slot = keyItemSlots(bot, state).find((i) =>
             textMatches(bot.itemInfo.name(slotOf(bot, i)), names),
           );

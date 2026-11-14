@@ -279,9 +279,7 @@ export const recipeActions: Record<string, ActionHandler> = {
     if (mode !== 'trash' && !username) {
       throw new Error('Transfer items needs a player username or command.');
     }
-    await context
-      .getBot()
-      .transferItems(mode, mode === 'window' ? { command: username } : { username });
+    await context.getBot().transfer(mode, mode === 'trash' ? undefined : username);
   },
 
   async botWait(context, { ticks }) {

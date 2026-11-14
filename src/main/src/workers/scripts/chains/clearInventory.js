@@ -71,9 +71,7 @@ function inventoryCleaner(_, __, defaultBot) {
           action: async (bot) => {
             bot.chat('/ci confirm');
             await bot.waitForTicks(5);
-            await bot.transferItems.trash({
-              ignore: ['clock'],
-            });
+            await bot.transfer('trash', { exclude: { type: 'clock' } });
             await bot.waitForTicks(10);
             if (bot.currentWindow) bot.closeWindow(bot.currentWindow);
           },

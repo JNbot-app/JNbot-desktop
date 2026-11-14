@@ -12,7 +12,7 @@ const {
  * the window comes from the trash config and is confirmed when done.
  */
 function createWindowBehaviour({ trash = false } = {}) {
-  const trashCfg = (bot) => bot.transferItems.config.trash;
+  const trashCfg = (bot) => bot.transfer.config.trash;
   const command = (bot, state) => (trash ? trashCfg(bot).command : state.command);
 
   const tasks = [
