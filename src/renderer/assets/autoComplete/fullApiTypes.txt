@@ -3088,8 +3088,9 @@ interface ChainStepInfo {
 
 /**
  * The chain a plugin runs in: `require('JNbot').chain`, or `null` outside a
- * chain. A chain's setup code gets it as `chain`. Steps are referred to by id
- * or name. Changes (options, patches, disabled or added steps) last until the
+ * chain. A chain's setup code gets it as `chain`. Steps are referred to by id,
+ * plugin id (the first step running that plugin) or name. Prefer the plugin id: it
+ * keeps working when a step or plugin is renamed. Changes (options, patches, disabled or added steps) last until the
  * chain moves on to the next alt.
  *
  * @example

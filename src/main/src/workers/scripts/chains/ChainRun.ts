@@ -121,9 +121,12 @@ export default class ChainRun {
     }
   }
 
-  /** A step by id or name. */
+  /** A step by id, plugin id (the first such step) or name. */
   find(ref: string): ChainStep {
-    const step = this.steps.find((s) => s.id === ref) ?? this.steps.find((s) => s.name === ref);
+    const step =
+      this.steps.find((s) => s.id === ref) ??
+      this.steps.find((s) => s.scriptId === ref) ??
+      this.steps.find((s) => s.name === ref);
     if (!step) throw new Error(`The chain has no step "${ref}"`);
     return step;
   }
