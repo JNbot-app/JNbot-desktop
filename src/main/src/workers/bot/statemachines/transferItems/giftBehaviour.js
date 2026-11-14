@@ -9,15 +9,15 @@ const {
   windowTitleMatches,
 } = require('./transferUtil');
 
-const OWNED = /keys own:\s*(\d+)/i;
-const SENDING = /keys being sent:\s*(\d+)/i;
-
 const cfg = (bot) => bot.transfer.config.gift;
 const inDepositWindow = (bot) => windowTitleMatches(bot, cfg(bot).depositWindowTitle);
 const inConfirmWindow = (bot) => windowTitleMatches(bot, cfg(bot).confirmWindowTitle);
-const keyItems = (bot, name) => bot.items({ name, lore: OWNED }).container();
-const loreNumber = (bot, item, pattern) =>
-  Number(pattern.exec(bot.cleanText(bot.itemInfo.lore(item)))?.[1] ?? 0);
+const keyItems = (bot, name) => bot.items({ name, lore: cfg(bot).keysOwnedLore }).container();
+/** The number the pattern's first group captures in the item's lore, or 0. */
+function loreNumber(bot, item, pattern) {
+  pattern.lastIndex = 0;
+  return Number(pattern.exec(bot.cleanText(bot.itemInfo.lore(item)))?.[1] ?? 0);
+}
 
 /** Adds `amount` of `key` to the gift, one click per key. */
 async function addKey(bot, key, amount) {
@@ -25,9 +25,9 @@ async function addKey(bot, key, amount) {
   const item = keyItems(bot, names).first();
   if (!item) return log(`Couldn't find ${key} keys, sending the gift without them`, 'warning');
 
-  const owned = loreNumber(bot, item, OWNED);
+  const owned = loreNumber(bot, item, cfg(bot).keysOwnedLore);
   if (owned < amount) log(`Only ${owned}/${amount} ${key} keys available`, 'warning');
-  const clicks = Math.min(amount, owned) - loreNumber(bot, item, SENDING);
+  const clicks = Math.min(amount, owned) - loreNumber(bot, item, cfg(bot).keysSendingLore);
   for (let i = 0; i < clicks; i++) {
     bot.clickWindow(item.slot, 0, 0);
     await bot.waitForTicks(4);
@@ -63,7 +63,7 @@ function createGiftBehaviour({ withKeys = false } = {}) {
       when: ({ bot, state }) => keysPending(state) && readyToSend(bot, state),
       run: async ({ bot, state }) => {
         if (!(await bot.items(cfg(bot).keyButton).container().click())) {
-          log('This gift window has no key option, sending the gift without keys', 'warning');
+          log('This gift window has no key option, sending the gift without keys (no item with name "' + cfg(bot).keyButton + '")', 'warning');
           state.pendingKeys = [];
           return;
         }

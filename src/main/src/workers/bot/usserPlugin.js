@@ -9,6 +9,8 @@ const itemInfo = require('./extensions/itemInfo');
 const { parseItemText, parseRawNbt } = require('./extensions/nbtParser');
 const { getOrAskPassword } = require('../lib/MissingDataHandler');
 const { Vec3 } = require('vec3');
+// Plugin code runs in its own VM context, so its RegExps fail `instanceof RegExp`.
+const { isRegExp } = require('util').types;
 const {
   default: joinGamemode,
 } = require('./statemachines/joinGamemode/joinGamemodeBehaviourV3');
@@ -74,7 +76,12 @@ function textMatcher(pattern, caseSensitive) {
     const matchers = pattern.map((p) => textMatcher(p, caseSensitive));
     return (text) => matchers.some((match) => match(text));
   }
-  if (pattern instanceof RegExp) return (text) => pattern.test(text);
+  if (isRegExp(pattern)) {
+    return (text) => {
+      pattern.lastIndex = 0; // `g`/`y` regexes keep state between tests
+      return pattern.test(text);
+    };
+  }
   if (typeof pattern === 'function') return pattern;
   if (caseSensitive) {
     const needle = stripText(String(pattern));
@@ -92,7 +99,7 @@ class ItemQuery {
   constructor(bot, query = {}) {
     if (
       typeof query === 'string' ||
-      query instanceof RegExp ||
+      isRegExp(query) ||
       Array.isArray(query)
     )
       query = { name: query };
@@ -613,3 +620,4 @@ const inject = (bot) => {
 };
 
 module.exports = inject;
+module.exports.ItemQuery = ItemQuery;

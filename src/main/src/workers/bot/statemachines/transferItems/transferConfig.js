@@ -2,8 +2,8 @@
 // `bot.transfer.configure({ gift: { command: '/send {username}' } })`.
 //
 // Texts are matched case-insensitively with color codes stripped. A window
-// title or item matcher is a list (any entry may match), a single string or
-// a function. Item matchers check the item id, display name and lore.
+// title or item matcher is a list (any entry may match), a single string, a
+// RegExp or a function. Item matchers check the item id, display name and lore.
 
 const isGreenGlass = (item) =>
   item.name === 'green_stained_glass_pane' ||
@@ -40,8 +40,12 @@ const defaultTransferConfig = {
     /** Used when no confirm button is found. */
     confirmSlot: 11,
     depositWindowTitle: ['select items to send'],
-    /** Deposit window item that opens the key page (used with `sendKeys`). */
+    /** Deposit window item that opens the key page (used when sending keys). */
     keyButton: 'send crate keys',
+    /** Key page: lore with the number of keys you own; the first group captures the number. */
+    keysOwnedLore: /keys own(?:ed)?:?\s*(\d+)/i,
+    /** Key page: lore with the number of keys already added to the gift. */
+    keysSendingLore: /keys being sent:?\s*(\d+)/i,
   },
   trash: {
     command: '/trash',
@@ -52,11 +56,13 @@ const defaultTransferConfig = {
   keyAliases: { vote: ['voting'] },
 };
 
-/** Deep-merges `overrides` into `config`; arrays and functions are replaced. */
+// toString instead of a prototype check: plugin objects come from another VM context.
+const isPlainObject = (value) => Object.prototype.toString.call(value) === '[object Object]';
+
+/** Deep-merges `overrides` into `config`; arrays, RegExps and functions are replaced. */
 function mergeConfig(config, overrides) {
   for (const [key, value] of Object.entries(overrides ?? {})) {
-    const isObject = value && typeof value === 'object' && !Array.isArray(value);
-    config[key] = isObject ? mergeConfig({ ...config[key] }, value) : value;
+    config[key] = isPlainObject(value) ? mergeConfig({ ...config[key] }, value) : value;
   }
   return config;
 }

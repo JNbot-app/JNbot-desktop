@@ -1,4 +1,5 @@
 const assert = require('assert');
+const { isRegExp } = require('util').types;
 const { getOrAskTransferToUsername } = require('../lib/MissingDataHandler');
 const { default: BotMachine } = require('./statemachines/BotMachine');
 const createTradeBehaviour = require('./statemachines/transferItems/tradeBehaviour');
@@ -70,7 +71,7 @@ function diffCounts(before, after) {
 
 const inject = (bot) => {
   const modes = { ...MODES };
-  const isFilterObject = (f) => f && typeof f === 'object' && !(f instanceof RegExp);
+  const isFilterObject = (f) => f && typeof f === 'object' && !isRegExp(f);
   /** A `bot.items` filter or query; a list holding filter objects matches when any entry matches. */
   const asQuery = (filter) => {
     if (Array.isArray(filter) && filter.some(isFilterObject)) {

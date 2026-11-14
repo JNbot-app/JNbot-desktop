@@ -1,4 +1,7 @@
-const normalize = (text) => String(text ?? '').replace(/§./g, '').toLowerCase();
+const { isRegExp } = require('util').types;
+
+const stripColors = (text) => String(text ?? '').replace(/§./g, '');
+const normalize = (text) => stripColors(text).toLowerCase();
 
 const fill = (template, vars) =>
   template.replace(/\{(\w+)\}/g, (match, key) => vars[key] ?? match);
@@ -7,6 +10,10 @@ const fill = (template, vars) =>
 function textMatches(text, pattern, vars = {}) {
   if (Array.isArray(pattern)) return pattern.some((p) => textMatches(text, p, vars));
   if (typeof pattern === 'function') return pattern(text);
+  if (isRegExp(pattern)) {
+    pattern.lastIndex = 0;
+    return pattern.test(stripColors(text));
+  }
   return normalize(text).includes(normalize(fill(pattern, vars)));
 }
 

@@ -3434,9 +3434,9 @@ interface TransferItemsFn {
  * Text pattern, matched case-insensitively with color codes stripped. Strings
  * may contain `{username}`. Pass a list to accept several titles/texts.
  */
-type TextMatcher = string | ((text: string) => boolean) | TextMatcher[];
+type TextMatcher = string | RegExp | ((text: string) => boolean) | TextMatcher[];
 /** Like {@link TextMatcher}, checked against the item id, display name and lore. */
-type ItemMatcher = string | ((item: Item, bot: Bot) => boolean) | ItemMatcher[];
+type ItemMatcher = string | RegExp | ((item: Item, bot: Bot) => boolean) | ItemMatcher[];
 
 interface TransferConfig {
   trade: {
@@ -3477,6 +3477,10 @@ interface TransferConfig {
     depositWindowTitle: TextMatcher;
     /** When sending keys: item name that opens the key page. @default 'send crate keys' */
     keyButton: string | RegExp | (string | RegExp)[];
+    /** Key page: lore with the number of keys you own; the first group captures the number. @default /keys own(?:ed)?:?\s*(\d+)/i */
+    keysOwnedLore: RegExp;
+    /** Key page: lore with the number of keys already added to the gift. @default /keys being sent:?\s*(\d+)/i */
+    keysSendingLore: RegExp;
   };
   trash: {
     /** @default '/trash' */
