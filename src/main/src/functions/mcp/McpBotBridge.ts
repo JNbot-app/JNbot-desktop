@@ -210,6 +210,20 @@ export class McpBotBridge {
     return this.runCode(this.target(target), code, timeoutMs);
   }
 
+  events(target: McpBotTarget, input: Record<string, unknown>) {
+    return this.request(this.target(target), 'mcpGetEvents', input);
+  }
+
+  wait(target: McpBotTarget, input: Record<string, unknown>) {
+    return this.request(this.target(target), 'mcpWaitForEvent', input);
+  }
+
+  /** Account names of every active bot in a profile, for `accounts: ['*']`. */
+  activeAccounts(profileKey: string): string[] {
+    const runtime = this.scriptHandler.getRuntimeByKey(profileKey);
+    return runtime ? this.listBots(runtime.profileId).map((bot) => bot.username) : [];
+  }
+
   async getBotState(target: BotTarget) {
     return this.request(target, 'mcpGetState');
   }
@@ -236,10 +250,6 @@ export class McpBotBridge {
 
   async findBlocks(target: BotTarget, input: Record<string, unknown>) {
     return this.request(target, 'mcpFindBlocks', input);
-  }
-
-  async waitForEvent(target: BotTarget, input: Record<string, unknown>) {
-    return this.request(target, 'mcpWaitForEvent', input);
   }
 
   async executeRecipeAction(
@@ -401,10 +411,12 @@ export class McpBotBridge {
         const active = this.scriptHandler
           .getRuntime(profile.profileId)
           .activeBots.getBot(bot.botId);
-        active?.requestAction('mcpRecipeAction', {
-          actionId: 'botClearMovement',
-          inputs: {},
-        });
+        active
+          ?.requestAction('mcpRecipeAction', {
+            actionId: 'botClearMovement',
+            inputs: {},
+          })
+          .catch(() => undefined);
       }
     }
     void this.stopClientSessions();
@@ -525,8 +537,9 @@ export class McpBotBridge {
   private serialized<T>(target: BotTarget, task: () => Promise<T>): Promise<T> {
     const key = `${target.profileId}:${target.botId}`;
     const previous = this.queues.get(key) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(task);
-    const tracked = next.finally(() => {
+    const next = previous.then(task);
+    // The queue entry never rejects; the caller handles `next`'s error.
+    const tracked = next.catch(() => undefined).finally(() => {
       if (this.queues.get(key) === tracked) this.queues.delete(key);
     });
     this.queues.set(key, tracked);

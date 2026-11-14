@@ -1,21 +1,8 @@
-import type { Chain, ChainNext, ChainStep } from '../../../../../common/chains';
-import { fillPlaceholders } from '../../../../../common/chains';
+import type { Chain, ChainNext } from '../../../../../common/chains';
 import type { Bot } from '../../workerTypes';
 import workerScript from '../../lib/workerScript';
 import { iterateBots, IterateDirective } from '../iterateAlts';
-import scriptActionRunner = require('../../compiler/scriptActions');
-
-/**
- * Codes an action can return to steer the chain (0 = success → next step):
- *   1 NEXT ALT  — skip to the next alt,
- *   2 RELOG     — rejoin and restart the chain on this alt,
- *   3 PREV ALT  — go back to the previous alt.
- */
-const STATUS_DIRECTIVE: Record<number, IterateDirective> = {
-  1: 'next',
-  2: 'retry',
-  3: 'previous',
-};
+import ChainRun from './ChainRun';
 
 /** What the alt loop does once an alt's steps are over. */
 type AltResult = IterateDirective | 'stop' | undefined;
@@ -29,57 +16,40 @@ const NEXT_DIRECTIVE: Partial<Record<ChainNext, AltResult>> = {
 /** Guards against "go to step" loops that never end. */
 const MAX_STEP_RUNS = 500;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
-
-/**
- * Run one step. Its action gets the values of earlier steps as `args[0]`, and
- * `{key}` placeholders in its option overrides are filled from them; returning
- * an object adds values for the steps after it.
- */
-async function runStep(
-  bot: Bot,
-  step: ChainStep,
-  data: Record<string, unknown>,
-): Promise<{ ok: boolean; directive?: IterateDirective }> {
-  try {
-    const result = await scriptActionRunner({
-      id: step.scriptId,
-      bot,
-      args: [data],
-      optionOverrides: fillPlaceholders(step.options, data),
-    });
-    if (isRecord(result)) Object.assign(data, result);
-    return { ok: result !== false, directive: STATUS_DIRECTIVE[result as number] };
-  } catch (err) {
-    global.log(`Step "${step.name}" failed: ${err}`, 'error');
-    return { ok: false };
-  }
-}
-
 /**
  * Run the chain's steps against the joined bot, following each step's
- * "if it works / if it fails" outcome. An explicit code from an action wins;
- * returns undefined to defer to the control buttons if the bot dropped out.
+ * "if it works / if it fails" outcome, after the chain's setup code. Disabled
+ * steps are skipped. Returns undefined to defer to the control buttons if the
+ * bot dropped out.
  */
-async function runSteps(bot: Bot, steps: ChainStep[]): Promise<AltResult> {
-  const data: Record<string, unknown> = { alt: bot.username };
+async function runSteps(bot: Bot, chain: Chain): Promise<AltResult> {
+  const run = new ChainRun(chain, bot);
+  // Broken setup code would fail on every alt, so stop instead.
+  if (!(await run.setup())) return 'stop';
   let index = 0;
-  for (let runs = 0; index < steps.length; runs++) {
+  for (let runs = 0; index < run.steps.length; runs++) {
     if (runs >= MAX_STEP_RUNS) {
       global.log('Chain kept repeating steps — moving to the next alt', 'warning');
       return 'next';
     }
     if (!bot.isOnline?.()) return undefined;
 
-    const step = steps[index];
-    const { ok, directive } = await runStep(bot, step, data);
-    if (directive) return directive;
+    const step = run.steps[index];
+    if (!run.isEnabled(step)) {
+      index++;
+      continue;
+    }
+    const { ok, directive } = await run.run(step);
+    // Where the chain API said to go wins, then a code the action returned.
+    const chosen = run.next;
+    run.next = undefined;
+    if (!chosen && directive) return directive;
 
-    const next = (ok ? step.onSuccess : step.onFail) ?? 'next';
+    const next = chosen ?? (ok ? step.onSuccess : step.onFail) ?? 'next';
     if (next in NEXT_DIRECTIVE) return NEXT_DIRECTIVE[next];
-    const target = steps.findIndex((s) => `step:${s.id}` === next);
-    index = target === -1 ? index + 1 : target;
+    const target = run.steps.findIndex((s) => `step:${s.id}` === next);
+    // Steps may have been added before this one, so look it up again.
+    index = target === -1 ? run.steps.indexOf(step) + 1 : target;
   }
   return 'next';
 }
@@ -107,7 +77,7 @@ async function runChain(chain: Chain) {
 
   let result = await iterator.next();
   while (!result.done) {
-    const directive = await runSteps(result.value, chain.chains);
+    const directive = await runSteps(result.value, chain);
     if (directive === 'stop') {
       await iterator.return();
       break;

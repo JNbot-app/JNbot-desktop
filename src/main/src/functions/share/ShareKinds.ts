@@ -366,7 +366,12 @@ type SharedChain = {
   description?: string;
   gamemode?: string | null;
   steps: ChainStep[];
+  setup?: string;
+  config?: Chain['config'];
 };
+
+/** Longest setup code a shared chain may carry. */
+const MAX_SETUP_LENGTH = 50_000;
 
 const isNext = (value: unknown) => value === undefined || isText(value, 60);
 
@@ -403,6 +408,8 @@ const chain: ShareKindHandler = {
         description,
         gamemode: options.gamemode ?? null,
         steps: source.chains.map(normalizeChainStep),
+        ...(source.setup?.trim() ? { setup: source.setup } : {}),
+        ...(source.config?.length ? { config: source.config } : {}),
       } satisfies SharedChain,
       plugins: await exportPlugins(source.chains.map((step) => step.scriptId), ctx, profileKey),
     };
@@ -428,6 +435,9 @@ const chain: ShareKindHandler = {
           { label: 'Runs on', value: 'Your alts — set the alt range in the chain settings' },
         ],
       },
+      ...(typeof payload?.setup === 'string'
+        ? [{ title: 'Setup code', rows: [], code: payload.setup }]
+        : []),
     ];
   },
   async install(envelope, input, ctx) {
@@ -437,7 +447,9 @@ const chain: ShareKindHandler = {
       !isText(payload?.name, 100) ||
       (payload.description !== undefined && !isText(payload.description, 300)) ||
       steps.length > 200 ||
-      !steps.every(isSharedStep)
+      !steps.every(isSharedStep) ||
+      (payload.setup !== undefined && !isText(payload.setup, MAX_SETUP_LENGTH)) ||
+      (payload.config !== undefined && !Array.isArray(payload.config))
     ) {
       throw new Error('Invalid chain share.');
     }
@@ -449,7 +461,16 @@ const chain: ShareKindHandler = {
       scriptId: ids.get(step.scriptId) ?? step.scriptId,
     }));
     ctx.settings.updateProfileSettings(input.profileKey!, [
-      { path: ['scripts', 'chains', id], value: { id, name: payload.name, chains: chainSteps } },
+      {
+        path: ['scripts', 'chains', id],
+        value: {
+          id,
+          name: payload.name,
+          chains: chainSteps,
+          ...(payload.setup ? { setup: payload.setup } : {}),
+          ...(payload.config?.length ? { config: payload.config } : {}),
+        },
+      },
       {
         path: ['scripts', id],
         // An update keeps your own options (alt range, tags, gamemode).

@@ -2,7 +2,8 @@ import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
-import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
+import { createMcpHandler, McpServer, ResourceTemplate } from '@modelcontextprotocol/server';
+import * as z from 'zod/v4';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import type {
   McpActivitySnapshot,
@@ -22,6 +23,7 @@ import {
   normalizePermissions,
 } from '../../../../common/clientPermissions';
 import { validatePluginOptionSchema } from '../../../../common/pluginOptions';
+import { findPresetId, PRESET_OPTION } from '../../../../common/pluginPresets';
 import type { Device, FullLogMessage } from '../../types';
 import type ScriptHandler from '../ScriptHandler';
 import type Macros from '../Macros';
@@ -33,9 +35,10 @@ import McpOperations from './McpOperations';
 import McpRelayClient, { type PairingFrame } from './McpRelayClient';
 import { consumeRateLimit, redactMcpValue, sanitizeError } from './security';
 import { PLUGIN_API_TYPES } from '../../../../common/pluginApiTypesSource';
-import { PLUGIN_AUTHORING_GUIDE } from '../../../../common/pluginAuthoringGuideSource';
+import { PLUGIN_AUTHORING_GUIDE, PLUGIN_FULL_EXAMPLES } from '../../../../common/pluginAuthoringGuideSource';
 import {
   JNBOT_MCP_CONTEXT,
+  JNBOT_REFERENCE_SECTION_IDS,
   JNBOT_REFERENCE_SECTION_MARKERS,
   type JnbotReferenceSection,
 } from '../../../../common/pluginMcpReferenceSource';
@@ -61,7 +64,9 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 120;
 const READ_TIMEOUT_MS = 5_000;
-const MCP_INSTRUCTIONS = `Use stable { profileKey, account } bot targets returned by get_jnbot_context. When a user names an alt that is not an active bot, call get_jnbot_context with its profileKey and accountQuery before asking the user for the account name; stored alts belong to profiles. Use the returned account match with join_bot. Writes return an operationId immediately; call get_operation until it is terminal and never resubmit a pending write. Internal numeric IDs do not exist in this API.
+export const MCP_INSTRUCTIONS = `Use stable { profileKey, account } bot targets returned by get_jnbot_context. When a user names an alt that is not an active bot, call get_jnbot_context with its profileKey and accountQuery before asking the user for the account name; stored alts belong to profiles. Use the returned account match with join_bot. Writes return an operationId immediately; call get_operation until it is terminal and never resubmit a pending write. Internal numeric IDs do not exist in this API. To react to the game (a server reply, a kick, a window opening) call wait_for_event instead of polling get_bot_state; get_bot_state with include ["events"] explains recent kicks, deaths and disconnects. leave_bot, send_bot_chat and run_plugin action mode accept accounts (["*"] = every active bot) to act on several bots at once.
+
+Triggers and chains: get_plugin mode "automations" lists a profile's triggers and chains; save_automation creates, updates or deletes them; run a chain with run_plugin pluginId "chain:<id>". Plugin options can have presets: read them with get_plugin mode "options", write one with save_plugin mode "options" and preset, and run one with run_plugin preset.
 
 Plugin workflow: when the user asks to create or change a plugin or action, first call get_plugin with mode "authoring" and get_jnbot_reference for any API section you do not know. Infer options for user-adjustable behaviour and include optionSchema with the source. Then call save_plugin; do not merely provide source code. Use scriptType "action" only for an action with async function main(bot, settings, args = []). Poll get_operation and report the installed pluginId or approval/validation result.
 
@@ -136,6 +141,10 @@ export class McpManager {
     return this.macros;
   }
 
+  getPluginService(): McpPluginService {
+    return this.plugins;
+  }
+
   // ===========================================================================
   // Status & Snapshots
   // ===========================================================================
@@ -147,19 +156,33 @@ export class McpManager {
       endpoint: this.endpoint,
       remoteEndpoint: this.mode === 'remote' ? `${JNBOT_MCP_RELAY_ORIGIN}/i/${this.storage.installationId}/mcp` : undefined,
       sessionStartedAt: this.sessionStartedAt,
-      encryptionAvailable: this.storage.encryptionAvailable,
       connectedClients: this.activeClientIds.size,
       relayConnected: this.relayConnected,
     };
   }
 
   snapshot(): McpActivitySnapshot & { operations: McpOperation[] } {
+    const operations = this.operations.list();
+    const byId = new Map(operations.map((operation) => [operation.operationId, operation]));
     return {
       status: this.status(),
       clients: this.clients().map((client) => this.publicClient(client)),
       approvals: this.approvals(),
-      audit: [...this.audit].reverse(),
-      operations: this.operations.list(),
+      // History rows follow their operation, so the replay shows how each call ended.
+      audit: [...this.audit].reverse().map((event) => {
+        const operation = byId.get(event.id);
+        if (!operation) return event;
+        const done = ['succeeded', 'failed', 'denied', 'cancelled'].includes(operation.status);
+        return {
+          ...event,
+          summary: operation.summary,
+          result: operation.status === 'succeeded' ? 'success' : done ? 'error' : 'pending',
+          error: operation.error?.message,
+          output: operation.result === undefined ? undefined : JSON.stringify(operation.result).slice(0, 2_000),
+          durationMs: done ? operation.updatedAt - operation.acceptedAt : undefined,
+        };
+      }),
+      operations,
     };
   }
 
@@ -514,7 +537,57 @@ export class McpManager {
       );
     }
 
+    this.registerResources(server, client);
+    this.registerPrompts(server, client);
     return server;
+  }
+
+  /** Read-only documents clients can attach as context without a tool call. */
+  private registerResources(server: McpServer, client: McpClientContext) {
+    for (const section of JNBOT_REFERENCE_SECTION_IDS) {
+      server.registerResource(
+        `reference-${section}`,
+        `jnbot://reference/${section}`,
+        { title: `JNbot reference: ${section}`, mimeType: 'text/plain' },
+        async (uri) => ({ contents: [{ uri: uri.href, text: this.getReference(section).content }] }),
+      );
+    }
+    if (client.permissions.mcp.plugins === 'deny') return;
+    server.registerResource(
+      'plugin-source',
+      new ResourceTemplate('jnbot://plugins/{pluginId}', {
+        list: async () => ({
+          resources: this.macros.toList().map((plugin) => ({
+            uri: `jnbot://plugins/${plugin.pluginId}`,
+            name: plugin.name,
+            mimeType: 'text/plain',
+          })),
+        }),
+      }),
+      { title: 'Plugin source', mimeType: 'text/plain' },
+      async (uri, variables) => ({
+        contents: [{ uri: uri.href, text: this.currentSource(String(variables.pluginId)) ?? '' }],
+      }),
+    );
+  }
+
+  /** Ready-made workflows that show up as slash commands in MCP clients. */
+  private registerPrompts(server: McpServer, client: McpClientContext) {
+    const prompt = (name: string, title: string, description: string, text: (args: Record<string, string>) => string) =>
+      server.registerPrompt(
+        name,
+        { title, description, argsSchema: z.object({ request: z.string().describe('What you want, in your own words.') }) },
+        (args) => ({ messages: [{ role: 'user' as const, content: { type: 'text' as const, text: text(args) } }] }),
+      );
+    if (client.permissions.mcp.plugins === 'deny') return;
+    prompt('write-plugin', 'Write a plugin', 'Create a JNbot plugin or action from a description.', ({ request }) =>
+      `Create a JNbot plugin: ${request}\n\nFirst call get_plugin mode "authoring", read any reference section you need, add options for adjustable behaviour, then save it with save_plugin.`);
+    prompt('create-trigger', 'Create a trigger', 'Create a trigger that reacts to a bot event.', ({ request }) =>
+      `Create a JNbot trigger: ${request}\n\nCall get_jnbot_context and get_plugin mode "automations" first, then save it with save_automation.`);
+    prompt('build-chain', 'Build a chain', 'Build a chain of actions that runs on every selected alt.', ({ request }) =>
+      `Build a JNbot chain: ${request}\n\nCall get_jnbot_context and get_plugin mode "actions" for the available actions, then save it with save_automation.`);
+    prompt('debug-run', 'Debug a run', 'Find out why a plugin run failed and fix it.', ({ request }) =>
+      `Help me debug this JNbot plugin run: ${request}\n\nUse get_jnbot_context to find the run, get_run with logs: true for its logs, get_plugin mode "source" for the code, then explain the cause and propose a fix with save_plugin dryRun.`);
   }
 
   tools(client: McpClientContext): McpToolDefinition[] {
@@ -573,15 +646,46 @@ export class McpManager {
     actionId: string,
     input?: Record<string, unknown>,
   ) {
-    const target = this.target(args);
+    const targets = this.targets(args);
     return this.submit(
       client,
       tool,
       'control',
-      target,
+      this.operationTarget(targets),
       args,
-      () => this.botBridge.action(target, actionId, input ?? {}),
+      () => this.forEachTarget(targets, (target) => this.botBridge.action(target, actionId, input ?? {})),
     );
+  }
+
+  /** `account`, or every entry of `accounts` (`["*"]` = all active bots). */
+  targets(args: Record<string, unknown>): McpBotTarget[] {
+    const profileKey = String(args.profileKey);
+    const accounts = Array.isArray(args.accounts)
+      ? (args.accounts as string[]).includes('*')
+        ? this.botBridge.activeAccounts(profileKey)
+        : (args.accounts as string[])
+      : [String(args.account)];
+    if (!accounts.length) throw new Error('No active bots match accounts.');
+    return accounts.map((account) => ({ profileKey, account }));
+  }
+
+  private operationTarget(targets: McpBotTarget[]): McpBotTarget {
+    return targets.length === 1
+      ? targets[0]
+      : { profileKey: targets[0].profileKey, account: `${targets.length} bots` };
+  }
+
+  /** Run on one target as-is, or on several with a per-account result. */
+  private async forEachTarget(targets: McpBotTarget[], run: (target: McpBotTarget) => Promise<unknown>) {
+    if (targets.length === 1) return run(targets[0]);
+    const settled = await Promise.allSettled(targets.map(run));
+    return {
+      results: settled.map((result, index) => ({
+        account: targets[index].account,
+        ok: result.status === 'fulfilled',
+        ...(result.status === 'fulfilled' ? { result: result.value } : { error: sanitizeError(result.reason) }),
+      })),
+    };
   }
 
   moveAction(value: string): string {
@@ -611,14 +715,17 @@ export class McpManager {
     };
   }
 
-  async readState(client: McpClientContext, target: McpBotTarget, include: string[] = []) {
+  async readState(client: McpClientContext, target: McpBotTarget, include: string[] = [], since?: string) {
     this.assertProfile(client, target.profileKey);
-    const [state, chat, inventory, players] = await this.withReadTimeout(
+    const optional = (key: string, read: () => Promise<unknown>) =>
+      include.includes(key) ? read() : Promise.resolve(undefined);
+    const [state, chat, inventory, players, events] = await this.withReadTimeout(
       Promise.all([
         this.botBridge.state(target),
-        include.includes('chat') ? this.botBridge.chat(target, { limit: 100 }) : Promise.resolve(undefined),
-        include.includes('inventory') ? this.botBridge.inventory(target) : Promise.resolve(undefined),
-        include.includes('players') ? this.botBridge.players(target) : Promise.resolve(undefined),
+        optional('chat', () => this.botBridge.chat(target, { limit: 100, cursor: since })),
+        optional('inventory', () => this.botBridge.inventory(target)),
+        optional('players', () => this.botBridge.players(target)),
+        optional('events', () => this.botBridge.events(target, { cursor: since })),
       ]),
     );
 
@@ -627,6 +734,7 @@ export class McpManager {
       ...(chat === undefined ? {} : { chat }),
       ...(inventory === undefined ? {} : { inventory }),
       ...(players === undefined ? {} : { players }),
+      ...(events === undefined ? {} : { events }),
     });
   }
 
@@ -667,14 +775,17 @@ export class McpManager {
       const runtime = this.runtimeFor(client, String(args.profileKey));
       return this.scriptHandler.getUiActions(runtime.profileId);
     }
+    if (mode === 'automations') {
+      return this.plugins.getAutomations(this.runtimeFor(client, String(args.profileKey)).profileKey);
+    }
     if (mode === 'options') {
       const runtime = this.runtimeFor(client, String(args.profileKey));
-      return this.plugins.getOptions(runtime.profileId, String(args.pluginId));
+      return this.plugins.getOptions(runtime.profileId, String(args.pluginId), args.preset as string | undefined);
     }
     return {
       entryPoint: args.scriptType === 'action' ? 'async function main(bot, settings, args?)' : 'Plugin scripts run with script.settings.',
       guide: PLUGIN_AUTHORING_GUIDE,
-      referenceSections: ['authoring', ...Object.keys(JNBOT_REFERENCE_SECTION_MARKERS)],
+      referenceSections: JNBOT_REFERENCE_SECTION_IDS,
     };
   }
 
@@ -706,6 +817,10 @@ export class McpManager {
           correction: 'Fix each reported source issue, then retry the same save_plugin call.',
         });
       }
+      if (normalizedArgs.dryRun) {
+        const { changedLines, optionSchema: schema } = this.pluginPreview(normalizedArgs);
+        return { valid: true, saved: false, changedLines, optionSchemaChanged: schema?.changed };
+      }
     }
 
     return this.submit(client, 'save_plugin', 'plugins', target, normalizedArgs, async () => {
@@ -716,6 +831,7 @@ export class McpManager {
           String(normalizedArgs.pluginId),
           (normalizedArgs.values as Record<string, unknown>) ?? {},
           Boolean(normalizedArgs.replace),
+          normalizedArgs.preset as string | undefined,
         );
       }
       if (mode === 'schema') {
@@ -739,22 +855,70 @@ export class McpManager {
 
   runPlugin(client: McpClientContext, args: Record<string, unknown>) {
     const runtime = this.runtimeFor(client, String(args.profileKey));
-    const target = args.account ? { profileKey: String(args.profileKey), account: String(args.account) } : undefined;
+    const pluginId = String(args.pluginId);
+    const targets = args.account || args.accounts ? this.targets(args) : undefined;
+    const overrides = { ...(args.optionOverrides as Record<string, unknown>) };
+    if (args.preset) {
+      const stored = this.scriptHandler.settings.getProfileSettings(runtime.profileKey).scripts?.[pluginId];
+      const presetId = findPresetId(stored, String(args.preset));
+      if (!presetId) throw new McpInputError(`Unknown preset: ${args.preset}`, { field: 'preset' });
+      overrides[PRESET_OPTION] = presetId;
+    }
 
-    return this.submit(client, 'run_plugin', 'plugins', target, args, async () => {
+    return this.submit(client, 'run_plugin', 'plugins', targets && this.operationTarget(targets), args, async () => {
       if (args.mode === 'run') {
-        return { started: await this.scriptHandler.runByPluginId(runtime.profileId, String(args.pluginId)) };
+        return { started: await this.scriptHandler.runByPluginId(runtime.profileId, pluginId, overrides) };
       }
-      if (!target) {
+      if (!targets) {
         throw new Error('An account is required for an action plugin.');
       }
-      return this.botBridge.runPluginAction(
+      return this.forEachTarget(targets, (target) => this.botBridge.runPluginAction(
         this.botBridge.target(target),
-        String(args.pluginId),
+        pluginId,
         (args.args as unknown[]) ?? [],
-        (args.optionOverrides as Record<string, unknown>) ?? {},
-      );
+        overrides,
+      ));
     });
+  }
+
+  saveAutomation(client: McpClientContext, args: Record<string, unknown>) {
+    const runtime = this.runtimeFor(client, String(args.profileKey));
+    const kind = args.kind as 'trigger' | 'chain';
+    const remove = Boolean(args.deleteId);
+    const input = remove ? { id: args.deleteId } : (args[kind] as Record<string, unknown>);
+    const target = { profileKey: runtime.profileKey, account: `${kind}s` };
+    return this.submit(client, 'save_automation', 'plugins', target, args, async () =>
+      kind === 'trigger'
+        ? this.plugins.saveTrigger(runtime.profileKey, input, remove)
+        : this.plugins.saveChain(runtime.profileId, input, remove),
+    );
+  }
+
+  private pluginPreview(args: Record<string, unknown>) {
+    return this.pluginInstaller.preview({
+      source: String(args.source),
+      optionSchema: args.optionSchema as any,
+      targetPluginId: args.pluginId ? String(args.pluginId) : undefined,
+    });
+  }
+
+  /** Check AI-written plugin source against the authoring contract. */
+  async validatePlugin(draft: { source: string; scriptType?: 'script' | 'action'; optionSchema?: unknown }) {
+    try {
+      const optionSchema = validatePluginOptionSchema(draft.optionSchema ?? []);
+      return await this.pluginInstaller.validate({ source: draft.source, scriptType: draft.scriptType, optionSchema }, false);
+    } catch (error) {
+      return { valid: false, errors: [sanitizeError(error)] };
+    }
+  }
+
+  pluginSource(pluginId: string): string | undefined {
+    return this.currentSource(pluginId);
+  }
+
+  private currentSource(pluginId: string): string | undefined {
+    const code = (this.macros.readPlugin(pluginId) as { code?: unknown } | null)?.code;
+    return typeof code === 'string' ? code : undefined;
   }
 
   getRun(client: McpClientContext, args: Record<string, unknown>) {
@@ -781,9 +945,8 @@ export class McpManager {
   }
 
   getReference(section: string) {
-    if (section === 'authoring') {
-      return { section, content: PLUGIN_AUTHORING_GUIDE };
-    }
+    if (section === 'authoring') return { section, content: PLUGIN_AUTHORING_GUIDE };
+    if (section === 'examples') return { section, content: PLUGIN_FULL_EXAMPLES };
 
     if (!Object.prototype.hasOwnProperty.call(JNBOT_REFERENCE_SECTION_MARKERS, section)) {
       throw new Error(`Unknown JNbot reference section: ${section}`);
@@ -836,6 +999,32 @@ export class McpManager {
     const device = this.deviceById(id);
     const client = device ? this.clientFromDevice(device) : undefined;
     return client?.permissions.mcp.enabled ? client : undefined;
+  }
+
+  /** Built-in callers (the in-app AI agent) that aren't paired devices. */
+  private readonly internalClients = new Map<string, McpClientContext>();
+
+  /**
+   * A client for JNbot's own AI agent, limited to one profile. It can observe,
+   * control bots and manage plugins without approvals, but never run raw code.
+   */
+  internalClient(id: string, name: string, profileKey: string): McpClientContext {
+    const client: McpClientContext = {
+      id,
+      name,
+      token: '',
+      permissions: normalizePermissions({
+        profiles: [profileKey],
+        permissionMask: DEFAULT_REMOTE_PERMISSIONS,
+        mcp: { enabled: true, observe: 'allow', control: 'allow', code: 'deny', plugins: 'allow' },
+      } as ClientPermissions),
+    };
+    this.internalClients.set(id, client);
+    return client;
+  }
+
+  private clientName(id: string): string {
+    return this.clientById(id)?.name ?? this.internalClients.get(id)?.name ?? 'Removed client';
   }
 
   private clientByToken(token: string): McpClientContext | undefined {
@@ -921,13 +1110,21 @@ export class McpManager {
       .map((operation) => {
         const pending = this.pending.get(operation.operationId);
         const args = pending?.args ?? {};
+        // Updates show a diff against the installed source; new plugins show the code.
+        const pluginDiff = typeof args.source === 'string' && args.pluginId
+          ? this.pluginPreview(args)
+          : undefined;
         return {
           id: operation.operationId,
           clientId: operation.clientId,
-          clientName: this.clientById(operation.clientId)?.name ?? 'Removed client',
+          clientName: this.clientName(operation.clientId),
           tool: operation.tool,
           capability: 'bot_controls' as const,
-          arguments: { ...args, ...(typeof args.source === 'string' ? { code: args.source } : {}) },
+          pluginDiff,
+          arguments: {
+            ...args,
+            ...(typeof args.source === 'string' && !pluginDiff ? { code: args.source } : {}),
+          },
           argumentHash: operation.operationId,
           target: operation.target ? { profileKey: operation.target.profileKey, account: operation.target.account } : undefined,
           summary: operation.summary,
@@ -962,7 +1159,7 @@ export class McpManager {
       id: operation.operationId,
       timestamp: Date.now(),
       clientId,
-      clientName: this.clientById(clientId)?.name ?? 'Removed client',
+      clientName: this.clientName(clientId),
       tool: operation.tool,
       capability: 'bot_controls',
       target: operation.target ? { profileKey: operation.target.profileKey, account: operation.target.account } : undefined,

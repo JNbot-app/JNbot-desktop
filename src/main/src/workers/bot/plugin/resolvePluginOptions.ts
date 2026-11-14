@@ -1,4 +1,10 @@
 import type { MacroInfo } from '../../../types';
+import {
+  DEFAULT_PRESET,
+  pluginPresets,
+  presetValues,
+  selectedPresetId,
+} from '../../../../../common/pluginPresets';
 import workerScript from '../../lib/workerScript';
 
 const hasValue = (value: unknown) => value !== undefined && value !== '';
@@ -9,7 +15,14 @@ export function resolvePluginOptions(
 ): Record<string, any> {
   const definitions =
     plugin.config?.flatMap((section) => section.options) ?? [];
-  const saved = global.settings?.scripts?.[plugin.pluginId] ?? {};
+  const stored = global.settings?.scripts?.[plugin.pluginId];
+  const presetId = selectedPresetId(stored, overrides);
+  if (presetId !== DEFAULT_PRESET && !pluginPresets(stored)[presetId])
+    global.log(
+      `The preset of ${plugin.name} no longer exists, using Default`,
+      'warning',
+    );
+  const saved = presetValues(stored, presetId);
   const values: Record<string, any> = {};
   let invalid = false;
 

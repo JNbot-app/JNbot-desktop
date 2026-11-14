@@ -72,6 +72,7 @@ export const PROFILE_ACTIONS = [
   'ALT_UPSERT',
   'ALT_DELETE',
   'BOT_ACTION',
+  'JOIN_BOT_NOW',
   'LAUNCH_MINECRAFT',
   'MC_LOGIN_MICROSOFT',
   'MC_LOGOUT_MICROSOFT',
@@ -316,6 +317,7 @@ export type ScriptPromptPayload = {
   placeholder?: string;
   defaultValue?: string;
   description?: string;
+  image?: string;
   promptID: string;
   messageAddress: number;
   scriptInstance?: string;
@@ -432,6 +434,7 @@ export type ProfileCreationSection = 'identity' | 'connection' | 'gamemodes' | '
 export type ProfileJoinBehaviour =
   | { kind: 'auto' | 'direct' }
   | { kind: 'command'; command: string }
+  | { kind: 'action'; action?: ProfilePluginReference }
   | { kind: 'selector'; hotbarSlot: number; pick: 'name' | 'slot'; staticSlot?: number };
 
 export type ProfilePluginReference = {

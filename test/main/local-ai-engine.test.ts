@@ -44,7 +44,7 @@ jest.mock('worker_threads', () => {
   };
 });
 
-test('native loads select variants, preserve cached files on errors and reuse tool preparation', async () => {
+test('native loads preserve cached files on errors and reuse tool preparation', async () => {
   const cache = await fs.mkdtemp(path.join(os.tmpdir(), 'jnbot-ai-engine-'));
   const custom = resolveModel('https://example.com/custom.cact');
   mockRejectLoad = false;
@@ -67,7 +67,6 @@ test('native loads select variants, preserve cached files on errors and reuse to
         expect.objectContaining({
           kind: 'load',
           file: path.join(cache, model.cacheId, 'model.cact'),
-          variant: model.variant,
         }),
       ),
     );
@@ -76,11 +75,10 @@ test('native loads select variants, preserve cached files on errors and reuse to
     expect(
       mockMessages.filter((message) => message.kind === 'init'),
     ).toHaveLength(1);
-    await engine.loadModel(resolveModel(custom.url, 'flash'));
+    await engine.loadModel(custom);
     expect(mockMessages.at(-1)).toEqual(
       expect.objectContaining({
         kind: 'load',
-        variant: 'flash',
         file: path.join(cache, custom.cacheId, 'model.cact'),
       }),
     );

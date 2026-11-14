@@ -14,6 +14,7 @@ import {
   Button,
   Divider,
   Dropdown,
+  Flex,
   Space,
   theme,
   Tooltip,
@@ -29,14 +30,19 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 import { MacroInfoValidator } from '../../validators/MacroValidator';
-import { savePlugin } from '../../redux/settings';
+import { savePlugin, setChain, useSettingsStore } from '../../redux/settings';
 import PlayButton from '../PlayButton';
 import PluginSettingsModal from './PluginSettingsModal';
+import ChainConfigModal from './ChainConfigModal';
 import AIHelpModal from './AIHelpModal';
-import BotContextMenu from './BotContextMenu';
+import useLlm from '../../hooks/useLlm';
+import { LLM_CODE_TAB } from './LlmCodePanel';
+import useBotContextMenu, { BOT_CONTEXT_KEY } from './BotContextMenu';
 import { usePanelContext } from '../other/botSideBar/SidePanelContextProvider';
 import type { EditorInstance } from './CodeEditor';
 import type { MacroInfo } from '../../../main/src/types';
+import type { ScriptSettingsSection } from '../general/scriptSettings/ScriptSettingsProps.d';
+import { chainIdFromPluginId } from '../../../common/chains';
 import { VscLayoutSidebarRightOff } from 'react-icons/vsc';
 
 const Nav: FC<{
@@ -59,6 +65,7 @@ const Nav: FC<{
   const { setPanel } = usePanelContext();
   const [pluginSettingsModal, setPluginSettingsModal] = useState(false);
   const [aiHelpModal, setAiHelpModal] = useState(false);
+  const llm = useLlm();
 
   const platform = (window as any).platform as NodeJS.Platform | undefined;
   const isMac = platform === 'darwin' && !window.web;
@@ -79,7 +86,11 @@ const Nav: FC<{
     return () => removeListener();
   }, [onSelectActiveTab]);
 
-  const back = () => navigate('/plugins');
+  // A chain's setup code has no plugin file or settings, only the chain's options.
+  const chainId = chainIdFromPluginId(pluginInfo.pluginId);
+  const chainSetup = !!chainId;
+  const chain = useSettingsStore((state) => (chainId ? state.settings.scripts?.chains?.[chainId] : undefined));
+  const back = () => navigate(chainSetup ? '/' : '/plugins');
 
   const exportMacro = () => {
     window.ipcRenderer.action('EXPORT_MACRO', {
@@ -98,6 +109,10 @@ const Nav: FC<{
     window.ipcRenderer.action('OPEN_PLUGIN_EXTERNAL', pluginInfo.pluginId);
   };
 
+  const saveChainConfig = (config: ScriptSettingsSection[]) => {
+    if (chain) setChain({ ...chain, config: (config.length ? config : undefined) as typeof chain.config });
+  };
+
   const handlePluginSave = (updatedMacro: MacroInfo) => {
     if (MacroInfoValidator(updatedMacro.name, updatedMacro.description)) return;
     savePlugin(updatedMacro);
@@ -106,7 +121,7 @@ const Nav: FC<{
   };
 
   const runnable =
-    pluginInfo.scriptType === 'script' || pluginInfo.scriptType === 'action';
+    !chainSetup && (pluginInfo.scriptType === 'script' || pluginInfo.scriptType === 'action');
   const hasOptions = !!pluginInfo.config?.length;
 
   const openOptions = () =>
@@ -117,7 +132,18 @@ const Nav: FC<{
     });
 
   // Rarely used actions live in the overflow menu to keep the toolbar calm.
+  const botContext = useBotContextMenu(editorRef);
   const moreItems: MenuProps['items'] = [
+    ...(llm.configured && pluginInfo.scriptType !== 'profileUi' && !chainSetup
+      ? [
+          {
+            key: 'ai-assistant',
+            icon: <RobotOutlined />,
+            label: 'AI assistant',
+            onClick: () => onSelectActiveTab(LLM_CODE_TAB),
+          },
+        ]
+      : []),
     {
       key: 'ai',
       icon: <RobotOutlined />,
@@ -130,7 +156,7 @@ const Nav: FC<{
       label: 'Documentation',
       onClick: () => window.open('https://jnbot.netlify.app/docs', '_blank'),
     },
-    ...(!window.web
+    ...(!window.web && !chainSetup
       ? [
           { type: 'divider' as const },
           {
@@ -165,44 +191,43 @@ const Nav: FC<{
           background: token.colorBgContainer,
         }}
       >
-        <div style={{          marginLeft: isMac ? 76 : undefined,  display: 'flex',
-          alignItems: 'center',
-          gap: token.marginXS, flexShrink: 0, }}>
-        <Button
-          className="no-drag"
-          type="text"
-          icon={<ArrowLeftOutlined />}
-          onClick={back}
-          aria-label="Back to plugins"
-        />
-
         <div
           style={{
-            flex: 1,
-            minWidth: 0,
-            lineHeight: 1.2,
+            display: 'grid',
+            gridTemplateColumns: '1fr minmax(0, auto) 1fr',
+            alignItems: 'center',
+            gap: token.marginSM,
+            height: '100%',
           }}
         >
-          <Typography.Text strong ellipsis style={{ display: 'block' }}>
-            {pluginInfo.name}
-          </Typography.Text>
-          <Typography.Text
-            type="secondary"
-            ellipsis
-            style={{
-              display: 'block',
-              marginTop: 2,
-              fontSize: token.fontSizeSM,
-            }}
-          >
-            <CodeOutlined style={{ marginRight: token.marginXXS }} />
-            {pluginInfo.scriptType} · {pluginInfo.language}
-          </Typography.Text>
-        </div>
+          <div style={{ marginLeft: isMac ? 76 : undefined }}>
+            <Button
+              className="no-drag"
+              type="text"
+              icon={<ArrowLeftOutlined />}
+              onClick={back}
+              aria-label={chainSetup ? 'Back to the dashboard' : 'Back to plugins'}
+            />
+          </div>
+
+          <Flex vertical align="center" style={{ minWidth: 0, lineHeight: 1.3 }}>
+            <Typography.Text strong ellipsis style={{ maxWidth: '100%' }}>
+              {pluginInfo.name}
+            </Typography.Text>
+            <Typography.Text
+              type="secondary"
+              ellipsis
+              style={{ maxWidth: '100%', fontSize: token.fontSizeSM }}
+            >
+              <CodeOutlined style={{ marginRight: token.marginXXS }} />
+              {chainSetup ? 'Runs for every alt before the steps' : `${pluginInfo.scriptType} · ${pluginInfo.language}`}
+            </Typography.Text>
+          </Flex>
 
         <Space
           className={isWin ? 'windows-controls-space no-drag' : 'no-drag'}
           size={token.marginXXS}
+          style={{ justifySelf: 'end' }}
         >
           {runnable && (
               <PlayButton
@@ -227,9 +252,6 @@ const Nav: FC<{
 
           <Divider orientation="vertical" style={{ marginInline: token.marginXXS }} />
 
-          {pluginInfo.scriptType !== 'profileUi' && (
-            <BotContextMenu editorRef={editorRef} />
-          )}
           {runnable && (
             <Tooltip
               title={
@@ -248,16 +270,23 @@ const Nav: FC<{
             </Tooltip>
           )}
 
-          <Tooltip title="Plugin settings">
+          <Tooltip title={chainSetup ? 'Chain options' : 'Plugin settings'}>
             <Button
               type="text"
               icon={<SettingOutlined />}
               onClick={() => setPluginSettingsModal(true)}
-              aria-label="Plugin settings"
+              aria-label={chainSetup ? 'Chain options' : 'Plugin settings'}
             />
           </Tooltip>
 
-          <Dropdown trigger={['click']} menu={{ items: moreItems }}>
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: moreItems,
+              onClick: ({ key }) => botContext.onClick(key),
+              onOpenChange: (keys) => keys.includes(BOT_CONTEXT_KEY) && botContext.load(),
+            }}
+          >
             <Button type="text" icon={<MoreOutlined />} aria-label="More actions" />
           </Dropdown>
 
@@ -271,17 +300,28 @@ const Nav: FC<{
         </div>
       </header>
 
-      <PluginSettingsModal
-        visible={pluginSettingsModal}
-        onClose={() => setPluginSettingsModal(false)}
-        macroData={pluginInfo}
-        onSave={handlePluginSave}
-      />
+      {chainSetup ? (
+        pluginSettingsModal && (
+          <ChainConfigModal
+            config={chain?.config as ScriptSettingsSection[] | undefined}
+            onClose={() => setPluginSettingsModal(false)}
+            onSave={saveChainConfig}
+          />
+        )
+      ) : (
+        <PluginSettingsModal
+          visible={pluginSettingsModal}
+          onClose={() => setPluginSettingsModal(false)}
+          macroData={pluginInfo}
+          onSave={handlePluginSave}
+        />
+      )}
 
       <AIHelpModal
         visible={aiHelpModal}
         onClose={() => setAiHelpModal(false)}
       />
+
     </>
   );
 };

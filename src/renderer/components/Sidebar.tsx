@@ -153,6 +153,7 @@ const SidebarContent: React.FC<{ children: React.ReactNode }> = ({
     colorBgContainer,
     colorBorderSecondary,
     colorBgLayout,
+    colorBgTextHover,
     colorPrimaryBg,
     colorPrimaryText,
     colorText,
@@ -464,6 +465,7 @@ const SidebarContent: React.FC<{ children: React.ReactNode }> = ({
               theme={{
                 components: {
                   Menu: {
+                    itemActiveBg: colorBgTextHover,
                     itemSelectedBg: colorPrimaryBg,
                     itemSelectedColor: colorPrimaryText,
                     darkItemSelectedBg: colorPrimaryBg,

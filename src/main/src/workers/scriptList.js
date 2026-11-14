@@ -11,14 +11,13 @@ const ALL_SCRIPT_NAMES = [
   // 'altScanner',
   // 'kit collector',
   // 'book sorter',
-  'botActions',
   'discordBot',
   'chain',
   'jnbotproxy',
   'mcpSession',
 ];
 
-const INTERNAL_SCRIPT_NAMES = ['macro', 'chain', 'botActions', 'mcpSession'];
+const INTERNAL_SCRIPT_NAMES = ['macro', 'chain', 'mcpSession'];
 
 const USER_SCRIPT_NAMES = ALL_SCRIPT_NAMES.filter(
   (name) => !INTERNAL_SCRIPT_NAMES.includes(name),

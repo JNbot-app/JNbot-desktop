@@ -6,16 +6,16 @@ Plugin Made by usserwout
 
 const openWindow = require('./openWindow');
 const itemInfo = require('./extensions/itemInfo');
-const {
-  parseItemText,
-  parseRawNbt,
-} = require('./extensions/nbtParser');
+const { parseItemText, parseRawNbt } = require('./extensions/nbtParser');
 const { getOrAskPassword } = require('../lib/MissingDataHandler');
 const { Vec3 } = require('vec3');
+// Plugin code runs in its own VM context, so its RegExps fail `instanceof RegExp`.
+const { isRegExp } = require('util').types;
 const {
   default: joinGamemode,
 } = require('./statemachines/joinGamemode/joinGamemodeBehaviourV3');
 const { default: workerScript } = require('../lib/workerScript');
+const { installGamemodeApi } = require('./gamemode');
 const alphabet = {
   ᴀ: 'a',
   ʙ: 'b',
@@ -49,10 +49,220 @@ const alphabet = {
 String.prototype.toAlpha = function () {
   return this.replace(/./g, (c) => alphabet[c] || c);
 };
+
+const SMALL_CAPS = new RegExp(`[${Object.keys(alphabet).join('')}]`, 'g');
+const COLOR_CODES = /§./g;
+/** Strips color codes and maps small caps to plain letters (case kept). */
+const stripText = (text) =>
+  text.replace(COLOR_CODES, '').replace(SMALL_CAPS, (c) => alphabet[c]);
+const cleanText = (text) => stripText(String(text ?? '')).toLowerCase();
+
+// Cleaned name/lore per item; slot updates replace the Item object, so entries never go stale.
+// The name falls back to the vanilla name when the item isn't renamed.
+const itemTextCache = new WeakMap();
+function itemText(item, field) {
+  let entry = itemTextCache.get(item);
+  if (!entry) itemTextCache.set(item, (entry = {}));
+  return (entry[field] ??= stripText(
+    itemInfo[field](item) || (field === 'name' && item.displayName) || '',
+  ));
+}
+
+// string → case-insensitive substring; RegExp/function → tested on the color-stripped text;
+// array → matches when any entry matches.
+function textMatcher(pattern, caseSensitive) {
+  if (pattern == null) return null;
+  if (Array.isArray(pattern)) {
+    const matchers = pattern.map((p) => textMatcher(p, caseSensitive));
+    return (text) => matchers.some((match) => match(text));
+  }
+  if (isRegExp(pattern)) {
+    return (text) => {
+      pattern.lastIndex = 0; // `g`/`y` regexes keep state between tests
+      return pattern.test(text);
+    };
+  }
+  if (typeof pattern === 'function') return pattern;
+  if (caseSensitive) {
+    const needle = stripText(String(pattern));
+    return (text) => text.includes(needle);
+  }
+  const needle = cleanText(pattern);
+  return (text) => text.toLowerCase().includes(needle);
+}
+
+const range = (start, end) =>
+  Array.from({ length: Math.max(end - start, 0) }, (_, i) => start + i);
+
+/** Chainable, lazy item search over the open window and/or the player inventory. See `bot.items`. */
+class ItemQuery {
+  constructor(bot, query = {}) {
+    if (
+      typeof query === 'string' ||
+      isRegExp(query) ||
+      Array.isArray(query)
+    )
+      query = { name: query };
+    else if (typeof query === 'function') query = { where: query };
+    const types = query.type == null ? null : new Set([].concat(query.type));
+    this._bot = bot;
+    this._name = textMatcher(query.name, query.caseSensitive);
+    this._lore = textMatcher(query.lore, query.caseSensitive);
+    this._type = types && ((item) => types.has(item.name));
+    this._where = query.where;
+    this._scope = 'any';
+  }
+
+  /** Container first, then the player inventory (default). */
+  any() {
+    this._scope = 'any';
+    return this;
+  }
+  /** Only the top part of the open window; nothing when no window is open. */
+  container() {
+    this._scope = 'container';
+    return this;
+  }
+  /** Only the player inventory (main + hotbar), whether or not a window is open. */
+  inventory() {
+    this._scope = 'inventory';
+    return this;
+  }
+  /** Only the 9 hotbar slots. */
+  hotbar() {
+    this._scope = 'hotbar';
+    return this;
+  }
+  /** Container rows (9 slots each, 0-based). Combined with `cols` it keeps their intersection. */
+  rows(...rows) {
+    this._rows = new Set(rows.flat());
+    this._scope = 'container';
+    return this;
+  }
+  /** Container columns (0-8). */
+  cols(...cols) {
+    this._cols = new Set(cols.flat());
+    this._scope = 'container';
+    return this;
+  }
+  /** Exact window slot indexes. */
+  slots(...slots) {
+    this._slots = slots.flat();
+    return this;
+  }
+
+  _indexes() {
+    if (this._slots) return this._slots;
+    const window = this._bot.currentWindow;
+    const inv = window ?? this._bot.inventory;
+    if (!inv) return [];
+    const container = range(0, window ? window.inventoryStart : 0).filter(
+      (i) =>
+        (!this._rows || this._rows.has(Math.floor(i / 9))) &&
+        (!this._cols || this._cols.has(i % 9)),
+    );
+    const inventory = range(inv.inventoryStart, inv.inventoryEnd);
+    switch (this._scope) {
+      case 'container':
+        return container;
+      case 'inventory':
+        return inventory;
+      case 'hotbar':
+        return range(inv.inventoryEnd - 9, inv.inventoryEnd);
+      default:
+        return container.concat(inventory);
+    }
+  }
+
+  /** Whether `item` passes the name/lore/type/where filters (scope is ignored). */
+  matches(item) {
+    return (
+      !!item &&
+      (!this._type || this._type(item)) &&
+      (!this._name || this._name(itemText(item, 'name'))) &&
+      (!this._lore || this._lore(itemText(item, 'lore'))) &&
+      (!this._where || this._where(item))
+    );
+  }
+
+  *[Symbol.iterator]() {
+    const slots = (this._bot.currentWindow ?? this._bot.inventory)?.slots;
+    if (!slots) return;
+    for (const i of this._indexes()) {
+      const item = slots[i];
+      if (this.matches(item)) yield item;
+    }
+  }
+
+  /** First matching item, or null. */
+  first() {
+    for (const item of this) return item;
+    return null;
+  }
+
+  /** All matching items. */
+  all() {
+    return [...this];
+  }
+
+  /** Whether any item matches. */
+  has() {
+    return this.first() !== null;
+  }
+
+  /** Total stack count of all matching items. */
+  count() {
+    let total = 0;
+    for (const item of this) total += item.count;
+    return total;
+  }
+
+  /** Clicks the first match; returns it, or null when nothing matched. */
+  async click(button = 0, mode = 0) {
+    const item = this.first();
+    if (item) await this._bot.clickWindow(item.slot, button, mode);
+    return item;
+  }
+
+  /** Transfers the matching inventory items; see `bot.transfer`. */
+  transfer(mode, target, options) {
+    if (target && typeof target === 'object') [target, options] = [undefined, target];
+    return this._bot.transfer(mode, target, { ...options, items: this });
+  }
+
+  /** Resolves with the first match as soon as one appears, or null after `ticks`. */
+  wait(ticks = 100) {
+    const bot = this._bot;
+    return new Promise((resolve) => {
+      let window = null;
+      let done = false;
+      const check = () => {
+        const item = this.first();
+        if (item) finish(item);
+      };
+      const bind = () => {
+        window?.removeListener('updateSlot', check);
+        window = bot.currentWindow;
+        window?.on('updateSlot', check);
+        check();
+      };
+      const finish = (item) => {
+        done = true;
+        window?.removeListener('updateSlot', check);
+        bot.inventory?.removeListener('updateSlot', check);
+        bot.removeListener('windowOpen', bind);
+        resolve(item ?? null);
+      };
+      bot.inventory?.on('updateSlot', check);
+      bot.on('windowOpen', bind);
+      bot.waitForTicks(ticks).then(() => !done && finish(this.first()));
+      bind();
+    });
+  }
+}
 const ignoreBlocks = ['barrier', 'grass', 'tall_grass'];
 
 const inject = (bot) => {
-
   const mc = bot.registry;
   const ignoreBlocksIds = new Set();
   for (let block of ignoreBlocks) {
@@ -60,12 +270,12 @@ const inject = (bot) => {
     if (blockData) ignoreBlocksIds.add(blockData.id);
   }
 
-  bot.getGamemode = () => null;
+  installGamemodeApi(bot);
 
   bot.__login = async (pass) => {
-    const altData = workerScript.settings.altData[bot.username] ?? {}
+    const altData = workerScript.settings.altData[bot.username] ?? {};
     pass ??= altData.password;
-    if(altData.premium && !pass) return
+    if (altData.premium && !pass) return;
     if (!pass) {
       pass = await getOrAskPassword(bot.username);
       // Check if bot is still online..
@@ -73,7 +283,7 @@ const inject = (bot) => {
         return;
       }
     }
-    
+
     if (!pass)
       throw new Error(
         'No password found. Please add ' +
@@ -185,7 +395,15 @@ const inject = (bot) => {
   };
 
   /**
-   *
+   * Item search over the open window and/or inventory; see ItemQuery.
+   * @param {string | RegExp | Function | {name?, lore?, type?, where?, caseSensitive?}} [query]
+   * @returns {ItemQuery}
+   */
+  bot.items = (query) => new ItemQuery(bot, query);
+  bot.cleanText = cleanText;
+
+  /**
+   * @deprecated Use `bot.items(query)` instead.
    * @param {{name?:string, lore?:string} | string} filter
    * @param {{caseSensitive?:boolean, rows?: number[], columns?: number[], slotRange?: number[], window: Inventory }} options
    * Assume 1 row is 9 slots, the window are the slots between
@@ -402,3 +620,4 @@ const inject = (bot) => {
 };
 
 module.exports = inject;
+module.exports.ItemQuery = ItemQuery;

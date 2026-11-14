@@ -156,9 +156,9 @@ export const ActiveBotCard: React.FC<ActiveBotCardProps> = ({
             {bot.username}
           </Typography.Text>
 
-          <Space size={6} style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             {displayStatus !== 'connected' && (
-              <Space size={4} style={{ flexShrink: 0 }}>
+              <Space size={4} style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
                 {getStatusIcon()}
                 <Tooltip
                   title={
@@ -182,10 +182,10 @@ export const ActiveBotCard: React.FC<ActiveBotCardProps> = ({
                 </Tooltip>
               </Space>
             )}
-            <Typography.Text type="secondary" ellipsis style={{ fontSize: 12 }}>
+            <Typography.Text type="secondary" ellipsis style={{ fontSize: 12, minWidth: 0 }}>
               {bot.SCRIPT_ID || bot.SCRIPT_NAME}
             </Typography.Text>
-          </Space>
+          </div>
         </div>
       </div>
 

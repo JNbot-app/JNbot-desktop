@@ -9,7 +9,7 @@
     "build:needle": "node scripts/build-needle.mjs",
     "prepare:needle-mobile": "node scripts/prepare-needle-mobile.mjs",
     "start:cli": "cross-env NODE_ENV=development ./release/app/dist/cli/jnbot",
-    "build": "npm run build:plugin-reference && concurrently \"npm run build:main\" \"npm run build:renderer\"",
+    "build": "npm run sync:plugin-reference && concurrently \"npm run build:main\" \"npm run build:renderer\"",
     "prebuild:main": "node scripts/patch-minecraft-data.mjs",
     "build:main": "node esbuild/esbuild.config.main.prod.js",
     "build:renderer": "rm -rf ./release/app/dist/renderer && vite build --config src/renderer/vite.prod.config.ts",
@@ -46,6 +46,7 @@
     "test:bots:scripts": "node test/protocol/run.js --scripts",
     "test:bots": "npm run test:bots:core && npm run test:bots:scripts && npm run test:scripts",
     "test:fixtures:import": "node test/protocol/import-recording.js",
+    "test:replay": "node test/replay/cli.js",
     "test:all": "npm test",
     "release": "rm -rf release/app/dist release/build && npm run build && npm run package:cli && electron-builder build -wlm -p always && npm run release:win-resources && npm run release:cli && npm run release:source && npm run release:publish",
     "release:beta": "rm -rf release/app/dist release/build && npm run build:mods && npm run build && npm run package:cli && electron-builder build -wlm -p always -c.publish.channel=beta -c.publish.releaseType=draft && npm run release:win-resources && npm run release:cli && npm run release:publish:beta",
@@ -62,8 +63,7 @@
     "typecheck:main": "tsc --project src/main/tsconfig.json --noEmit",
     "typecheck:tools": "tsc --project tsconfig.tools.json --noEmit",
     "start:diagnostics": "cross-env SENTRY_DIAGNOSTICS=true npm start",
-    "typecheck": "npm run typecheck:renderer && npm run typecheck:main && npm run typecheck:tools",
-    "export:flash": "node scripts/export-flash.mjs"
+    "typecheck": "npm run typecheck:renderer && npm run typecheck:main && npm run typecheck:tools"
   },
   "repository": {
     "type": "git",
@@ -266,6 +266,7 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.4",
+    "@anthropic-ai/sdk": "^1.6.0",
     "@aws-sdk/client-s3": "^3.1161.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/modifiers": "^9.0.0",

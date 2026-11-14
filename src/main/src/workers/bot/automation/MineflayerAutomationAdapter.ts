@@ -97,7 +97,8 @@ export default class MineflayerAutomationAdapter implements AutomationTargetAdap
       case 'releaseUseItem': this.bot.deactivateItem(); return;
       case 'swingArm': this.bot.swingArm(step.hand === 'off' ? 'left' : 'right'); return;
       case 'swapHands':
-        this.bot._client.write('entity_action', { entityId: this.bot.entity.id, actionId: 6, jumpBoost: 0 });
+        // Vanilla swaps hands with the dig packet's "swap item" status.
+        this.bot._client.write('block_dig', { status: 6, location: { x: 0, y: 0, z: 0 }, face: 0, sequence: 0 });
         return;
       case 'dropItem':
         if (this.bot.heldItem && step.entireStack) await this.bot.tossStack(this.bot.heldItem);

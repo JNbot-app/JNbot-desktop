@@ -84,7 +84,10 @@ class DiscordBot {
     const jn: JNdata = await workerScript.getJNdata();
     const server = global.appSettings.server as ServerTypes;
 
-    this.commands = buildCommands(jn, server);
+    const ai = await workerScript
+      .sendAsync<{ configured: boolean }>('LLM_STATUS')
+      .catch(() => ({ configured: false }));
+    this.commands = buildCommands(jn, server, ai.configured);
 
     await this.rest.put(Routes.applicationCommands(client.user.id), {
       body: this.commands.map((c) => c.data),

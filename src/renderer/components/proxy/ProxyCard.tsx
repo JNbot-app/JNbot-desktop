@@ -7,6 +7,7 @@ import {
   Flex,
   Form,
   Input,
+  Switch,
   Tag,
   Typography,
   theme,
@@ -92,6 +93,15 @@ const ProxyCard: React.FC<ProxyCardProps> = ({
                 value={proxyConfig.port ?? 25565}
                 onChange={(e) => handleSettingChange('port', e.target.value)}
                 placeholder="25565"
+              />
+            </Form.Item>
+            <Form.Item
+              label="Record sessions from join"
+              tooltip="Saves every packet of each new session from login on, for movement replay tests (npm run test:movement)."
+            >
+              <Switch
+                checked={!!proxyConfig.recordFromJoin}
+                onChange={(checked) => handleSettingChange('recordFromJoin', checked)}
               />
             </Form.Item>
 

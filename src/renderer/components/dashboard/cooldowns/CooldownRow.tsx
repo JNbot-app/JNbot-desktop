@@ -13,14 +13,10 @@ import {
   ThunderboltFilled,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import { formatDuration, reminderDueAt, repeatInterval, scheduleLabel, type Reminder } from '../../../../common/cooldowns';
+import { formatDuration, formatInterval, reminderDueAt, repeatInterval, scheduleLabel, type Reminder } from '../../../../common/cooldowns';
 import { toggleAutoStartCooldown } from '../../../redux/settings';
 
 const { Text } = Typography;
-
-export const MINUTE = 60_000;
-export const HOUR = 60 * MINUTE;
-export const DAY = 24 * HOUR;
 
 const dueFormat: Intl.DateTimeFormatOptions = {
   weekday: 'short',
@@ -54,10 +50,18 @@ const CooldownRow: React.FC<Props> = ({ reminder: c, now, onEdit, onRun, onReset
   const icon = ready ? <CheckOutlined /> : paused ? <PauseOutlined /> : scheduled ? <CalendarOutlined /> : <ClockCircleOutlined />;
   const subtitle = scheduled
     ? `${paused ? 'Paused · ' : ''}${scheduleLabel(c.repeat)}`
-    : `Every ${formatDuration(c.cooldown)}`;
+    : `Every ${formatInterval(c.cooldown)}`;
   const autoRunLabel = scheduled
     ? c.autoStart ? 'Pause schedule' : 'Resume schedule'
     : c.autoStart ? 'Auto-run is on' : 'Auto-run when ready';
+  const autoRunIcon = c.autoStart ? <ThunderboltFilled style={{ color: token.colorPrimary }} /> : <ThunderboltOutlined />;
+  const toggleAutoRun = () => toggleAutoStartCooldown(c.id);
+  const menuActions: Record<string, () => void> = {
+    autoRun: toggleAutoRun,
+    reset: () => onReset(c),
+    edit: () => onEdit(c),
+    delete: () => onDelete(c),
+  };
 
   return (
     <Card size="small" onClick={() => onEdit(c)} style={{ cursor: 'pointer' }}>
@@ -76,20 +80,7 @@ const CooldownRow: React.FC<Props> = ({ reminder: c, now, onEdit, onRun, onReset
           <Text type="secondary" ellipsis style={{ fontSize: 12 }}>{subtitle}</Text>
         </Flex>
 
-        {ready ? (
-          <Tooltip title="Run script">
-
-          <Button
-            type="text"
-            size="small"
-            icon={<CaretRightOutlined />}
-            onClick={(e) => {
-              stop(e);
-              onRun(c);
-            }}
-            />
-            </Tooltip>
-        ) : (
+        {!ready && (
           <Flex vertical align="end" style={{ whiteSpace: 'nowrap' }}>
             <Text strong style={{ fontVariantNumeric: 'tabular-nums' }}>
               {remaining <= 0 ? 'Due' : formatDuration(remaining)}
@@ -101,24 +92,26 @@ const CooldownRow: React.FC<Props> = ({ reminder: c, now, onEdit, onRun, onReset
         )}
 
         <Flex onClick={stop}>
-          <Tooltip title={autoRunLabel}>
-            <Button
-              type="text"
-              aria-label={autoRunLabel}
-              icon={c.autoStart ? <ThunderboltFilled style={{ color: token.colorPrimary }} /> : <ThunderboltOutlined />}
-              onClick={() => toggleAutoStartCooldown(c.id)}
-            />
-          </Tooltip>
+          {ready ? (
+            <Tooltip title="Run script">
+              <Button type="text" aria-label="Run script" icon={<CaretRightOutlined />} onClick={() => onRun(c)} />
+            </Tooltip>
+          ) : (
+            <Tooltip title={autoRunLabel}>
+              <Button type="text" aria-label={autoRunLabel} icon={autoRunIcon} onClick={toggleAutoRun} />
+            </Tooltip>
+          )}
           <Dropdown
             trigger={['click']}
             menu={{
               items: [
+                ...(ready ? [{ key: 'autoRun', icon: autoRunIcon, label: autoRunLabel }] : []),
                 ...(scheduled ? [] : [{ key: 'reset', icon: <ReloadOutlined />, label: 'Restart countdown' }]),
                 { key: 'edit', icon: <EditOutlined />, label: 'Edit' },
                 { type: 'divider' as const },
                 { key: 'delete', icon: <DeleteOutlined />, label: 'Delete', danger: true },
               ],
-              onClick: ({ key }) => (key === 'reset' ? onReset : key === 'edit' ? onEdit : onDelete)(c),
+              onClick: ({ key }) => menuActions[key](),
             }}
           >
             <Button type="text" icon={<MoreOutlined />} aria-label={`More actions for ${c.name}`} />

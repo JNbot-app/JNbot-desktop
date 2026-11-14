@@ -112,8 +112,8 @@ export type McpApprovalRequest = {
   argumentHash: string;
   codeHash?: string;
   pluginDiff?: {
-    sourceHash: string;
-    changedLines: string[];
+    sourceHash?: string;
+    changedLines?: string[];
     before: string;
     after: string;
     optionSchema?: {
@@ -154,6 +154,9 @@ export type McpAuditEvent = {
   durationMs?: number;
   result: 'pending' | 'success' | 'error';
   error?: string;
+  summary?: string;
+  /** The operation's result as (truncated) JSON, for the session replay. */
+  output?: string;
 };
 
 export type McpRelayRequestFrame = {
@@ -182,7 +185,6 @@ export type McpStatus = {
   endpoint?: string;
   remoteEndpoint?: string;
   sessionStartedAt?: number;
-  encryptionAvailable: boolean;
   connectedClients: number;
   relayConnected?: boolean;
 };

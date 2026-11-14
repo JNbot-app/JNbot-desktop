@@ -1,7 +1,12 @@
 import {
+  formatInterval,
+  presetRepeat,
+  repeatPreset,
+  scheduleLabel,
   tickReminders,
   reminderDueAt,
   scheduleError,
+  withEditedOptions,
   setOverride,
   overrideValue,
   type ScriptSchedule,
@@ -106,7 +111,42 @@ test('editor validation rejects past dates and invalid intervals', () => {
   expect(scheduleError(schedule, 110_000)).toMatch(/future/);
   expect(
     scheduleError({ ...schedule, repeat: { every: 0, unit: 'hour' } }, 100_000),
-  ).toMatch(/whole-number/);
+  ).toMatch(/at least 1 minute/);
+});
+
+test('custom repeats support any days, hours and minutes mix', () => {
+  const repeat = presetRepeat('custom', 86_400_000 + 2 * 60_000);
+  expect(repeat).toEqual({ every: 1442, unit: 'minute' });
+  expect(scheduleLabel(repeat)).toBe('Every 1d 2m');
+  expect(repeatPreset(repeat)).toBe('custom');
+  expect(formatInterval(31 * 60_000)).toBe('31m');
+
+  const { next } = tickReminders(
+    [{ ...schedule, repeat: { every: 31, unit: 'minute' } }],
+    110_000,
+    100_000,
+  );
+  expect(next[0]).toMatchObject({ nextRunAt: 105_000 + 31 * 60_000 });
+});
+
+test('repeat presets recognise equal intervals and keep legacy units readable', () => {
+  expect(repeatPreset({ every: 60, unit: 'minute' })).toBe('hour');
+  expect(repeatPreset({ every: 1, unit: 'week' })).toBe('week');
+  expect(repeatPreset({ every: 2, unit: 'week' })).toBe('custom');
+  expect(scheduleLabel({ every: 2, unit: 'hour' })).toBe('Every 2h');
+  expect(presetRepeat('never', 60_000)).toBeUndefined();
+  expect(presetRepeat('day', 60_000)).toEqual({ every: 1, unit: 'day' });
+});
+
+test('only real option edits mark a cooldown as user-edited', () => {
+  const plugin = { ...cooldown, options: { gamemode: 'prison' } };
+  expect(withEditedOptions(plugin, { gamemode: 'prison' })).toBe(plugin);
+  expect(withEditedOptions(cooldown, {})).toBe(cooldown);
+  expect(withEditedOptions(plugin, { gamemode: 'skyblock' })).toEqual({
+    ...plugin,
+    options: { gamemode: 'skyblock' },
+    optionsEdited: true,
+  });
 });
 
 test('override drafts inherit saved fields without copying them into overrides', () => {

@@ -1,10 +1,33 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Editor, { type EditorInstance } from '../components/codeEditor/CodeEditor';
 import Nav from '../components/codeEditor/Nav';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Spin, Typography } from 'antd';
 import { usePanelContext } from '../components/other/botSideBar/SidePanelContextProvider';
 import { codeEditorValue } from './codeEditorValue';
+import { useSettingsStore, setChain } from '../redux/settings';
+import { chainIdFromPluginId, chainSetupToSave, defaultChainSetup } from '../../common/chains';
+import type { MacroInfo } from '../../main/src/types';
+
+const snackbar = (title: string) =>
+  window.ipcRenderer.action('PING', ['snackbar', { title, variant: 'error' }]);
+
+/** The chain whose setup code `pluginId` (`chain:<id>`) edits, read fresh from settings. */
+const setupChain = (pluginId: string) => {
+  const chainId = chainIdFromPluginId(pluginId);
+  return chainId ? useSettingsStore.getState().settings.scripts?.chains?.[chainId] : undefined;
+};
+
+/** A chain's setup code, opened in the editor like a plugin under the chain's plugin id. */
+function loadChainSetup(pluginId: string): { code: string; info: MacroInfo } | null {
+  const chain = setupChain(pluginId);
+  if (!chain) return null;
+  const name = useSettingsStore.getState().settings.scripts?.[chain.id]?.name ?? chain.name ?? 'Chain';
+  return {
+    code: chain.setup ?? defaultChainSetup(chain),
+    info: { pluginId, name: `${name} · setup code`, language: 'js', scriptType: 'script' } as MacroInfo,
+  };
+}
 
 const CodeEditor = () => {
   const codeRef = useRef('');
@@ -12,6 +35,21 @@ const CodeEditor = () => {
   const [macroInfo, setMacroInfo] = useState<any>(null);
   const [code, setCode] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { id: pluginId } = useParams();
+  const isChainSetup = !!chainIdFromPluginId(pluginId);
+
+  const save = useCallback(
+    (source: string) => {
+      if (!pluginId) return;
+      if (isChainSetup) {
+        const chain = setupChain(pluginId);
+        if (chain) setChain({ ...chain, setup: chainSetupToSave(chain, source) });
+      } else if (source.length > 0) {
+        window.ipcRenderer.action('SAVE_MACRO', { pluginId, code: { code: source } });
+      }
+    },
+    [pluginId, isChainSetup],
+  );
 
   // The side panel state is shared across the whole app via the panel context,
   // so the open/closed tab is preserved when navigating to/from the editor.
@@ -62,11 +100,21 @@ const CodeEditor = () => {
 
   /* oxlint-enable react-hooks/exhaustive-deps */
   const requestCode = async () => {
-    const pluginId = window.location.href
-      .match(/\/code\/[A-z0-9]+/)?.[0]
-      .replace('/code/', '');
     if (!pluginId) {
       navigate('/plugins');
+      return;
+    }
+
+    if (isChainSetup) {
+      const setup = loadChainSetup(pluginId);
+      if (!setup) {
+        snackbar('Chain not found');
+        return navigate('/');
+      }
+      editorDetails.current.loaded = true;
+      setCode(setup.code);
+      setMacroInfo(setup.info);
+      codeRef.current = setup.code;
       return;
     }
 
@@ -78,18 +126,12 @@ const CodeEditor = () => {
     }>('MACRO_CODE', pluginId);
 
     if (plugin.status === 'error') {
-      window.ipcRenderer.action('PING', [
-        'snackbar',
-        { title: plugin.error, variant: 'error' },
-      ]);
+      snackbar(plugin.error ?? 'Plugin not found');
       return navigate('/plugins');
     }
     const source = codeEditorValue(plugin.code);
     if (source === null) {
-      window.ipcRenderer.action('PING', [
-        'snackbar',
-        { title: 'Plugin code is invalid', variant: 'error' },
-      ]);
+      snackbar('Plugin code is invalid');
       return navigate('/plugins');
     }
 
@@ -115,7 +157,7 @@ const CodeEditor = () => {
       >
         <Spin size="large" />
         <Typography.Title level={4} style={{ margin: 0 }}>
-          Loading Plugin...
+          {isChainSetup ? 'Loading setup code...' : 'Loading Plugin...'}
         </Typography.Title>
         <Typography.Text style={{ maxWidth: 300, textAlign: 'center' }}>
           Preparing your code editor environment
@@ -145,8 +187,10 @@ const CodeEditor = () => {
       <div style={{ flex: 1, minHeight: 0 }}>
         <Editor
           codeRef={codeRef}
+          onSave={save}
           editorRef={editorRef}
           macroInfo={macroInfo}
+          setMacroInfo={setMacroInfo}
           code={code}
           editorDetails={editorDetails}
           activeTab={activeTab}

@@ -134,6 +134,32 @@ describe('profile export completeness', () => {
       'missing-script',
     );
   });
+
+  test('bundles gamemode join actions and restores them on import', async () => {
+    const { instance } = bootProfiles();
+    const codeObf = require('../../src/main/src/functions/scriptObfuscate').obfuscateCodeToBase64({ code: 'function main() {}' });
+    (instance as any).scripts = {
+      bundleForExport: jest.fn(async (s: any) => ({ bundle: { scriptId: s.id, info: { pluginId: s.pluginId }, codeObf } })),
+    };
+    const profile = {
+      ...makeProfile('join-action'),
+      data: { joinBehaviours: {
+        skyblock: { kind: 'action', action: { id: 'join_sb', pluginId: 'joiner', source: { kind: 'plugin', pluginId: 'joiner' } } },
+        bedwars: { kind: 'direct' },
+      } },
+    } as any;
+
+    const exported = await instance.buildExportPayload(profile);
+    expect(exported.scriptBundles?.map((b: any) => b.scriptId)).toEqual(['join_sb']);
+
+    const imported = await (instance as any).materializeImportedBundles(exported);
+    expect(imported.data.joinBehaviours.bedwars).toEqual({ kind: 'direct' });
+    expect(imported.data.joinBehaviours.skyblock.action.source).toEqual({
+      kind: 'bundled',
+      infoPath: 'profileScripts/join-action/join_sb.info.json',
+      codePath: 'profileScripts/join-action/join_sb.code.jnc',
+    });
+  });
 });
 
 describe('portable bundled profile paths', () => {

@@ -4,18 +4,12 @@ import { resolveModel, AiModel } from './model';
 import {
   aiError,
   compileSchema,
-  filterThreshold,
   isObject,
   RegisteredTool,
   registerTools,
 } from './schema';
 import type { AiRequest, AiResponse } from './protocol';
 import scheduleDeadline from './deadline';
-
-// Preserve the existing engine call shape when filtering is disabled.
-function completionFilter(value: number | null | undefined): [] | [number] {
-  return value == null ? [] : [value];
-}
 
 interface Job {
   owner: string;
@@ -66,12 +60,7 @@ export class AiService {
       return { kind: 'ended' };
     }
     if (this.closed) throw aiError('AI_CANCELLED', 'AI service is closed.');
-    const model = resolveModel(request.modelUrl, request.model);
-    if (request.kind === 'embed' && model.variant === 'flash')
-      throw aiError(
-        'AI_UNSUPPORTED_FEATURE',
-        'The flash model does not support embeddings.',
-      );
+    const model = resolveModel(request.modelUrl, request.windowSize);
     if (!networkAllowed && !model.builtIn)
       throw aiError(
         'AI_INVALID_INPUT',
@@ -131,11 +120,10 @@ export class AiService {
       typeof request.requestId !== 'string' ||
       !request.requestId ||
       typeof request.kind !== 'string' ||
-      !['predict', 'extract', 'embed', 'cancel'].includes(request.kind)
+      !['predict', 'extract', 'cancel'].includes(request.kind)
     )
       throw aiError('AI_INVALID_INPUT', 'Invalid AI operation.');
     if (request.kind === 'cancel') return;
-    filterThreshold(request.toolFilterThreshold);
     if (
       typeof request.deadline !== 'number' ||
       !Number.isFinite(request.deadline) ||
@@ -144,18 +132,17 @@ export class AiService {
       throw aiError('AI_TIMEOUT', 'AI request deadline exceeded.');
     if (typeof request.text !== 'string')
       throw aiError('AI_INVALID_INPUT', 'Expected text.');
-    resolveModel(request.modelUrl, request.model);
+    resolveModel(request.modelUrl, request.windowSize);
     if (
       request.reasoning !== undefined &&
       typeof request.reasoning !== 'boolean'
     )
       throw aiError('AI_INVALID_INPUT', 'reasoning must be a boolean.');
     if (
-      request.kind !== 'embed' &&
-      (typeof request.maxNewTokens !== 'number' ||
-        !Number.isSafeInteger(request.maxNewTokens) ||
-        request.maxNewTokens < 1 ||
-        request.maxNewTokens > 2_147_483_647)
+      typeof request.maxNewTokens !== 'number' ||
+      !Number.isSafeInteger(request.maxNewTokens) ||
+      request.maxNewTokens < 1 ||
+      request.maxNewTokens > 2_147_483_647
     )
       throw aiError('AI_INVALID_INPUT', 'Invalid token budget.');
     if (request.kind === 'predict') {
@@ -262,11 +249,6 @@ export class AiService {
       AiService.check(job);
     }
     const { request } = job;
-    if (request.kind === 'embed') {
-      const values = await engine.embed(request.text);
-      AiService.check(job);
-      return { kind: 'embedding', modelId: job.model.id, values };
-    }
     if (request.kind === 'extract') {
       const validate: ReturnType<typeof compileSchema> = compileSchema(
         request.schema,
@@ -286,7 +268,7 @@ export class AiService {
         `Extract the ${fields || 'record'}: ${request.text}`,
         request.maxNewTokens,
         request.reasoning ?? false,
-        ...completionFilter(request.toolFilterThreshold),
+        job.model.windowSize,
       );
       AiService.check(job);
       if (raw.suppressedCalls.length)
@@ -305,7 +287,7 @@ export class AiService {
       request.text,
       request.maxNewTokens,
       request.reasoning ?? false,
-      ...completionFilter(request.toolFilterThreshold),
+      job.model.windowSize,
     );
     AiService.check(job);
     return AiService.prediction(job, raw);

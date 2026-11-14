@@ -79,10 +79,7 @@ for await (const bot of script.forEachBot(script.getAlts(), script.settings)) {
     label: 'openwindow',
     detail: 'Open a window and click an item',
     body: `const window = await bot.openWindow('\${1:/menu}');
-if (window) {
-  const [item] = bot.findWindowSlots({ name: '\${2:Item name}' });
-  if (item) await bot.clickWindow(item.slot, 0, 0);
-}`,
+if (window) await bot.items('\${2:Item name}').click();`,
   },
   {
     label: 'findblock',

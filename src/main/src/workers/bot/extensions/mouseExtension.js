@@ -15,9 +15,11 @@
  *   bot.mouse.press('left' | 'right')    hold down until released
  *   bot.mouse.release('left' | 'right')
  *   bot.mouse.isDown('left' | 'right')
+ *   bot.mouse.target()                   what the crosshair is on (block or entity in reach), or null
  */
 const { Vec3 } = require('vec3');
 const { RaycastIterator } = require('prismarine-world').iterators;
+const { createOutlines } = require('./blockOutlines');
 
 const MAIN_HAND = 0;
 const OFF_HAND = 1;
@@ -75,6 +77,7 @@ function mouseExtension(bot) {
   const hands = legacy ? [MAIN_HAND] : [MAIN_HAND, OFF_HAND];
   const pickInflate = bot.registry.version['<']('1.9') ? 0.1 : 0;
   const cursorScale = bot.supportFeature('blockPlaceHasIntCursor') ? 16 : 1;
+  const outlineOf = createOutlines(bot.registry);
 
   const down = { left: false, right: false };
   const clicks = { left: 0, right: 0 };
@@ -82,7 +85,11 @@ function mouseExtension(bot) {
   let missTime = 0;
   let rightClickDelay = 0;
   let destroyDelay = 0;
-  let destroying = null; // { pos, itemType, progress }
+  let isDestroying = false;
+  // Like vanilla's destroyBlockPos it outlives an abort: holding the button on that block again
+  // continues mining it (from 0) without a new START.
+  let destroyTarget = null; // { pos, itemType }
+  let destroyProgress = 0;
   let using = null; // { hand, itemType }
 
   const mode = () => bot.game.gameMode;
@@ -152,6 +159,8 @@ function mouseExtension(bot) {
   }
 
   function outline(block) {
+    const special = outlineOf(block);
+    if (special) return special;
     if (block.shapes.length) return block.shapes;
     if (block.name.endsWith('rail')) return RAIL_OUTLINE;
     return FLAT_BLOCK.test(block.name) ? FLAT_OUTLINE : FULL_CUBE;
@@ -212,6 +221,8 @@ function mouseExtension(bot) {
     const blockRange = creative ? 5 : 4.5;
     const entityRange = creative ? 5 : 3;
     const { position, yaw, pitch, eyeHeight } = bot.entity;
+    // A NaN look would make the raycast below run forever.
+    if (!Number.isFinite(yaw) || !Number.isFinite(pitch)) return null;
     const eye = position.offset(0, eyeHeight, 0);
     const dir = new Vec3(
       -Math.sin(yaw) * Math.cos(pitch),
@@ -230,7 +241,7 @@ function mouseExtension(bot) {
 
   // ---- Left click (MultiPlayerGameMode destroy logic) -------------------
 
-  function destroyProgress(block) {
+  function progressPerTick(block) {
     const ms = bot.digTime(block);
     return ms === 0 ? 1 : 50 / ms;
   }
@@ -253,14 +264,15 @@ function mouseExtension(bot) {
       destroyDelay = DESTROY_DELAY;
       return true;
     }
-    if (isDestroying(pos)) return true;
-    if (destroying) sendDig(DIG.ABORT, destroying.pos, face);
+    if (isDestroying && sameDestroyTarget(pos)) return true;
+    if (isDestroying) sendDig(DIG.ABORT, destroyTarget.pos, face);
     sendDig(DIG.START, pos, face, true);
-    if (destroyProgress(block) >= 1) {
-      destroying = null;
+    if (progressPerTick(block) >= 1) {
       destroyLocally(pos);
     } else {
-      destroying = { pos, itemType: bot.heldItem?.type, progress: 0 };
+      isDestroying = true;
+      destroyTarget = { pos, itemType: bot.heldItem?.type };
+      destroyProgress = 0;
     }
     return true;
   }
@@ -271,27 +283,30 @@ function mouseExtension(bot) {
       return true;
     }
     if (mode() === 'creative') return startDestroyBlock(hit);
-    if (!isDestroying(hit.block.position)) return startDestroyBlock(hit);
+    if (!sameDestroyTarget(hit.block.position)) return startDestroyBlock(hit);
 
-    destroying.progress += destroyProgress(hit.block);
-    if (destroying.progress >= 1 - 1e-9) {
-      sendDig(DIG.STOP, destroying.pos, hit.face, true);
-      destroyLocally(destroying.pos);
-      destroying = null;
+    destroyProgress += progressPerTick(hit.block);
+    if (destroyProgress >= 1 - 1e-9) {
+      isDestroying = false;
+      sendDig(DIG.STOP, destroyTarget.pos, hit.face, true);
+      destroyLocally(destroyTarget.pos);
+      destroyProgress = 0;
       destroyDelay = DESTROY_DELAY;
     }
     return true;
   }
 
   function stopDestroyBlock() {
-    if (!destroying) return;
-    sendDig(DIG.ABORT, destroying.pos, DOWN);
-    destroying = null;
+    if (!isDestroying) return;
+    sendDig(DIG.ABORT, destroyTarget.pos, DOWN);
+    isDestroying = false;
+    destroyProgress = 0;
   }
 
-  function isDestroying(pos) {
+  function sameDestroyTarget(pos) {
     return (
-      destroying?.pos.equals(pos) && destroying.itemType === bot.heldItem?.type
+      destroyTarget?.pos.equals(pos) &&
+      destroyTarget.itemType === bot.heldItem?.type
     );
   }
 
@@ -383,7 +398,7 @@ function mouseExtension(bot) {
   }
 
   function startUseItem(hit) {
-    if (destroying) return;
+    if (isDestroying) return;
     rightClickDelay = USE_DELAY;
     for (const hand of hands) {
       if (hit?.entity && interactWithEntity(hit, hand)) {
@@ -412,7 +427,7 @@ function mouseExtension(bot) {
       !down.right &&
       !clicks.left &&
       !clicks.right &&
-      !destroying &&
+      !isDestroying &&
       !using
     );
   }
@@ -435,6 +450,7 @@ function mouseExtension(bot) {
     if (rightClickDelay > 0) rightClickDelay--;
     if (!isIdle() && !bot.currentWindow && bot.health > 0)
       handleKeybinds(pick());
+    else missTime = 0; // continueAttack(false): releasing the button ends the miss delay
     if (missTime > 0) missTime--;
     for (const button of ['left', 'right']) {
       if (releaseAfterTick[button])
@@ -445,15 +461,13 @@ function mouseExtension(bot) {
   function reset() {
     down.left = down.right = false;
     clicks.left = clicks.right = 0;
-    destroying = using = null;
-    missTime = rightClickDelay = destroyDelay = 0;
+    isDestroying = false;
+    destroyTarget = using = null;
+    missTime = rightClickDelay = destroyDelay = destroyProgress = 0;
   }
 
-  bot.on('physicsTick', tick);
-  // Physics (and so physicsTick) is skipped while riding, the vehicle carries the bot.
-  bot.on('physicsTickEnd', () => {
-    if (bot.vehicle) tick();
-  });
+  // Before the player moves (vanilla aims from last tick's position), also while riding.
+  bot.on('physicsTickStart', tick);
   bot.on('death', reset);
   // Opening a screen releases every key in vanilla.
   bot.on('windowOpen', () => {
@@ -502,6 +516,8 @@ function mouseExtension(bot) {
       assertButton(button);
       return down[button] && !releaseAfterTick[button];
     },
+    /** What the crosshair is on, like vanilla: { block, face, point } or { entity, point }, or null. */
+    target: pick,
   };
 }
 

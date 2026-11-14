@@ -62,7 +62,7 @@ export const usePluginActions = () => {
         window.ipcRenderer.action('UPDATE_PLUGIN_DATA', pluginData);
       },
 
-      toggleRun: async (p: MacroInfo) => {
+      run: async (p: Pick<MacroInfo, 'pluginId' | 'name'>) => {
         const state = useSettingsStore.getState();
         if (
           isPluginDisallowed(
@@ -73,14 +73,7 @@ export const usePluginActions = () => {
           message.info('This plugin is disabled by the active profile');
           return;
         }
-        const id = scripts.getInstanceIdsById(p.pluginId)[0];
-        if (id) scripts.stopAll(id);
-        else
-          await scripts.startScript({
-            script: 'macro',
-            arguments: { macroInfo: p, devMode: false },
-            console: 'macro_console',
-          });
+        await scripts.runPlugin(p);
       },
 
       editCode: (p: MacroInfo) =>
@@ -136,8 +129,7 @@ export const usePluginActions = () => {
 
       deletePlugin: async (p: MacroInfo) => {
         // Stop the plugin first if it's running.
-        const id = scripts.getInstanceIdsById(p.pluginId)[0];
-        if (id) scripts.stopAll(id);
+        scripts.stopByScriptId(p.pluginId);
         await window.ipcRenderer.get('DELETE_MACRO', p);
         removeMacro(p.pluginId);
         setPanel({ active: false, tab: 'logs' });

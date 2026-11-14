@@ -1,7 +1,7 @@
 import type { ScriptSchedule } from 'common/cooldowns';
 import type { MarketEntry } from 'common/share';
 import type { Trigger } from 'common/triggers';
-import type { ChainOptions, ModInfo, ModpackInfo } from 'main/src/types';
+import type { Chain, ChainOptions, ModInfo, ModpackInfo } from 'main/src/types';
 
 export const ALT_EDITOR_TAB = 'alt-editor';
 export type AltEditorPanelData = {
@@ -31,6 +31,8 @@ export const CHAIN_OPTIONS_TAB = 'chain-options';
 export type ChainOptionsPanelData = {
   id: string;
   options: ChainOptions;
+  /** The chain's own options, shown below its run settings. */
+  config?: Chain['config'];
   creating: boolean;
   onSave: (options: ChainOptions) => void;
 };

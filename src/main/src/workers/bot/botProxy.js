@@ -275,6 +275,9 @@ function inject(bot) {
         clone(packet.heightmaps),
       );
   });
+  bot.on('chunkColumnUnload', (corner) =>
+    state.chunkHeightmaps.delete(`${corner.x >> 4},${corner.z >> 4}`),
+  );
   bot._client.on('abilities', (packet) => {
     state.abilities = clone(packet);
   });

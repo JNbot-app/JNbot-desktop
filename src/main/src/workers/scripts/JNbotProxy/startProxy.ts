@@ -147,6 +147,7 @@ function startProxy() {
     },
   );
 
+  DebugPlugin.recordFromJoin = Boolean(scriptOptions.recordFromJoin);
   DebugPlugin.onCapturesChanged = () =>
     workerScript.send('PROXY_RECORDINGS_UPDATE');
 

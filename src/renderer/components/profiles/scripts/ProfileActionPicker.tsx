@@ -1,9 +1,7 @@
 import { FC, useMemo, useState } from 'react';
 import {
-  Avatar,
   Button,
-  Card,
-  Empty,
+  Flex,
   Form,
   Input,
   Modal,
@@ -13,8 +11,6 @@ import {
   theme,
 } from 'antd';
 import {
-  ApiOutlined,
-  DeleteOutlined,
   EditOutlined,
   FolderOpenOutlined,
   LinkOutlined,
@@ -30,6 +26,7 @@ import { createProfileActionPlugin } from './createProfileActionPlugin';
 import { useResolveScript } from './useResolveScript';
 import { importFromFile, type ImportedSource } from './scriptImport';
 import UrlImportInput from './UrlImportInput';
+import ScriptSelect from '../../general/scriptSettings/ScriptSelect';
 import {
   SOURCE_LABELS,
   type ProfileScript,
@@ -51,11 +48,11 @@ interface Props {
    * also accepts actions and creates new actions.
    */
   scriptType: MacroScriptType;
-  /** Currently selected action, or `undefined` to show the picker. */
+  /** Currently selected action, if any. */
   value: ProfileScript | undefined;
   onChange: (next: ProfileScript | undefined) => void;
-  /** Title for the empty-list card. */
-  candidatesTitle: string;
+  /** Placeholder of the plugin selector. */
+  placeholder: string;
   /** Title + initial values for the "Create new" modal. */
   createModal: {
     title: string;
@@ -72,7 +69,7 @@ const newId = () =>
 
 /**
  * Shared picker UI for wizard steps that bind a single `ProfileScript`
- * to the profile (currently: profile UI and bot action).
+ * to the profile (profile UI, bot action, gamemode join actions).
  * Handles selecting an existing plugin, importing a `.jnp` file, and
  * creating a plugin without leaving the wizard. The actual "use this"
  * call lives upstream — we just emit a
@@ -82,7 +79,7 @@ const ProfileActionPicker: FC<Props> = ({
   scriptType,
   value,
   onChange,
-  candidatesTitle,
+  placeholder,
   createModal,
   footer,
 }) => {
@@ -171,124 +168,58 @@ const ProfileActionPicker: FC<Props> = ({
     navigate(`/code/${editablePluginId}`);
   };
 
+  // Bundled / URL references are not in the library; list them so the
+  // selector can still show their name.
+  const scripts = useMemo(() => {
+    const list = candidates.map((info) => ({ info }));
+    if (value && !candidates.some((m) => m.pluginId === value.pluginId)) {
+      list.push({
+        info: resolved.info ?? ({ pluginId: value.pluginId, name: value.pluginId } as MacroInfo),
+      });
+    }
+    return list;
+  }, [candidates, value, resolved.info]);
+
+  const select = (pluginId?: string) => {
+    if (!pluginId) return onChange(undefined);
+    const info = candidates.find((m) => m.pluginId === pluginId);
+    if (info && pluginId !== value?.pluginId) pickPlugin(info);
+  };
+
   return (
-    <div>
-      {value && (
-        <Card
-          size="small"
-          style={{ marginTop: 16, borderColor: token.colorPrimary }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Avatar
-              shape="square"
-              size={44}
-              src={resolved.info?.banner || undefined}
-              style={{ background: token.colorPrimaryBg, flex: 'none' }}
-            >
-              {(resolved.info?.name ?? '?')[0]?.toUpperCase()}
-            </Avatar>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Text strong>{resolved.info?.name ?? '(loading…)'}</Text>
-              <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
-                {SOURCE_LABELS[value.source.kind]}
-                {resolved.error ? ` · ${resolved.error}` : ''}
-              </Text>
-            </div>
-            {editablePluginId && (
-              <Button
-                type="primary"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={editCode}
-              >
-                Edit code
-              </Button>
-            )}
-            <Button
-              danger
-              type="text"
-              icon={<DeleteOutlined />}
-              onClick={() => onChange(undefined)}
-            />
-          </div>
-        </Card>
+    <Flex vertical gap={token.marginXS}>
+      <ScriptSelect
+        scripts={scripts}
+        value={value?.pluginId}
+        onChange={(id) => select(id as string | undefined)}
+        loading={resolved.loading}
+        allowClear
+        placeholder={placeholder}
+        status={resolved.error ? 'error' : undefined}
+      />
+      {value && value.source.kind !== 'plugin' && (
+        <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
+          {SOURCE_LABELS[value.source.kind]}
+          {resolved.error ? ` · ${resolved.error}` : ''}
+        </Text>
       )}
-
-      {!value && (
-        <div style={{ marginTop: 16 }}>
-          <Space wrap style={{ marginBottom: 12 }}>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => setCreating(true)}
-            >
-              Create new
-            </Button>
-            <Button icon={<FolderOpenOutlined />} onClick={pickFile}>
-              Import from file
-            </Button>
-            <Button icon={<LinkOutlined />} onClick={() => setUrlOpen(true)}>
-              Import from URL
-            </Button>
-          </Space>
-
-          <Card
-            size="small"
-            title={
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {candidatesTitle}{' '}
-                {candidates.length ? `(${candidates.length})` : ''}
-              </Text>
-            }
-            styles={{ body: { padding: 0 } }}
-          >
-            {candidates.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    No plugins yet — click <strong>Create new</strong>.
-                  </Text>
-                }
-                style={{ padding: 24 }}
-              />
-            ) : (
-              candidates.map((m) => (
-                <div
-                  key={m.pluginId}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: '8px 12px',
-                    borderBottom: `1px solid ${token.colorBorderSecondary}`,
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Text strong>{m.name}</Text>
-                    <Text
-                      type="secondary"
-                      style={{ display: 'block', fontSize: 12 }}
-                    >
-                      {m.description?.slice(0, 80) || 'No description'}
-                    </Text>
-                  </div>
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<ApiOutlined />}
-                    onClick={() => pickPlugin(m)}
-                  >
-                    Use
-                  </Button>
-                </div>
-              ))
-            )}
-          </Card>
-
-          {footer}
-        </div>
-      )}
+      <Space wrap>
+        {editablePluginId && (
+          <Button icon={<EditOutlined />} onClick={editCode}>
+            Edit code
+          </Button>
+        )}
+        <Button icon={<PlusOutlined />} onClick={() => setCreating(true)}>
+          Create new
+        </Button>
+        <Button icon={<FolderOpenOutlined />} onClick={pickFile}>
+          Import from file
+        </Button>
+        <Button icon={<LinkOutlined />} onClick={() => setUrlOpen(true)}>
+          Import from URL
+        </Button>
+      </Space>
+      {footer}
 
       <Modal
         title={createModal.title}
@@ -344,7 +275,7 @@ const ProfileActionPicker: FC<Props> = ({
           }}
         />
       </Modal>
-    </div>
+    </Flex>
   );
 };
 

@@ -33,8 +33,50 @@ export const targetSchema = {
   account: accountInput,
 };
 
+/** One bot (`account`) or several (`accounts`, `["*"]` = every active bot in the profile). */
+export const multiTargetSchema = {
+  profileKey: profileKeyInput,
+  account: accountInput.optional(),
+  accounts: z.array(z.string().min(1).max(64)).min(1).max(100).optional().describe('Several active bot accounts instead of account. ["*"] targets every active bot in the profile.'),
+};
+const requireAccount = (value: { account?: string; accounts?: string[] }, ctx: z.RefinementCtx) => {
+  if (!value.account && !value.accounts)
+    ctx.addIssue({ code: 'custom', path: ['account'], message: 'Provide account or accounts.' });
+};
+
 export const requestKey = z.string().min(1).max(120).optional().describe('Optional idempotency key. Reuse it only when retrying the same write.');
 export const pluginId = z.string().regex(/^[a-z0-9]+$/i).describe('Plugin ID returned by list_plugins or a prior save_plugin operation.');
+const runnablePluginId = z.string().regex(/^(chain:)?[a-z0-9]+$/i).describe('Plugin ID from list_plugins, or chain:<id> from get_plugin mode "automations" to run a chain.');
+const presetInput = z.string().min(1).max(60).optional().describe('Preset id or name (see get_plugin mode "options"). Defaults to the Default preset.');
+
+const chainNext = z.string().regex(/^(next|nextAlt|retryAlt|stop|step:\w+)$/).optional();
+export const chainStepSchema = z.object({
+  id: z.string().max(40).optional().describe('Step id, used by step:<id> jumps. Defaults to its 1-based index.'),
+  name: z.string().max(80).optional(),
+  scriptId: z.string().min(1).max(80).describe('Action pluginId from get_plugin mode "actions".'),
+  options: z.record(z.string(), z.unknown()).optional().describe('Option overrides for this step. Text values may use {key} placeholders filled from earlier steps.'),
+  onSuccess: chainNext.describe('next (default), nextAlt, retryAlt, stop, or step:<id>.'),
+  onFail: chainNext.describe('Same choices as onSuccess. A step fails when its action throws or returns false.'),
+}).strict();
+
+export const triggerSchema = z.object({
+  id: z.string().max(40).optional().describe('Existing trigger id to update. Omit to create.'),
+  name: z.string().max(80).optional(),
+  event: z.string().describe('Event id; see triggerEvents in get_plugin mode "automations".'),
+  enabled: z.boolean().optional(),
+  filter: z.string().max(300).optional().describe('Event filter: text, /regex/i, player names, or a number depending on the event.'),
+  actions: z.array(z.object({
+    type: z.enum(['notification', 'discord', 'chat', 'scriptAction', 'log']),
+    webhook: z.string().max(300).optional(),
+    message: z.string().max(256).optional().describe('Chat text; may use {bot}, {player}, {message}, {reason}, {health}, {item}, {count}.'),
+    id: z.string().max(80).optional().describe('Action pluginId for scriptAction.'),
+    preset: z.string().max(60).optional(),
+    directory: z.string().max(300).optional(),
+  }).strict()).min(1).max(10),
+  alts: z.array(z.string().max(64)).max(200).optional().describe('Limit to these accounts. Empty with no tags = every bot.'),
+  tags: z.array(z.string().max(64)).max(50).optional(),
+  cooldown: z.number().min(0).max(86_400).optional().describe('Minimum seconds between two runs on the same bot.'),
+}).strict();
 
 const missingForMode = (ctx: z.RefinementCtx, mode: string, field: string) =>
   ctx.addIssue({ code: 'custom', path: [field], message: `mode "${mode}" requires ${field}.` });
@@ -54,13 +96,14 @@ export const jnbotContextSchema = z.object({
 
 /** Flat schemas intentionally expose every property to MCP inspectors. */
 export const getPluginSchema = z.object({
-  mode: z.enum(['source', 'options', 'actions', 'authoring']).describe('source: plugin source; options: saved values and schema; actions: action plugins in a profile; authoring: plugin contract and guide.'),
+  mode: z.enum(['source', 'options', 'actions', 'automations', 'authoring']).describe('source: plugin source; options: saved values, presets and schema; actions: action plugins in a profile; automations: a profile\'s triggers and chains plus the trigger events; authoring: plugin contract and guide.'),
   pluginId: pluginId.optional(),
   profileKey: profileKeyInput.optional(),
+  preset: presetInput,
   scriptType: z.enum(['script', 'action']).optional().describe('Optional authoring guide variant. Actions require async function main(bot, settings, args = []).'),
 }).strict().superRefine((value, ctx) => {
   if (['source', 'options'].includes(value.mode) && !value.pluginId) missingForMode(ctx, value.mode, 'pluginId');
-  if (['options', 'actions'].includes(value.mode) && !value.profileKey) missingForMode(ctx, value.mode, 'profileKey');
+  if (['options', 'actions', 'automations'].includes(value.mode) && !value.profileKey) missingForMode(ctx, value.mode, 'profileKey');
 });
 
 export const savePluginSchema = z.object({
@@ -75,6 +118,8 @@ export const savePluginSchema = z.object({
   profileKey: profileKeyInput.optional(),
   values: z.record(z.string(), z.unknown()).optional().describe('Saved option values keyed by option id. Required by options mode.'),
   replace: z.boolean().optional().describe('In options mode, replace all saved values instead of merging. Defaults to false.'),
+  preset: z.string().min(1).max(60).optional().describe('In options mode, write to this preset (id or name). A new name creates the preset from the Default values.'),
+  dryRun: z.boolean().optional().describe('In source mode, only validate and return a diff against the current source; nothing is saved.'),
   requestKey,
 }).strict().superRefine((value, ctx) => {
   if (value.mode === 'source') {
@@ -197,12 +242,30 @@ export function createMcpTools(manager: McpManager, client: McpClientContext): M
     read(
       'get_bot_state',
       'Get bot state',
-      'Read one active bot’s live state: connection, health, food, oxygen, position, orientation, gamemode, held item, selected slot, and window status. Include chat, inventory, or bounded tab-list players only when requested.',
+      'Read one active bot’s live state: connection, health, food, oxygen, position, orientation, gamemode, held item, selected slot, and window status. Include chat, inventory, players, or recent events (kicks, deaths, disconnects, errors, opened windows) only when requested.',
       z.object({
         ...targetSchema,
-        include: z.array(z.enum(['chat', 'inventory', 'players'])).max(3).optional().describe('Optional extra data. chat returns up to 100 recent entries; inventory returns window slots; players returns up to 100 tab-list players with total and truncated.'),
+        include: z.array(z.enum(['chat', 'inventory', 'players', 'events'])).max(4).optional().describe('Optional extra data. chat returns up to 100 recent entries; inventory returns window slots; players returns up to 100 tab-list players with total and truncated; events returns up to 100 recent lifecycle events.'),
+        since: z.string().max(20).optional().describe('Only return chat entries and events after this cursor (from a previous response).'),
       }).strict(),
-      (args, requestClient) => manager.readState(requestClient, manager.target(args), args.include as string[] | undefined),
+      (args, requestClient) => manager.readState(requestClient, manager.target(args), args.include as string[] | undefined, args.since as string | undefined),
+    ),
+
+    read(
+      'wait_for_event',
+      'Wait for bot event',
+      'Wait up to 25 seconds for the next event on one active bot instead of polling. Returns the event data, or timedOut: true. Use match to wait for specific chat text (for example a server reply) or kick reason.',
+      z.object({
+        ...targetSchema,
+        event: z.enum(['chat', 'window', 'inventory', 'gamemode', 'health', 'death', 'spawn', 'kicked', 'disconnect']),
+        match: z.string().max(200).optional().describe('Only resolve when the chat message or reason contains this text, or matches /regex/i.'),
+        timeoutMs: z.number().int().min(100).max(25_000).optional().describe('Defaults to 25000.'),
+      }).strict(),
+      (args, requestClient) => {
+        manager.assertProfile(requestClient, String(args.profileKey));
+        const { profileKey: _p, account: _a, ...input } = args;
+        return manager.getBotBridge().wait(manager.target(args), input);
+      },
     ),
 
     read(
@@ -257,22 +320,22 @@ export function createMcpTools(manager: McpManager, client: McpClientContext): M
     write(
       'leave_bot',
       'Leave bot',
-      'Disconnect one active logical bot. Returns an operation immediately; poll get_operation until terminal.',
+      'Disconnect one or more active bots. Returns an operation immediately; poll get_operation until terminal.',
       'control',
-      z.object({ ...targetSchema, requestKey }).strict(),
+      z.object({ ...multiTargetSchema, requestKey }).strict().superRefine(requireAccount),
       (args) => manager.actionOperation(client, 'leave_bot', args, 'botLeave'),
     ),
 
     write(
       'send_bot_chat',
       'Send bot chat',
-      'Send one Minecraft chat message or slash command from an active bot. Returns an operation immediately; poll get_operation until terminal.',
+      'Send a Minecraft chat message or slash command from one or more active bots. Returns an operation immediately; poll get_operation until terminal.',
       'control',
       z.object({
-        ...targetSchema,
+        ...multiTargetSchema,
         message: z.string().min(1).max(256).describe('Chat text or slash command to send.'),
         requestKey,
-      }).strict(),
+      }).strict().superRefine(requireAccount),
       (args) => manager.actionOperation(client, 'send_bot_chat', args, 'botChat', { message: args.message }),
     ),
 
@@ -380,7 +443,7 @@ export function createMcpTools(manager: McpManager, client: McpClientContext): M
     {
       name: 'get_plugin',
       title: 'Get plugin',
-      description: 'Read plugin source, one profile’s option values, available actions, or the authoring guide. Use authoring before save_plugin. Mode determines required inputs shown in the schema.',
+      description: 'Read plugin source, one profile’s option values and presets, available actions, triggers and chains, or the authoring guide. Use authoring before save_plugin. Mode determines required inputs shown in the schema.',
       pack: 'plugins',
       readOnly: true,
       schema: getPluginSchema,
@@ -399,18 +462,52 @@ export function createMcpTools(manager: McpManager, client: McpClientContext): M
     write(
       'run_plugin',
       'Run plugin',
-      'Start a normal plugin in a profile or run an action plugin against one active bot. mode run needs profileKey/pluginId; mode action also needs account. Returns an operation immediately; poll get_operation until terminal.',
+      'Start a normal plugin or chain (pluginId chain:<id>) in a profile, or run an action plugin against one or more active bots. mode run needs profileKey/pluginId; mode action also needs account or accounts. Returns an operation immediately; poll get_operation until terminal.',
       'plugins',
       z.object({
-        mode: z.enum(['run', 'action']).describe('run starts a normal plugin; action invokes an action plugin on one active bot.'),
-        pluginId,
+        mode: z.enum(['run', 'action']).describe('run starts a normal plugin or chain; action invokes an action plugin on active bots.'),
+        pluginId: runnablePluginId,
         profileKey: profileKeyInput,
-        account: z.string().max(64).optional().describe('Required for action mode: active bot account name.'),
+        account: z.string().max(64).optional().describe('Action mode: active bot account name.'),
+        accounts: multiTargetSchema.accounts,
         args: z.array(z.unknown()).max(50).optional().describe('Optional positional arguments passed only to an action plugin.'),
+        preset: presetInput.describe('Run with this preset (id or name) instead of the selected one.'),
         optionOverrides: z.record(z.string(), z.unknown()).optional().describe('Optional option values applied only to this run; saved settings are not changed.'),
         requestKey,
       }).strict(),
       (args) => manager.runPlugin(client, args),
+    ),
+
+    // ---------------------------------------------------------------------------
+    // Triggers & Chains (listed by get_plugin mode "automations")
+    // ---------------------------------------------------------------------------
+    write(
+      'save_automation',
+      'Save trigger or chain',
+      'Create, update (include its id), or delete a trigger or chain in one profile. A trigger is "when <event> happens on <bots>, run <actions>"; a chain runs action plugins (get_plugin mode "actions") in order on every selected alt. Read get_plugin mode "automations" first for existing ones and trigger event ids. Returns an operation immediately; poll get_operation until terminal.',
+      'plugins',
+      z.object({
+        profileKey: profileKeyInput,
+        kind: z.enum(['trigger', 'chain']),
+        trigger: triggerSchema.optional().describe('kind trigger: the full trigger.'),
+        chain: z.object({
+          id: z.string().max(40).optional().describe('Existing chain id to update. Omit to create.'),
+          name: z.string().min(1).max(80),
+          steps: z.array(chainStepSchema).min(1).max(50),
+          options: z.object({
+            gamemode: z.string().max(80).optional(),
+            description: z.string().max(300).optional(),
+            altRange: z.tuple([z.string().nullable(), z.string().nullable()]).optional(),
+            withTags: z.array(z.string()).optional(),
+            ignoreAlts: z.array(z.string()).optional(),
+          }).strict().optional().describe('Run settings: which gamemode and which alts.'),
+        }).strict().optional().describe('kind chain: the full chain.'),
+        deleteId: z.string().max(40).optional().describe('Delete the trigger or chain with this id instead of saving.'),
+        requestKey,
+      }).strict().superRefine((value, ctx) => {
+        if (!value.deleteId && !value[value.kind]) missingForMode(ctx, value.kind, value.kind);
+      }),
+      (args) => manager.saveAutomation(client, args),
     ),
 
     // ---------------------------------------------------------------------------
@@ -448,7 +545,7 @@ export function createMcpTools(manager: McpManager, client: McpClientContext): M
     read(
       'get_jnbot_reference',
       'Get JNbot reference section',
-      'Fetch one complete generated JNbot API reference section. Use it when the authoring guide lacks an API detail; do not guess undocumented members.',
+      'Fetch one complete generated JNbot reference section: `authoring` (guide), `examples` (complete example plugins), `declarePlugin` (require(\'jnbot\') exports such as Bot, BotMachine, join) or an API section. Use it when the authoring guide lacks a detail; do not guess undocumented members.',
       z.object({
         section: z.enum(JNBOT_REFERENCE_SECTION_IDS).describe(`Reference section to return: ${JNBOT_REFERENCE_SECTION_IDS.join(', ')}.`),
       }).strict(),

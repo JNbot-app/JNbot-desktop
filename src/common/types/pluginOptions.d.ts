@@ -2,6 +2,8 @@ export type AltRangeValue = [string | null, string | null];
 
 export type ActiveBotFilter = 'all' | 'bots' | 'minecraft';
 
+export type ScriptKind = 'profileScript' | 'action' | 'recording' | 'plugin' | 'chain';
+
 export type PluginOptionType =
   | 'select'
   | 'multiSelect'
@@ -16,7 +18,8 @@ export type PluginOptionType =
   | 'list'
   | 'coordinate'
   | 'keybind'
-  | 'activeBotSelect';
+  | 'activeBotSelect'
+  | 'scriptSelect';
 
 export interface PluginOptionBase {
   id: string;
@@ -147,6 +150,18 @@ export interface PluginOptionActiveBotSelect extends PluginOptionBase {
   defaultValue?: string[];
 }
 
+/** Pick scripts by id; pass an id to `script.startPlugin()` or `script.getPluginInfo()`. */
+export interface PluginOptionScriptSelect extends PluginOptionBase {
+  type: 'scriptSelect';
+  /** Kinds of script to offer. Omit to offer every kind. */
+  kinds?: ScriptKind[];
+  /** Store a string array instead of a single id. */
+  multiple?: boolean;
+  clearable?: boolean;
+  placeholder?: string;
+  defaultValue?: string | string[];
+}
+
 export type PluginOption =
   | PluginOptionInput
   | PluginOptionSwitch
@@ -161,7 +176,8 @@ export type PluginOption =
   | PluginOptionList
   | PluginOptionCoordinate
   | PluginOptionKeybind
-  | PluginOptionActiveBotSelect;
+  | PluginOptionActiveBotSelect
+  | PluginOptionScriptSelect;
 
 export interface PluginOptionSection {
   name: string;

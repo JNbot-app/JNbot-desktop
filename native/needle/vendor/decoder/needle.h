@@ -27,10 +27,6 @@ NP_API np_handle *np_load(const char *, uint64_t, uint64_t, int32_t, char *, siz
 NP_API np_handle *np_clone(np_handle *, char *, size_t);
 NP_API void np_free(np_handle *);
 NP_API void np_reset(np_handle *);
-// Prefix token counts are rounded down to native prefill chunks and memory bounded.
-NP_API int32_t np_prefix(np_handle *, size_t, char *, size_t);
-NP_API size_t np_prefix_reused(np_handle *);
-NP_API size_t np_prefix_reused_layers(np_handle *);
 NP_API int32_t np_tensor_info(np_handle *, int32_t, uint32_t *, uint32_t *, char *, size_t);
 NP_API int32_t np_row(np_handle *, int32_t, uint32_t, float *, size_t, char *, size_t);
 NP_API int32_t np_matvec(np_handle *, int32_t, const float *, size_t, float *, size_t, char *,
@@ -43,6 +39,13 @@ NP_API int32_t np_forward_trace(np_handle *, const int32_t *, size_t, float *, s
 // Cached prefill or continuation. np_decode requires exactly one token.
 NP_API int32_t np_eval(np_handle *, const int32_t *, size_t, float *, size_t, char *, size_t);
 NP_API int32_t np_decode(np_handle *, int32_t, float *, size_t, char *, size_t);
+// KV window in tokens (0: the archive's own). Changing it drops the cached request state.
+NP_API int32_t np_set_window(np_handle *, size_t, char *, size_t);
+// Keep the state after the first `count` prompt tokens (rounded down to whole prefill chunks).
+// A later prompt starting with the same tokens skips their prefill; results are unchanged.
+NP_API int32_t np_set_prefix(np_handle *, size_t, char *, size_t);
+// Prompt tokens restored from the prefix cache by the last prefill.
+NP_API size_t np_prefix_reused(np_handle *);
 NP_API int32_t np_engram(np_handle *, const int32_t *, size_t, float *, size_t, char *, size_t);
 NP_API int32_t np_replay_norm(np_handle *, int32_t, const float *, size_t, float *, size_t, char *,
                               size_t);

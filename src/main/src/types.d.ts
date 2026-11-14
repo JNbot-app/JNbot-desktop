@@ -319,6 +319,7 @@ type AppSettingOption = Partial<
     worker_optimize_for_size?: boolean;
     render_distance?: number;
     reduced_events?: boolean;
+    captcha_prompt?: boolean;
   }
 >;
 
@@ -555,6 +556,8 @@ export type WorkerDataType = {
    * `join.js` for the load site.
    */
   botExtension?: { code: string; info: MacroInfo };
+  /** Resolved join actions, keyed by `gamemodeKey` (join method `action`). */
+  joinActions?: Record<string, { code: string; info: MacroInfo }>;
   appVersion: string;
   isMobileRuntime: boolean;
   /**
@@ -598,6 +601,7 @@ export type GamemodeJoinBehaviour =
   | { kind: 'auto' }
   | { kind: 'direct' }
   | { kind: 'command'; command: string }
+  | { kind: 'action'; action?: ProfileScript } // main(bot, settings, [gamemode])
   | {
       kind: 'selector';
       hotbarSlot: number; // 1-9, slot the selector item lives on
@@ -922,6 +926,8 @@ export type ActiveScriptsType = Record<
     runtimeScriptId?: number;
     address?: number;
     instanceId: number;
+    /** Name of the preset this instance runs; unset for the Default preset. */
+    presetName?: string;
     /** Bitfield of enabled runner control buttons (see ScriptControl enum). */
     controls?: number;
     /** "worker" = normal JNbot worker script, "minecraft" = launched Minecraft instance (no worker). */

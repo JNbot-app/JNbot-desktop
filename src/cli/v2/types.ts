@@ -1,3 +1,4 @@
+import type { MacroInfo } from '../../main/src/types';
 import type ScriptHandler from '../../main/src/functions/ScriptHandler';
 
 export type CliSeverity = 'debug' | 'info' | 'success' | 'warn' | 'error';
@@ -47,6 +48,8 @@ export type RunItem = {
   author?: string;
   config?: any;
 };
+
+export type RunnableScript = { info: MacroInfo; profileScriptId?: string };
 
 export interface CooldownInfo {
   kind?: 'schedule';

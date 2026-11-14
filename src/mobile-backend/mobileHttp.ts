@@ -52,6 +52,20 @@ export class MobileResponse {
     this.headers = new MobileHeaders(headers);
   }
 
+  /** The whole payload as one chunk: enough for readers like the AI's event stream (the reply arrives at once). */
+  get body() {
+    let read = false;
+    return {
+      getReader: () => ({
+        read: async (): Promise<{ done: boolean; value?: Uint8Array }> => {
+          if (read) return { done: true };
+          read = true;
+          return { done: false, value: new Uint8Array(this.payload) };
+        },
+      }),
+    };
+  }
+
   async text(): Promise<string> {
     return this.payload.toString('utf8');
   }

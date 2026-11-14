@@ -1,100 +1,130 @@
-const { hasTradeableItem } = require('./transferUtil');
+const {
+  closeWindow,
+  containerIsEmpty,
+  fill,
+  findSlot,
+  hasFreeContainerSlot,
+  hasTransferableItem,
+  parseKeys,
+  transferableSlots,
+  windowTitleMatches,
+} = require('./transferUtil');
 
-const giftBehaviour = [
-  {
-    name: 'Opening gift window',
-    when: ({bot}) => !bot.currentWindow,
-    run: async ({bot, state, machine}) => {
-      if (!hasTradeableItem(bot, state)) {
-        machine.finish();
-      } else {
-        await bot.openWindow('/gift ' + state.username, {timeout: 10_000});
+const cfg = (bot) => bot.transfer.config.gift;
+const inDepositWindow = (bot) => windowTitleMatches(bot, cfg(bot).depositWindowTitle);
+const inConfirmWindow = (bot) => windowTitleMatches(bot, cfg(bot).confirmWindowTitle);
+const giftIsFull = (bot) => !hasFreeContainerSlot(bot, cfg(bot).depositSlots);
+const keyItems = (bot, name) => bot.items({ name, lore: cfg(bot).keysOwnedLore }).container();
+/** The number the pattern's first group captures in the item's lore, or 0. */
+function loreNumber(bot, item, pattern) {
+  pattern.lastIndex = 0;
+  return Number(pattern.exec(bot.cleanText(bot.itemInfo.lore(item)))?.[1] ?? 0);
+}
 
+/** Adds `amount` of `key` to the gift, one click per key. */
+async function addKey(bot, key, amount) {
+  const names = [key, ...(bot.transfer.config.keyAliases[key] ?? [])];
+  const item = keyItems(bot, names).first();
+  if (!item) return log(`Couldn't find ${key} keys, sending the gift without them`, 'warning');
+
+  const owned = loreNumber(bot, item, cfg(bot).keysOwnedLore);
+  if (owned < amount) log(`Only ${owned}/${amount} ${key} keys available`, 'warning');
+  const clicks = Math.min(amount, owned) - loreNumber(bot, item, cfg(bot).keysSendingLore);
+  for (let i = 0; i < clicks; i++) {
+    bot.clickWindow(item.slot, 0, 0);
+    await bot.waitForTicks(4);
+  }
+}
+
+async function sendGift(bot) {
+  bot.closeWindow(bot.currentWindow);
+  await bot.onceWithTimeout('windowOpen', 20);
+}
+
+/**
+ * Gift items to `state.username`. With `withKeys`, the crate keys in
+ * `state.keys` are added through the key page right before the gift is sent.
+ */
+function createGiftBehaviour({ withKeys = false } = {}) {
+  const keysPending = (state) => withKeys && state.pendingKeys.length > 0;
+  const readyToSend = (bot, state) =>
+    inDepositWindow(bot) &&
+    (!hasTransferableItem(bot, state) || containerIsEmpty(bot) || giftIsFull(bot));
+
+  const keyTasks = [
+    {
+      name: 'Adding keys',
+      when: ({ bot }) => keyItems(bot).has(),
+      run: async ({ bot, state }) => {
+        for (const [key, amount] of state.pendingKeys) await addKey(bot, key, amount);
+        state.pendingKeys = [];
+        await sendGift(bot);
+      },
+    },
+    {
+      name: 'Opening key page',
+      when: ({ bot, state }) => keysPending(state) && readyToSend(bot, state),
+      run: async ({ bot, state }) => {
+        if (!(await bot.items(cfg(bot).keyButton).container().click())) {
+          log('This gift window has no key option, sending the gift without keys (no item with name "' + cfg(bot).keyButton + '")', 'warning');
+          state.pendingKeys = [];
+          return;
+        }
+        await keyItems(bot).wait(40);
+      },
+    },
+  ];
+
+  return [
+    {
+      name: 'Opening gift window',
+      when: ({ bot }) => !bot.currentWindow,
+      run: async ({ bot, state, machine }) => {
+        if (withKeys) state.pendingKeys ??= parseKeys(state.keys);
+        const forceKeys = state.forceKeys && keysPending(state);
+        if (!forceKeys && !hasTransferableItem(bot, state)) return machine.finish();
+        await bot.openWindow(fill(cfg(bot).command, state), { timeout: 10_000 });
         if (!bot.currentWindow) {
-          log('[' + bot.username + '] Failed to open gift window', 'error');
+          log(`[${bot.username}] Failed to open the gift window`, 'error');
           machine.finish();
         }
-      }
+      },
     },
-  },
-
-  {
-    name: 'Accepting gift',
-    when: ({bot}) =>
-      bot.getWindowTitle().includes(bot.transferItems.config.giftConfirmWindowTitle),
-    run: ({bot}) => {
-      let slot_index = null;
-      for (let i = 0; i < bot.currentWindow.inventoryStart; i++) {
-        const slot = bot.currentWindow.slots[i];
-        
-        if (
-          slot &&
-          (slot.metadata === 13 || slot?.name === 'green_terracotta' || bot.itemInfo(slot).name.toLowerCase().includes("confirm"))
-        ) {
-          slot_index = i;
-          break;
+    {
+      name: 'Confirming gift',
+      when: ({ bot }) => inConfirmWindow(bot),
+      run: ({ bot }) => {
+        let slot = findSlot(bot, cfg(bot).confirmButton);
+        if (slot === null) {
+          log(`Couldn't find the gift confirm button in "${bot.getWindowTitle()}"`, 'warning');
+          slot = cfg(bot).confirmSlot;
         }
-      }
-      if (slot_index === null) {
-        global.log('Could not find accept button in gift window: ' + bot.getWindowTitle(), 'warning');
-        bot.clickWindow(11, 0, 0);
-      } else {
-        bot.clickWindow(slot_index, 0, 0);
-      }
+        bot.clickWindow(slot, 0, 0);
+      },
     },
-  },
-  {
-    name: 'Finished depositing item',
-    when: ({bot, state}) =>
-      bot.getWindowTitle().includes(bot.transferItems.config.giftDepositWindowTitle) &&
-      (!hasTradeableItem(bot, state) ||
-        bot.currentWindow.slots[bot.currentWindow.inventoryStart - 10]),
-    run: async ({bot}) => {
-      bot.closeWindow(bot.currentWindow);
-
-      await bot.onceWithTimeout('windowOpen', 20);
+    ...(withKeys ? keyTasks : []),
+    {
+      name: 'Sending gift',
+      when: ({ bot, state }) => readyToSend(bot, state),
+      run: ({ bot }) => sendGift(bot),
     },
-  },
-  {
-    name: 'Depositing items',
-    when: ({bot}) =>
-      bot.getWindowTitle().includes(bot.transferItems.config.giftDepositWindowTitle),
-    run: async ({bot, state}) => {
-      let slots = [];
-      for (
-        let i = bot.currentWindow.inventoryStart;
-        i < bot.currentWindow.inventoryEnd;
-        i++
-      ) {
-        const slot = bot.currentWindow.slots[i];
-        if (slot && state.itemFilter(slot)) {
-          slots.push(i);
-        }
-      }
-      if (slots.length > 0) {
-        for await (const slot of slots) {
-          if (
-            !bot.currentWindow ||
-            bot.currentWindow.slots[bot.currentWindow.inventoryStart - 10]
-          )
-            break;
+    {
+      name: 'Depositing items',
+      when: ({ bot }) => inDepositWindow(bot),
+      run: async ({ bot, state }) => {
+        for (const slot of transferableSlots(bot, state)) {
+          if (!bot.currentWindow || containerIsEmpty(bot) || giftIsFull(bot)) return;
           bot.clickWindow(slot, 0, 0);
           await bot.waitForTicks(1);
         }
-      }
+      },
     },
-  },
-  {
-    name: 'Closing incorrect window',
-    when: ({bot, state}) => {
-      const title = bot.getWindowTitle();
-      return !title.includes(state.username) && !title.includes(bot.transferItems.config.giftConfirmWindowTitle.toLowerCase());
+    {
+      name: 'Closing incorrect window',
+      when: ({ bot, state }) => !windowTitleMatches(bot, cfg(bot).windowTitle, state),
+      run: ({ bot }) => closeWindow(bot),
     },
-    run: async ({bot}) => {
-      bot.closeWindow(bot.currentWindow);
-      await bot.waitForTicks(5);
-    },
-  },
-];
+  ];
+}
 
-module.exports = giftBehaviour;
+module.exports = createGiftBehaviour;

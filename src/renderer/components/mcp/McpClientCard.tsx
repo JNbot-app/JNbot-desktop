@@ -1,8 +1,7 @@
 import React from 'react';
-import { Avatar, Button, Card, Dropdown, Flex, Tag, Tooltip, Typography, theme } from 'antd';
+import { Button, Card, Dropdown, Flex, Tag, Tooltip, Typography, theme } from 'antd';
 import type { MenuProps } from 'antd';
 import {
-  ApiOutlined,
   DeleteOutlined,
   MoreOutlined,
   ReloadOutlined,
@@ -12,13 +11,14 @@ import {
 import type { McpClientGrant } from '../../../common/mcp';
 import { defaultPermissions, formatTime } from './types';
 import { permissionRows } from './McpClientPermissionsContent';
+import { getClientBrand } from './clientBrand';
 
 const { Text } = Typography;
 
-const policyTag = {
-  allow: { color: 'success', label: 'Allowed' },
-  ask: { color: 'warning', label: 'Asks you first' },
-  deny: { color: 'default', label: 'Blocked' },
+const policyStyle = {
+  allow: { label: 'Allowed', color: 'colorSuccess' },
+  ask: { label: 'Asks you first', color: 'colorWarning' },
+  deny: { label: 'Blocked', color: 'colorTextQuaternary' },
 } as const;
 
 interface McpClientCardProps {
@@ -38,6 +38,7 @@ const McpClientCard: React.FC<McpClientCardProps> = ({
 }) => {
   const { token } = theme.useToken();
   const permissions = client.mcpPermissions ?? defaultPermissions;
+  const brand = getClientBrand(client.name);
 
   const menuItems: MenuProps['items'] = [
     {
@@ -70,48 +71,57 @@ const McpClientCard: React.FC<McpClientCardProps> = ({
     <Card size="small" styles={{ body: { padding: token.paddingMD } }}>
       <Flex justify="space-between" align="center" gap={token.marginMD} wrap="wrap">
         <Flex align="center" gap={token.marginMD} style={{ minWidth: 0 }}>
-          <Avatar
-            shape="square"
-            size={40}
-            icon={<ApiOutlined />}
+          <Flex
+            align="center"
+            justify="center"
             style={{
-              background: token.colorFillSecondary,
-              color: token.colorText,
+              width: 44,
+              height: 44,
               flexShrink: 0,
+              fontSize: 22,
+              borderRadius: token.borderRadiusLG,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              background: token.colorFillQuaternary,
+              color: brand.color ?? token.colorText,
             }}
-          />
-          <Flex vertical gap={6} style={{ minWidth: 0 }}>
+          >
+            {brand.icon}
+          </Flex>
+          <Flex vertical gap={4} style={{ minWidth: 0 }}>
             <Flex align="center" gap={token.marginXS} wrap="wrap">
               <Text strong>{client.name}</Text>
               {client.revokedAt && <Tag color="error">Revoked</Tag>}
-              <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
-                {formatTime(client.lastActivityAt)} · {profileCount}
-              </Text>
             </Flex>
-            <Flex gap={4} wrap="wrap">
-              {permissionRows.map(({ key, title, icon }) => {
-                const policy = policyTag[permissions[key]];
-                return (
-                  <Tooltip key={key} title={`${title}: ${policy.label}`}>
-                    <Tag
-                      color={policy.color}
-                      icon={icon}
-                      variant="filled"
-                      style={{
-                        margin: 0,
-                        textDecoration: permissions[key] === 'deny' ? 'line-through' : undefined,
-                      }}
-                    >
-                      {title}
-                    </Tag>
-                  </Tooltip>
-                );
-              })}
-            </Flex>
+            <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
+              {formatTime(client.lastActivityAt)} · {profileCount}
+            </Text>
           </Flex>
         </Flex>
 
-        <Flex align="center" gap={token.marginXS}>
+        <Flex align="center" gap={token.marginMD}>
+          <Flex align="center" gap={token.marginXS}>
+            {permissionRows.map(({ key, title, icon }) => {
+              const policy = policyStyle[permissions[key]];
+              return (
+                <Tooltip key={key} title={`${title}: ${policy.label}`}>
+                  <Flex
+                    align="center"
+                    justify="center"
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: token.borderRadius,
+                      color: token[policy.color],
+                      background: token.colorFillQuaternary,
+                      opacity: permissions[key] === 'deny' ? 0.6 : 1,
+                    }}
+                  >
+                    {icon}
+                  </Flex>
+                </Tooltip>
+              );
+            })}
+          </Flex>
           <Button icon={<SettingOutlined />} onClick={() => onOpenPermissions(client)}>
             Manage access
           </Button>

@@ -110,6 +110,15 @@ interface Window {
   craftingResultSlot: number;
   requiresConfirmation: boolean;
   selectedItem: Item | null;
+  /** Number of empty slots in the inventory section of the window. */
+  emptySlotCount(): number;
+  /** Index of the first empty slot in [start, end), or null if there is none. */
+  firstEmptySlotRange(start: number, end: number): number | null;
+  /** Index of the last empty slot in [start, end], or null if there is none. */
+  lastEmptySlotRange(start: number, end: number): number | null;
+  firstEmptyHotbarSlot(): number | null;
+  firstEmptyContainerSlot(): number | null;
+  firstEmptyInventorySlot(hotbarFirst?: boolean): number | null;
 }
 
 interface RecipeItem {
@@ -710,7 +719,13 @@ type BotPluginExtensions = {
   mainVersion: number;
   join(gamemode: string, options?: Record<string, unknown>): Promise<void>;
   isOnline(): boolean;
-  itemInfo(item: Item | null): { name: string; info: string };
+  itemInfo: {
+    (item: Item | null): { name: string; info: string };
+    /** Only the custom name (cheaper than the full call). */
+    name(item: Item | null): string;
+    /** Only the lore, lines joined with `\n`. */
+    lore(item: Item | null): string;
+  };
   login(password?: string): Promise<void>;
   /**
    * Run a command and wait for the window it opens.
@@ -729,8 +744,9 @@ type BotPluginExtensions = {
       signal?: { aborted: boolean };
     },
   ): Promise<Window | null>;
+  /** @deprecated Use `bot.transfer(mode, target, options)`. */
   transferItems(
-    mode: number | 'trade' | 'gift' | 'window' | 'tradeWithKeys',
+    mode: number | 'trade' | 'gift' | 'window' | 'trash',
     options: {
       username?: string;
       command?: string;
@@ -738,8 +754,9 @@ type BotPluginExtensions = {
       filter?: string[];
       itemFilter?: (item: Item) => boolean;
       keep?: boolean;
+      sendKeys?: boolean;
       keys?: string[];
-      forceTradeKeys?: boolean;
+      forceKeys?: boolean;
       timeout?: number | null;
       shiftClick?: boolean;
     },

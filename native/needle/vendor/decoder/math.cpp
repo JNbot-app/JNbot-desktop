@@ -296,11 +296,114 @@ void dense(const float *a, const float *b, float *out, size_t m, size_t k, size_
     cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, int(m), int(n), int(k), 1.f, a, int(k),
                 b, int(n), 0.f, out, int(n));
 }
+// Dot product of an FP16 (ARM) or FP32 weight row with an FP32 vector.
+static float factor_dot(const factor_t *w, const float *x, size_t n) {
+    size_t i = 0;
+    float sum = 0.f;
+#if defined(__aarch64__)
+    float32x4_t a0 = vdupq_n_f32(0.f), a1 = a0, a2 = a0, a3 = a0;
+    for (; i + 16 <= n; i += 16) {
+        float16x8_t h0 = vld1q_f16(reinterpret_cast<const float16_t *>(w + i));
+        float16x8_t h1 = vld1q_f16(reinterpret_cast<const float16_t *>(w + i + 8));
+        a0 = vfmaq_f32(a0, vcvt_f32_f16(vget_low_f16(h0)), vld1q_f32(x + i));
+        a1 = vfmaq_f32(a1, vcvt_high_f32_f16(h0), vld1q_f32(x + i + 4));
+        a2 = vfmaq_f32(a2, vcvt_f32_f16(vget_low_f16(h1)), vld1q_f32(x + i + 8));
+        a3 = vfmaq_f32(a3, vcvt_high_f32_f16(h1), vld1q_f32(x + i + 12));
+    }
+    sum = vaddvq_f32(vaddq_f32(vaddq_f32(a0, a1), vaddq_f32(a2, a3)));
+#endif
+    for (; i < n; ++i)
+        sum += float(w[i]) * x[i];
+    return sum;
+}
+void lora_add(const Tensor &a, const Tensor &b, size_t layer, const float *x, size_t count, float *out,
+              float *u) {
+    // FP16 rows read straight from the archive on ARM (see factor_t): half the memory traffic.
+    const size_t rank = a.shape[1], in = a.shape[2], width = b.shape[2];
+    const factor_t *A = a.factors() + layer * rank * in, *B = b.factors() + layer * rank * width;
+    for (size_t t = 0; t < count; ++t) {
+        const float *input = x + t * in;
+        float *low = u + t * rank, *output = out + t * width;
+        for (size_t k = 0; k < rank; ++k)
+            low[k] = factor_dot(A + k * in, input, in);
+        for (size_t k = 0; k < rank; ++k) { // output += low[k] * B[k]
+            const factor_t *row = B + k * width;
+            const float scale = low[k];
+            size_t i = 0;
+#if defined(__aarch64__)
+            for (; i + 8 <= width; i += 8) {
+                float16x8_t h = vld1q_f16(reinterpret_cast<const float16_t *>(row + i));
+                vst1q_f32(output + i, vfmaq_n_f32(vld1q_f32(output + i), vcvt_f32_f16(vget_low_f16(h)), scale));
+                vst1q_f32(output + i + 4, vfmaq_n_f32(vld1q_f32(output + i + 4), vcvt_high_f32_f16(h), scale));
+            }
+#endif
+            for (; i < width; ++i)
+                output[i] += scale * float(row[i]);
+        }
+    }
+}
 void kron(const float *x, const Tensor &a, const Tensor &b, float *out, float *temporary) {
     int na = int(a.shape[0]), nb = int(b.shape[0]);
     cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, na, nb, na, 1.f, a.floats(), na, x, nb,
                 0.f, temporary, nb);
     dense(temporary, b.floats(), out, size_t(na), size_t(nb), size_t(nb));
+}
+// Monarch mixing of x viewed as [na][nb]: row i is mixed by its own b[i] ([na][nb][nb]),
+// then column l by its own a[l] ([nb][na][na]). Same multiply count as kron. Groups are
+// small, so register-held loops beat per-group BLAS calls; N fixes the group size at
+// compile time so each running sum stays in vector registers.
+template <size_t N>
+static void group_mix_fixed(const float *x, const factor_t *fa, const factor_t *fb, float *out,
+                            float *temporary) {
+    for (size_t i = 0; i < N; ++i) {
+        float sum[N] = {};
+        for (size_t j = 0; j < N; ++j) {
+            const float v = x[i * N + j];
+            const factor_t *weights = fb + (i * N + j) * N;
+            for (size_t k = 0; k < N; ++k)
+                sum[k] += v * float(weights[k]);
+        }
+        std::copy(sum, sum + N, temporary + i * N);
+    }
+    for (size_t l = 0; l < N; ++l) {
+        float sum[N] = {};
+        for (size_t i = 0; i < N; ++i) {
+            const float v = temporary[i * N + l];
+            const factor_t *weights = fa + (l * N + i) * N;
+            for (size_t k = 0; k < N; ++k)
+                sum[k] += v * float(weights[k]);
+        }
+        for (size_t k = 0; k < N; ++k)
+            out[k * N + l] = sum[k];
+    }
+}
+void group_mix(const float *x, const Tensor &a, const Tensor &b, float *out, float *temporary) {
+    const size_t na = b.shape[0], nb = b.shape[1];
+    const factor_t *fa = a.factors(), *fb = b.factors();
+    if (na == 32 && nb == 32)
+        return group_mix_fixed<32>(x, fa, fb, out, temporary);
+    for (size_t i = 0; i < na; ++i) {
+        float *row = temporary + i * nb;
+        std::fill(row, row + nb, 0.f);
+        for (size_t j = 0; j < nb; ++j) {
+            const float v = x[i * nb + j];
+            const factor_t *weights = fb + (i * nb + j) * nb;
+            for (size_t k = 0; k < nb; ++k)
+                row[k] += v * float(weights[k]);
+        }
+    }
+    float column[64];
+    for (size_t l = 0; l < nb; ++l) {
+        std::fill(column, column + na, 0.f);
+        for (size_t i = 0; i < na; ++i) {
+            const float v = temporary[i * nb + l];
+            const factor_t *weights = fa + (l * na + i) * na;
+            for (size_t k = 0; k < na; ++k)
+                column[k] += v * float(weights[k]);
+        }
+        for (size_t k = 0; k < na; ++k)
+            out[k * nb + l] = column[k];
+    }
 }
 void attention_prefill(const float *queries, const float *keys, const float *values,
                        float *scores, float *out, size_t count, size_t previous,

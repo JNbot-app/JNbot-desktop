@@ -13,7 +13,7 @@
 #endif
 
 namespace needle_cpu {
-Decoder::Decoder(std::shared_ptr<Model> m, std::shared_ptr<ProjectionWorkers> team)
+Decoder::Decoder(std::shared_ptr<Model> m, std::shared_ptr<ProjectionWorkers> team, size_t window)
     : model(std::move(m)), math(std::move(team)) {
     model->validate_decoder();
     auto &h = model->h;
@@ -23,7 +23,9 @@ Decoder::Decoder(std::shared_ptr<Model> m, std::shared_ptr<ProjectionWorkers> te
     nkh = h[9];
     qd = h[11];
     vd = h[12];
-    win = h[3];
+    win = window ? window : h[3];
+    if (win > h[13])
+        throw std::invalid_argument("KV window exceeds the model context");
     hn = h[14];
     sites = h[31];
     if (model->confidence_head)
@@ -51,6 +53,8 @@ Decoder::Decoder(std::shared_ptr<Model> m, std::shared_ptr<ProjectionWorkers> te
                    4 * win + 4096);
     scratch.resize(scratch.size() + nkh * (win + batch_size) * (qd + vd) +
                    batch_size * (win + batch_size));
+    if (model->lora) // runtime LoRA's low-rank intermediate
+        scratch.resize(scratch.size() + batch_size * model->tensor(int32_t(model->lora)).shape[1]);
     angles.resize(h[13] * qd);
     for (size_t pos = 0; pos < h[13]; ++pos)
         for (size_t j = 0; j < qd / 2; ++j) {
@@ -85,25 +89,25 @@ void Decoder::reset() {
         h.reset();
     // KV bytes need not be cleared: position masks all unwritten slots.
 }
-void Decoder::prefix_save() {
-    const size_t layers = prefix.layers;
-    prefix.cache.assign(cache.begin(), cache.begin() + layers);
-    prefix.qhist.assign(qhist.begin(), qhist.begin() + layers);
-    prefix.khist.assign(khist.begin(), khist.begin() + layers);
-    prefix.vhist.assign(vhist.begin(), vhist.begin() + layers);
-    prefix.ehist = ehist;
+void Decoder::save_prefix(const int32_t *tokens, size_t count) {
+    prefix.tokens.assign(tokens, tokens + count);
     prefix.token_history = token_history;
-    if (confidence && layers == model->layers.size())
-        prefix.confidence = std::make_shared<ConfidencePool>(*confidence);
+    prefix.cache = cache;
+    prefix.qhist = qhist;
+    prefix.khist = khist;
+    prefix.vhist = vhist;
+    prefix.ehist = ehist;
+    prefix.confidence = confidence ? std::make_unique<ConfidencePool>(*confidence) : nullptr;
 }
-void Decoder::prefix_restore() {
-    std::copy(prefix.cache.begin(), prefix.cache.end(), cache.begin());
-    std::copy(prefix.qhist.begin(), prefix.qhist.end(), qhist.begin());
-    std::copy(prefix.khist.begin(), prefix.khist.end(), khist.begin());
-    std::copy(prefix.vhist.begin(), prefix.vhist.end(), vhist.begin());
-    ehist = prefix.ehist;
+void Decoder::restore_prefix() {
     token_history = prefix.token_history;
-    if (confidence && prefix.confidence) *confidence = *prefix.confidence;
+    cache = prefix.cache;
+    qhist = prefix.qhist;
+    khist = prefix.khist;
+    vhist = prefix.vhist;
+    ehist = prefix.ehist;
+    if (confidence) *confidence = *prefix.confidence;
+    position = prefix.reused = prefix.tokens.size();
 }
 float *Decoder::alloc(size_t count) {
     if (count > scratch.size() - used)
@@ -220,6 +224,17 @@ void Decoder::attention(size_t index, size_t count, const float *x, float *out, 
         ProfileTimer timer_gate(PHASE_ATTN_PROJ_GATE);
         math.project_prepared(tensor(l.gate), x_prepared, count, gates);
     }
+    // Runtime LoRA: FP16 low-rank updates added to each projection (archive head code 4).
+    float *lora_scratch = model->lora ? alloc(count * tensor(model->lora).shape[1]) : nullptr;
+    auto lora = [&](int target, const float *input, float *output) {
+        if (model->lora)
+            lora_add(tensor(model->lora + 2 * target), tensor(model->lora + 2 * target + 1), index, input,
+                     count, output, lora_scratch);
+    };
+    lora(0, x, qraw);
+    lora(1, x, kraw);
+    lora(2, x, vraw);
+    lora(3, x, gates);
     float *q = alloc(qw), *k = alloc(kw), *v = alloc(vw), *scores = alloc(nh * win),
           *gate_temporary = alloc(ow);
     uint64_t globals = uint64_t(model->h[18]) << 32 | model->h[17];
@@ -338,6 +353,7 @@ void Decoder::attention(size_t index, size_t count, const float *x, float *out, 
         ProfileTimer timer_out(PHASE_ATTN_PROJ_OUT);
         math.project(tensor(l.out), values, count, out);
     }
+    lora(4, values, out);
     if (dedicated_reader) {
         ProfileTimer timer_reader(PHASE_REPRESENTATION_READER);
         representation->read_dedicated(size_t(memory_site), x, out, count);
@@ -346,9 +362,59 @@ void Decoder::attention(size_t index, size_t count, const float *x, float *out, 
         trace.emit(int32_t(index), position + t, "attn.output_proj", -1, out + t * d, d);
     used = saved;
 }
+// One Hadamard mixing stage over `count` tokens of width hn. Kronecker layers share one
+// factor pair; Monarch layers (grouped) hold one matrix per group.
+static void mix_stage(const Tensor &fa, const Tensor &fb, bool grouped, const float *z, float *a,
+                      float *tmp, size_t count, size_t hn) {
+    if (grouped) {
+        if (count == 1) {
+            group_mix(z, fa, fb, a, tmp);
+            return;
+        }
+        // Many tokens: one BLAS product per group over all tokens. Row group i of every
+        // token is a strided [count, nb] matrix; columns are transposed to rows first.
+        // BLAS needs FP32, so each group's matrix is widened into `w` just before its product.
+        const int na = int(fb.shape[0]), nb = int(fb.shape[1]), stride = int(hn), rows = int(count);
+        const factor_t *wa = fa.factors(), *wb = fb.factors();
+        float w[64 * 64];
+        auto widen = [&](const factor_t *from, int size) { std::copy(from, from + size * size, w); };
+        for (int i = 0; i < na; ++i) {
+            widen(wb + size_t(i) * nb * nb, nb);
+            cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, rows, nb, nb, 1.f, z + i * nb, stride,
+                        w, nb, 0.f, tmp + i * nb, stride);
+        }
+        for (size_t t = 0; t < count; ++t) // [i][l] -> [l][i]
+            for (int i = 0; i < na; ++i)
+                for (int l = 0; l < nb; ++l)
+                    a[t * hn + l * na + i] = tmp[t * hn + i * nb + l];
+        for (int l = 0; l < nb; ++l) {
+            widen(wa + size_t(l) * na * na, na);
+            cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, rows, na, na, 1.f, a + l * na, stride,
+                        w, na, 0.f, tmp + l * na, stride);
+        }
+        for (size_t t = 0; t < count; ++t) // [l][k] -> [k][l]
+            for (int l = 0; l < nb; ++l)
+                for (int k = 0; k < na; ++k)
+                    a[t * hn + k * nb + l] = tmp[t * hn + l * na + k];
+        return;
+    }
+    if (count == 1) {
+        kron(z, fa, fb, a, tmp);
+        return;
+    }
+    int na = int(fa.shape[0]), nb = int(fb.shape[0]);
+    for (size_t t = 0; t < count; ++t)
+        cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, na, nb, na, 1.f, fa.floats(), na,
+                    z + t * hn, nb, 0.f, tmp + t * hn, nb);
+    dense(tmp, fb.floats(), a, count * size_t(na), size_t(nb), size_t(nb));
+}
 void Decoder::monarch(const Layer &l, const float *x, float *out, size_t count) {
     size_t saved = used;
     auto tensor = [&](uint32_t i) -> const Tensor & { return model->tensor(int32_t(i)); };
+    auto mix = [&](uint32_t stage, const float *in, float *result, float *scratch, size_t tokens) {
+        mix_stage(tensor(l.factors + 2 * stage), tensor(l.factors + 2 * stage + 1), l.grouped,
+                  in, result, scratch, tokens, hn);
+    };
     if (count == 1) {
         float *condition = alloc(8), *cond = alloc(hn), *z = alloc(hn), *a = alloc(hn),
               *tmp = alloc(hn);
@@ -368,7 +434,7 @@ void Decoder::monarch(const Layer &l, const float *x, float *out, size_t count) 
         }
         {
             ProfileTimer timer_kron(PHASE_MONARCH_KRON);
-            kron(z, tensor(l.factors), tensor(l.factors + 1), a, tmp);
+            mix(0, z, a, tmp, 1);
         }
         {
             ProfileTimer timer_act(PHASE_MONARCH_ACT);
@@ -382,11 +448,11 @@ void Decoder::monarch(const Layer &l, const float *x, float *out, size_t count) 
         }
         {
             ProfileTimer timer_kron(PHASE_MONARCH_KRON);
-            kron(z, tensor(l.factors + 2), tensor(l.factors + 3), a, tmp);
+            mix(1, z, a, tmp, 1);
             const float *diag3 = tensor(l.diagonals + 3).floats();
             for (size_t i = 0; i < hn; ++i)
                 z[i] = diag3[i] * a[p2[i]];
-            kron(z, tensor(l.factors + 4), tensor(l.factors + 5), a, tmp);
+            mix(2, z, a, tmp, 1);
         }
         const float *diag4 = tensor(l.diagonals + 4).floats();
         for (size_t i = 0; i < d; ++i)
@@ -418,13 +484,7 @@ void Decoder::monarch(const Layer &l, const float *x, float *out, size_t count) 
     }
     {
         ProfileTimer timer_kron(PHASE_MONARCH_KRON);
-        const Tensor &f0 = tensor(l.factors), &f1 = tensor(l.factors + 1);
-        int na = int(f0.shape[0]), nb = int(f1.shape[0]);
-        for (size_t t = 0; t < count; ++t) {
-            cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, na, nb, na, 1.f, f0.floats(), na,
-                        z + t * hn, nb, 0.f, tmp + t * hn, nb);
-        }
-        dense(tmp, f1.floats(), a, count * size_t(na), size_t(nb), size_t(nb));
+        mix(0, z, a, tmp, count);
     }
     {
         ProfileTimer timer_act(PHASE_MONARCH_ACT);
@@ -441,13 +501,7 @@ void Decoder::monarch(const Layer &l, const float *x, float *out, size_t count) 
     }
     {
         ProfileTimer timer_kron(PHASE_MONARCH_KRON);
-        const Tensor &f2 = tensor(l.factors + 2), &f3 = tensor(l.factors + 3);
-        int na = int(f2.shape[0]), nb = int(f3.shape[0]);
-        for (size_t t = 0; t < count; ++t) {
-            cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, na, nb, na, 1.f, f2.floats(), na,
-                        z + t * hn, nb, 0.f, tmp + t * hn, nb);
-        }
-        dense(tmp, f3.floats(), a, count * size_t(na), size_t(nb), size_t(nb));
+        mix(1, z, a, tmp, count);
 
         const float *diag3 = tensor(l.diagonals + 3).floats();
         for (size_t t = 0; t < count; ++t) {
@@ -456,13 +510,7 @@ void Decoder::monarch(const Layer &l, const float *x, float *out, size_t count) 
                 zt[i] = diag3[i] * at[p2[i]];
         }
 
-        const Tensor &f4 = tensor(l.factors + 4), &f5 = tensor(l.factors + 5);
-        int na4 = int(f4.shape[0]), nb5 = int(f5.shape[0]);
-        for (size_t t = 0; t < count; ++t) {
-            cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, na4, nb5, na4, 1.f, f4.floats(), na4,
-                        z + t * hn, nb5, 0.f, tmp + t * hn, nb5);
-        }
-        dense(tmp, f5.floats(), a, count * size_t(na4), size_t(nb5), size_t(nb5));
+        mix(2, z, a, tmp, count);
     }
     const float *diag4 = tensor(l.diagonals + 4).floats();
     for (size_t t = 0; t < count; ++t) {
@@ -474,13 +522,6 @@ void Decoder::monarch(const Layer &l, const float *x, float *out, size_t count) 
 }
 void Decoder::chunk(const int32_t *tokens, size_t count, float *hidden, Trace trace) {
     used = 0;
-    const bool cached_chunk = prefix.hit && position < prefix.requested;
-    const bool recording = !prefix.hit && prefix.requested && position < prefix.requested;
-    const size_t chunk_index = position / block_capacity;
-    if (cached_chunk) {
-        stream = prefix.streams.at(chunk_index);
-        memory = prefix.memories.at(chunk_index);
-    } else {
     engram(tokens, count);
     const Tensor &embedding = model->tensor(0);
     for (size_t t = 0; t < count; ++t) {
@@ -494,14 +535,8 @@ void Decoder::chunk(const int32_t *tokens, size_t count, float *hidden, Trace tr
         for (size_t lane = 1; lane < n; ++lane)
             std::copy_n(x, d, x + lane * d);
     }
-    }
     auto tensor = [&](uint32_t i) -> const Tensor & { return model->tensor(int32_t(i)); };
     for (size_t index = 0; index < model->layers.size(); ++index) {
-        if (cached_chunk && index < prefix.layers) continue;
-        if (recording && prefix.layers < model->layers.size() && index == prefix.layers) {
-            prefix.streams.push_back(stream);
-            prefix.memories.push_back(memory);
-        }
         used = 0;
         const Layer &l = model->layers[index];
         float *nx = alloc(count * n * d), *pre = alloc(count * n), *post = alloc(count * n),
@@ -773,44 +808,30 @@ void Decoder::chunk(const int32_t *tokens, size_t count, float *hidden, Trace tr
         }
     }
     position += count;
-    if (position == prefix.requested && prefix.requested) {
-        if (prefix.hit) prefix_restore();
-        else prefix_save();
-    }
 }
 void Decoder::run(const int32_t *tokens, size_t count, float *logits, float *hidden, Trace trace) {
     ProfileScopeMode mode(count > 1);
     ProfileTimer timer_run(PHASE_EVAL_RUN);
     Profiler::record_tokens(count, count > 1);
-    size_t start = 0;
-    if (position == 0) {
+    // Prefix reuse covers whole chunks only and leaves at least one token, so the remaining
+    // chunks and the logits are computed exactly as in a full prefill.
+    size_t start = 0, record = 0;
+    if (position == 0 && !fusion && !representation && !trace.callback) {
         prefix.reused = 0;
-        const size_t layers = representation && representation->ready ? representation_blocks.front() : model->layers.size();
-        const size_t length = std::min(prefix.requested, count / block_capacity * block_capacity);
-        // Always leave a suffix so logits use the same original prefill chunk shape.
-        const size_t requested = length == count && length ? length - block_capacity : length;
-        const bool hit = requested && prefix.layers == layers && prefix.tokens.size() == requested &&
-                         std::equal(prefix.tokens.begin(), prefix.tokens.end(), tokens);
-        if (!hit) {
-            prefix.tokens.assign(tokens, tokens + requested);
-            prefix.streams.clear(); prefix.memories.clear();
-            prefix.cache.clear(); prefix.qhist.clear(); prefix.khist.clear(); prefix.vhist.clear();
-            prefix.ehist.clear(); prefix.token_history.clear();
-        }
-        prefix.requested = requested;
-        prefix.layers = layers;
-        prefix.hit = hit;
-        if (hit) {
-            prefix.reused = requested;
-            if (layers == model->layers.size()) {
-                prefix_restore();
-                position = start = requested;
-            }
+        const size_t length = std::min(prefix.limit, count - 1) / block_capacity * block_capacity;
+        if (length && prefix.tokens.size() == length &&
+            std::equal(prefix.tokens.begin(), prefix.tokens.end(), tokens)) {
+            restore_prefix();
+            start = length;
+        } else {
+            record = length;
         }
     }
     for (; start < count; start += block_capacity) {
         size_t t = std::min(block_capacity, count - start);
         chunk(tokens + start, t, start + t == count ? hidden : nullptr, trace);
+        if (record && position == record)
+            save_prefix(tokens, record);
     }
     used = 0;
     float *x = alloc(d);

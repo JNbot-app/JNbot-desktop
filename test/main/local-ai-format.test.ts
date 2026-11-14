@@ -72,7 +72,7 @@ describe('without ICU, as in the iOS Node runtime', () => {
     const file = path.join(directory, 'mobile.cact');
     fs.writeFileSync(file, archive([['é😀', 0, 0]]));
     const invoke = jest.fn();
-    const runtime = new InferenceRuntime({ invoke }, file, 'flash');
+    const runtime = new InferenceRuntime({ invoke }, file);
     expect(invoke).toHaveBeenCalledWith('load', file, 0, expect.any(Number));
     runtime.close();
     const tokenizer = new Tokenizer(tokenizerBlob([['é😀', 0, 0]]));
@@ -148,7 +148,6 @@ test.each([null, 0.8, 0.01])(
         },
       },
       file,
-      'flash',
     );
     try {
       runtime.init([
@@ -158,7 +157,7 @@ test.each([null, 0.8, 0.01])(
         evaluated.length = 0;
         const calls = [{ name: 'act', arguments: {} }];
         const withheld = headConfidence !== null && headConfidence < 0.1;
-        expect(runtime.complete('act', 16, reasoning)).toEqual({
+        expect(runtime.complete('act', 16, reasoning ?? false, 1)).toEqual({
           calls: withheld ? [] : calls,
           suppressedCalls: withheld
             ? calls.map((c) => ({ ...c, reason: 'low_confidence' }))
@@ -211,13 +210,12 @@ function bundled(
   return file;
 }
 
-test('flash reads bare and stripped bundles; main capability failures preserve the file', () => {
+test('the reader accepts bare archives and bundles', () => {
   const bare = path.join(directory, 'bare.cact');
   fs.writeFileSync(bare, archive());
-  expect(loadModel(bare, 'flash').decoder.length).toBe(archive().length);
+  expect(loadModel(bare).decoder.length).toBe(archive().length);
   const file = bundled();
-  expect(loadModel(file, 'flash').vocab).toBe(1);
-  expect(() => loadModel(file, 'main')).toThrow(/main variant/);
+  expect(loadModel(file).vocab).toBe(1);
   expect(fs.existsSync(file)).toBe(true);
 });
 test.each(['bounds', 'alignment', 'version', 'hash'])(
@@ -229,7 +227,7 @@ test.each(['bounds', 'alignment', 'version', 'hash'])(
       if (fault === 'version') index.version = 2;
       if (fault === 'hash') index.sections.needle.sha256 = '0'.repeat(64);
     });
-    expect(() => loadModel(file, 'flash')).toThrow();
+    expect(() => loadModel(file)).toThrow();
   },
 );
 test('tokenizer preserves deterministic BPE merges, Unicode and special markers', () => {

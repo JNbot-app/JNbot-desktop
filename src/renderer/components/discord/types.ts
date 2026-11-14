@@ -43,6 +43,12 @@ export const DISCORD_COMMANDS: DiscordCommandItem[] = [
     category: 'Scripts',
   },
   {
+    name: '/ask',
+    syntax: '/ask [request]',
+    description: 'Ask the AI to check on or control your bots',
+    category: 'Bots',
+  },
+  {
     name: '/stop',
     syntax: '/stop [script]',
     description: 'Stop a running script',

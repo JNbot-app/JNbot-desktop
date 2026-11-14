@@ -5,7 +5,14 @@
  * 1. Emits `player_input` packets before physics movement whenever inputs change.
  * 2. Emits `tick_end` packets after each physics tick (including catch-up ticks).
  * 3. Keeps a 20Hz fallback `tick_end` active when physics is idle or terrain is loading.
+ * 4. Never sends more ticks than real time allows. After a stall both the
+ *    fallback and physics' catch-up would cover the missed ticks; that puts the
+ *    bot ahead, and timer checks set it back (which also closes the open window).
  */
+
+const TICK_MS = 50;
+/** Vanilla runs at most 10 catch-up ticks per frame; older missed ticks are dropped. */
+const MAX_BACKLOG = 10;
 
 function realisticMotionExtension(bot) {
   const client = bot._client;
@@ -20,6 +27,15 @@ function realisticMotionExtension(bot) {
   let lastPhysicsTickTime = 0;
   let lastInputMask = null;
   let fallbackInterval = null;
+  let clockStart = Date.now();
+  let ticksSent = 0;
+
+  /** Whether real time allows another tick. */
+  function tickDue() {
+    const due = Math.floor((Date.now() - clockStart) / TICK_MS);
+    ticksSent = Math.max(ticksSent, due - MAX_BACKLOG);
+    return ticksSent < due;
+  }
 
   function getCurrentInputMask() {
     return {
@@ -58,7 +74,8 @@ function realisticMotionExtension(bot) {
   }
 
   function sendTickEnd() {
-    if (!sendsTickEnd || client.state !== 'play') return;
+    if (!sendsTickEnd || client.state !== 'play' || !tickDue()) return;
+    ticksSent++;
     lastTickEndTime = Date.now();
     try {
       client.write('tick_end', {});
@@ -86,6 +103,8 @@ function realisticMotionExtension(bot) {
     lastInputMask = null;
     lastTickEndTime = Date.now();
     lastPhysicsTickTime = lastTickEndTime;
+    clockStart = lastTickEndTime;
+    ticksSent = 0;
     startFallbackTickEnd();
   });
 

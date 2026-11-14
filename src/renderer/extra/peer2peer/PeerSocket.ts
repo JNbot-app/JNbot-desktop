@@ -11,6 +11,7 @@ import {
   workerScriptAddress,
 } from '../../../common/messaging';
 import { PROFILE_ACTIONS } from '../../../common/profileActions';
+import { llmRequestOptions } from '../../../common/llm';
 
 class PeerMessengerTransport implements EndpointTransport {
   private readonly receivers = new Set<(frame: TransportFrame) => void>();
@@ -71,7 +72,7 @@ function exposePeerMessenger(
         .catch(reportRemoteError);
     },
     get: (event, data) =>
-      messenger.request('client:action', BACKEND, { event, data }),
+      messenger.request('client:action', BACKEND, { event, data }, llmRequestOptions(event)),
     watchProfile: async (profileKey, handler) => {
       disposeWatchedProfile?.();
       disposeWatchedProfile = undefined;
@@ -104,11 +105,12 @@ function exposePeerMessenger(
         .catch(reportRemoteError);
     },
     profileRequest: <T = unknown>(profileId: number, event: string, data?: unknown) =>
-      messenger.request<T>('client:profile-action', BACKEND, {
-        profileId,
-        event,
-        data,
-      }),
+      messenger.request<T>(
+        'client:profile-action',
+        BACKEND,
+        { profileId, event, data },
+        llmRequestOptions(event),
+      ),
   };
   messenger.sub('remote:bootstrap', address, (data) => {
     window.dispatchEvent(new CustomEvent('jnbot:remote-bootstrap', { detail: data }));
@@ -309,13 +311,14 @@ class PeerSocket {
     if (this.messenger) {
       if (PROFILE_ACTIONS.has(event)) {
         if (!this.watchedProfileId) throw new Error('No profile is selected.');
-        return this.messenger.request('client:profile-action', BACKEND, {
-          profileId: this.watchedProfileId,
-          event,
-          data,
-        });
+        return this.messenger.request(
+          'client:profile-action',
+          BACKEND,
+          { profileId: this.watchedProfileId, event, data },
+          llmRequestOptions(event),
+        );
       }
-      return this.messenger.request('client:action', BACKEND, { event, data });
+      return this.messenger.request('client:action', BACKEND, { event, data }, llmRequestOptions(event));
     }
     return this.sendWithAck('get', [event, data]);
   }

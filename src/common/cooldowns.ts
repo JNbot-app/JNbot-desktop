@@ -15,9 +15,14 @@ export type ScriptCooldown = ReminderFields & {
   kind?: 'cooldown';
   cooldown: number;
   time: number;
+  /** The user edited `options`, so a plugin re-adding this cooldown keeps them. */
+  optionsEdited?: boolean;
 };
 
-export type ScheduleRepeat = { every: number; unit: 'hour' | 'day' | 'week' };
+export type ScheduleRepeat = {
+  every: number;
+  unit: 'minute' | 'hour' | 'day' | 'week';
+};
 export type ScriptSchedule = ReminderFields & {
   kind: 'schedule';
   nextRunAt: number;
@@ -25,7 +30,10 @@ export type ScriptSchedule = ReminderFields & {
 };
 export type Reminder = ScriptCooldown | ScriptSchedule;
 
-const UNIT_MS = { hour: 3_600_000, day: 86_400_000, week: 604_800_000 };
+export const MINUTE = 60_000;
+export const HOUR = 60 * MINUTE;
+export const DAY = 24 * HOUR;
+const UNIT_MS = { minute: MINUTE, hour: HOUR, day: DAY, week: 7 * DAY };
 
 export function repeatInterval(repeat?: ScheduleRepeat): number {
   if (!repeat) return 0;
@@ -46,18 +54,24 @@ export function reminderDueAt(reminder: Reminder): number {
 
 /** Compact duration, e.g. "2d 5h", "3h 20m" or "12m". */
 export function formatDuration(ms: number): string {
-  const d = Math.floor(ms / UNIT_MS.day);
-  const h = Math.floor((ms % UNIT_MS.day) / UNIT_MS.hour);
-  const m = Math.floor((ms % UNIT_MS.hour) / 60_000);
+  const d = Math.floor(ms / DAY);
+  const h = Math.floor((ms % DAY) / HOUR);
+  const m = Math.floor((ms % HOUR) / MINUTE);
   if (d) return h ? `${d}d ${h}h` : `${d}d`;
   if (h) return m ? `${h}h ${m}m` : `${h}h`;
   return `${Math.max(1, m)}m`;
 }
 
+/** Exact interval down to the minute, e.g. "1d 2m" or "1d 3h 31m". */
+export function formatInterval(ms: number): string {
+  const d = Math.floor(ms / DAY);
+  const h = Math.floor((ms % DAY) / HOUR);
+  const m = Math.floor((ms % HOUR) / MINUTE);
+  return [d && `${d}d`, h && `${h}h`, m && `${m}m`].filter(Boolean).join(' ') || '1m';
+}
+
 export function scheduleLabel(repeat?: ScheduleRepeat): string {
-  return repeat
-    ? `Every ${repeat.every} ${repeat.unit}${repeat.every === 1 ? '' : 's'}`
-    : 'One-time run';
+  return repeat ? `Every ${formatInterval(repeatInterval(repeat))}` : 'One-time run';
 }
 
 export function scheduleError(
@@ -74,7 +88,7 @@ export function scheduleError(
   )
     return 'Choose a future date and time.';
   if (schedule.repeat && !Number.isFinite(repeatInterval(schedule.repeat)))
-    return 'Use a positive whole-number repeat interval.';
+    return 'Set a repeat interval of at least 1 minute.';
   return undefined;
 }
 
@@ -142,7 +156,33 @@ export const REPEAT_CHOICES = [
 
 export function repeatPreset(repeat?: ScheduleRepeat): RepeatPreset {
   if (!repeat) return 'never';
-  return repeat.every === 1 ? repeat.unit : 'custom';
+  const interval = repeatInterval(repeat);
+  return (
+    (['hour', 'day', 'week'] as const).find((unit) => UNIT_MS[unit] === interval) ??
+    'custom'
+  );
+}
+
+/** Custom repeats are stored in minutes so any days/hours/minutes mix fits. */
+export function presetRepeat(
+  preset: RepeatPreset,
+  customMs: number,
+): ScheduleRepeat | undefined {
+  if (preset === 'never') return undefined;
+  return preset === 'custom'
+    ? { every: customMs / MINUTE, unit: 'minute' }
+    : { every: 1, unit: preset };
+}
+
+/** Applies the user's override edits, marking them so plugin updates keep them. */
+export function withEditedOptions(
+  cooldown: ScriptCooldown,
+  options: Record<string, unknown>,
+): ScriptCooldown {
+  const next = Object.keys(options).length ? options : undefined;
+  return JSON.stringify(next) === JSON.stringify(cooldown.options)
+    ? cooldown
+    : { ...cooldown, options: next, optionsEdited: true };
 }
 
 type OptionDefinition = {

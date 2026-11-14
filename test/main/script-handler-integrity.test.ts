@@ -38,6 +38,7 @@ test('runs a profile script when integrity verification fails', async () => {
   handler.enableProfile = jest.fn(() => runtime);
   handler.settings = {
     profiles: { scripts: { resolve: jest.fn(async () => resolved) } },
+    getProfileSettings: jest.fn(() => ({})),
   };
   handler.macros = { toList: jest.fn(() => []) };
   handler.scriptIds = { allocate: jest.fn(() => 12) };

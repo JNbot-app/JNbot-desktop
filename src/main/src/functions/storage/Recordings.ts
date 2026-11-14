@@ -3,6 +3,7 @@ import { devicePath } from './portablePaths';
 import fs from 'fs/promises';
 import { existsSync, mkdirSync } from 'node:fs';
 import { RecordingHeader } from '../../../../common/types/proxyApi';
+import { decodeRecording } from './decodeRecording';
 
 class Recordings {
   public readonly recordingsPath: string;
@@ -101,13 +102,17 @@ class Recordings {
     }
   }
 
+  /** The packets of a recording, with raw packets decoded. */
   public async getRecordingData(id: string) {
     const filePath = path.join(this.recordingsPath, `${id}.log`);
+    let data: string;
     try {
-      return await fs.readFile(filePath, 'utf8');
+      data = await fs.readFile(filePath, 'utf8');
     } catch {
       return null;
     }
+    const header = (await this.getRecordings()).find((recording) => recording.id === id);
+    return header?.mcVersion ? decodeRecording(data, header.mcVersion) : data;
   }
 }
 

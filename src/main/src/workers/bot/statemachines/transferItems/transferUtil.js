@@ -1,41 +1,87 @@
+const { isRegExp } = require('util').types;
 
- function hasTradeableItem(bot, targets) {
+const stripColors = (text) => String(text ?? '').replace(/§./g, '');
+const normalize = (text) => stripColors(text).toLowerCase();
+
+const fill = (template, vars) =>
+  template.replace(/\{(\w+)\}/g, (match, key) => vars[key] ?? match);
+
+/** Whether `text` contains a (filled-in) pattern; see transferConfig.js. */
+function textMatches(text, pattern, vars = {}) {
+  if (Array.isArray(pattern)) return pattern.some((p) => textMatches(text, p, vars));
+  if (typeof pattern === 'function') return pattern(text);
+  if (isRegExp(pattern)) {
+    pattern.lastIndex = 0;
+    return pattern.test(stripColors(text));
+  }
+  return normalize(text).includes(normalize(fill(pattern, vars)));
+}
+
+function itemMatches(bot, item, matcher) {
+  if (!item) return false;
+  if (Array.isArray(matcher)) return matcher.some((m) => itemMatches(bot, item, m));
+  if (typeof matcher === 'function') return matcher(item, bot);
+  const { name, info } = bot.itemInfo(item);
+  return textMatches(`${item.name}\n${name}\n${info}`, matcher);
+}
+
+const windowTitleMatches = (bot, pattern, vars) =>
+  !!bot.currentWindow && textMatches(bot.getWindowTitle(), pattern, vars);
+
+/** Slot ids of the bot's own inventory items that should be transferred. */
+function transferableSlots(bot, state) {
   const window = bot.currentWindow ?? bot.inventory;
-    for (
-      let i = window.inventoryStart;
-      i < window.inventoryEnd;
-      i++
-    ) {
-      const slot = window.slots[i];
-      if (slot && targets.itemFilter(slot)) return true;
+  const slots = [];
+  for (let i = window.inventoryStart; i < window.inventoryEnd; i++) {
+    if (window.slots[i] && state.itemFilter(window.slots[i])) slots.push(i);
+  }
+  return slots;
+}
+
+const hasTransferableItem = (bot, state) => transferableSlots(bot, state).length > 0;
+
+/** First container slot (in `slotIds`, default all) holding a matching item. */
+function findSlot(bot, matcher, slotIds) {
+  const window = bot.currentWindow;
+  slotIds ??= Array.from({ length: window.inventoryStart }, (_, i) => i);
+  return slotIds.find((i) => itemMatches(bot, window.slots[i], matcher)) ?? null;
+}
+
+const containerIsEmpty = (bot) =>
+  bot.currentWindow.slots.slice(0, bot.currentWindow.inventoryStart).every((s) => !s);
+
+/** Whether one of the first `slots` container slots (default all) is free. */
+const hasFreeContainerSlot = (bot, slots = bot.currentWindow.inventoryStart) =>
+  bot.currentWindow.slots.slice(0, slots).includes(null);
+
+/** { keyName: 'vote', amount: 10 } (or legacy "vote,10") -> ['vote', 10]; invalid entries are skipped. */
+function parseKeys(keys = []) {
+  return keys.flatMap((entry) => {
+    let [key, amount] = typeof entry === 'string' ? entry.split(',') : [entry?.keyName, entry?.amount];
+    const count = parseInt(String(amount ?? '').replace(/\D/g, ''), 10);
+    if (typeof key !== 'string' || !key.trim() || !(count > 0)) {
+      log(`Invalid key ${JSON.stringify(entry)}, use { keyName: 'vote', amount: 10 }`, 'error');
+      return [];
     }
-  return false;
-};
-
-function hasAcceptedTrade({bot, state}) {
-  const slot = bot.currentWindow.slots[state.__acceptSlot];
-  return slot && isGreenGlass(slot);
+    return [[key.trim().toLowerCase(), count]];
+  });
 }
 
-function isGreenGlass(slot) {
-  return (
-    slot.name === 'green_stained_glass_pane' ||
-    (slot.name.includes('glass') &&
-      (slot.metadata === 5 || slot.metadata === 13))
-  );
+async function closeWindow(bot, ticks = 5) {
+  if (bot.currentWindow) bot.closeWindow(bot.currentWindow);
+  await bot.waitForTicks(ticks);
 }
-
-function traderAccepted(bot, state) {
-  const slot = bot.currentWindow.slots[state.__acceptSlot + 6];
-  return slot && isGreenGlass(slot);
-}
-
-
 
 module.exports = {
-  hasTradeableItem,
-  traderAccepted,
-  isGreenGlass,
-  hasAcceptedTrade,
+  fill,
+  textMatches,
+  itemMatches,
+  windowTitleMatches,
+  transferableSlots,
+  hasTransferableItem,
+  findSlot,
+  containerIsEmpty,
+  hasFreeContainerSlot,
+  closeWindow,
+  parseKeys,
 };
-

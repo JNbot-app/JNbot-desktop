@@ -153,7 +153,8 @@ describe('backup plugin restore', () => {
     };
     const macros = { toJSON: jest.fn(() => '[]'), fromJSON: jest.fn(async () => undefined) };
     const CloudStorage = (await import('../../src/main/src/functions/storage/CloudStorage')).default;
-    const storage = new CloudStorage({ settings, macros } as any);
+    const shares = { state: () => ({ installed: {} }), restoreInstalled: jest.fn() };
+    const storage = new CloudStorage({ settings, macros, clientEvents: { shares } } as any);
     (storage as any).encrypt = jest.fn(async (payload) => payload);
 
     const backup = JSON.parse((await (storage as any).createBackupFile('unused')).content);

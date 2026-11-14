@@ -117,7 +117,7 @@ function toChatLine(message) {
   const events = [];
   const patched = [];
   markEvents(ChatMessage, message, undefined, events, patched, 0);
-  if (!events.length) return { message: message.toAnsi() };
+  if (!events.length) return { message: message.toAnsi?.() };
 
   let motd;
   try {

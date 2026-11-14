@@ -1,5 +1,5 @@
 import path from 'path';
-import type { CustomProfile } from '../../../common/profiles';
+import { mapProfileScripts, type CustomProfile } from '../../../common/profiles';
 import type { ProfileScript, ProfileScriptSource } from '../../../common/profileScripts';
 import { portableRoot } from './storage/portablePaths';
 
@@ -42,10 +42,5 @@ export function portableProfile(profile: CustomProfile): CustomProfile {
     }
     return { ...script, source };
   };
-  return {
-    ...profile,
-    scripts: profile.scripts?.map(convert),
-    profileUiAction: profile.profileUiAction && convert(profile.profileUiAction),
-    botExtensionAction: profile.botExtensionAction && convert(profile.botExtensionAction),
-  };
+  return mapProfileScripts(profile, convert);
 }

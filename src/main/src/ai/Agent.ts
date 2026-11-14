@@ -6,7 +6,6 @@ import type {
   AiPredictOptions,
   AiRunOptions,
   AiRunResult,
-  AiRequestOptions,
 } from '../../../common/types/pluginApi';
 import {
   aiError,
@@ -74,22 +73,6 @@ export default class Agent implements AiAgent {
     this.tools.clear();
   }
 
-  async embed(
-    text: string,
-    options: AiRequestOptions = {},
-  ): Promise<{ modelId: string; values: number[] }> {
-    this.check();
-    return this.client.embed(
-      text,
-      {
-        ...options,
-        model: this.model.variant,
-        modelUrl: this.model.builtIn ? undefined : this.model.url,
-      },
-      this.lifetime.signal,
-    );
-  }
-
   async predict(
     text: string,
     options: AiPredictOptions = {},
@@ -107,13 +90,12 @@ export default class Agent implements AiAgent {
         {
           kind: 'predict',
           modelUrl: this.model.builtIn ? undefined : this.model.url,
-          model: this.model.variant,
+          windowSize: this.model.windowSize,
           text,
           tools: [...tools.values()].map((tool) => tool.definition),
           revision,
           maxNewTokens,
           reasoning: options.reasoning ?? false,
-          toolFilterThreshold: options.toolFilterThreshold,
           requestId: scope.id,
           deadline: scope.deadline,
         },
@@ -150,13 +132,12 @@ export default class Agent implements AiAgent {
         {
           kind: 'predict',
           modelUrl: this.model.builtIn ? undefined : this.model.url,
-          model: this.model.variant,
+          windowSize: this.model.windowSize,
           text,
           tools: [...tools.values()].map((tool) => tool.definition),
           revision: result.toolsetRevision,
           maxNewTokens,
           reasoning: options.reasoning ?? false,
-          toolFilterThreshold: options.toolFilterThreshold,
           requestId: scope.id,
           deadline: scope.deadline,
         },

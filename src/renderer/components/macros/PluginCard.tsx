@@ -19,6 +19,7 @@ import {
 } from '../../redux/settings';
 import { usePluginActions } from './usePluginActions';
 import BannerHero from './BannerHero';
+import RunningControls from './RunningControls';
 
 const iconFor = (p: MacroInfo) =>
   p.scriptType === 'action' ? (
@@ -50,7 +51,7 @@ const PluginCard: React.FC<Props> = ({ plugin, viewMode, updateAvailable }) => {
   const onRun = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setBusy(true);
-    await actions.toggleRun(plugin);
+    await actions.run(plugin);
     setBusy(false);
   };
   const stop = (e: React.MouseEvent) => e.stopPropagation();
@@ -71,15 +72,25 @@ const PluginCard: React.FC<Props> = ({ plugin, viewMode, updateAvailable }) => {
       }}
       onClick={stop}
     >
-      <Tooltip title={running ? 'Stop' : 'Run'}>
-        <Button
-          size="small"
-          type="text"
-          loading={busy}
-          icon={running ? <CloseOutlined /> : <CaretRightOutlined />}
-          onClick={onRun}
+      {running ? (
+        <RunningControls
+          pluginId={plugin.pluginId}
+          name={plugin.name}
+          stopLabel=""
+          stopIcon={<CloseOutlined />}
+          buttonProps={{ size: 'small', type: 'text' }}
         />
-      </Tooltip>
+      ) : (
+        <Tooltip title="Run">
+          <Button
+            size="small"
+            type="text"
+            loading={busy}
+            icon={<CaretRightOutlined />}
+            onClick={onRun}
+          />
+        </Tooltip>
+      )}
       <Button
         size="small"
         type="text"

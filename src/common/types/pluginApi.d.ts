@@ -31,8 +31,8 @@ import type { IMcServer, McServerHandleSummary } from 'common/types/mcServerApi'
 
 import type {PluginOptionSchema } from './pluginOptions.d';
 
-type MacroLanguage = 'js' | 'ts' | 'components';
-type MacroScriptType = 'script' | 'action' | 'profileUi';
+type MacroLanguage = 'js' | 'ts' | 'components' | 'recording';
+type MacroScriptType = 'script' | 'action' | 'profileUi' | 'botExtension';
 
 type MacroInfo = {
   name: string;
@@ -203,6 +203,9 @@ export type StartPluginOptions = {
   name: string;
   /** A plugin's id, or `chain:<chainId>` to start one of the user's chains. */
   pluginId: string;
+  /** Run on this preset, by name or id ("default" for Default). Unset uses the selected preset. */
+  preset?: string;
+  /** Applied on top of the preset's options. */
   optionOverrides?: Record<string, any>;
   /* @deprecated */
   quitOnExit?: boolean | string;
@@ -214,6 +217,8 @@ export type PromptOptions = {
   placeholder?: string;
   defaultValue?: string;
   description?: string;
+  /** Image URL (e.g. a data URI) shown above the input */
+  image?: string;
 };
 
 export type NotificationOptions = {
@@ -240,6 +245,9 @@ export type ProgressUpdate = {
 export type ActionArgs = {
   actionId: string;
   bot?: Bot;
+  /** Run on this preset, by name or id ("default" for Default). Unset uses the selected preset. */
+  preset?: string;
+  /** Applied on top of the preset's options. */
   optionOverrides?: Record<string, unknown>;
   args: any[];
 };
@@ -284,14 +292,16 @@ export interface AiTool {
   handler?: (arguments_: AiJsonObject) => AiJson | void | Promise<AiJson | void>;
 }
 export interface AiRequestOptions { signal?: AbortSignal; timeoutMs?: number; }
-/** Select a built-in variant, optionally overriding its compatible HTTPS model download. */
-export interface AiModelOptions { model?: 'main' | 'flash'; modelUrl?: string; }
+export interface AiModelOptions {
+  /** Optional HTTPS download of a compatible model, replacing the built-in one. */
+  modelUrl?: string;
+  /** Tokens the model can look back on (1-8192). Defaults to 512; raise it for long prompts or large tool lists. */
+  windowSize?: number;
+}
 export interface AiPredictOptions extends AiRequestOptions {
   maxNewTokens?: number;
   /** Generate reasoning before tool calls. Defaults to false. */
   reasoning?: boolean;
-  /** Optional Gemma tool cosine threshold in [-1, 1]. Omit or null disables it. Main model only; flash bypasses filtering. */
-  toolFilterThreshold?: number | null;
 }
 export type AiRunOptions = AiPredictOptions;
 export interface AiCall { name: string; arguments: AiJsonObject; }
@@ -316,8 +326,6 @@ export interface AiRunResult {
   error?: AiError;
 }
 export interface AiAgent {
-  /** Embed text with this agent's Gemma model. Flash rejects with AI_UNSUPPORTED_FEATURE. */
-  embed(text: string, options?: AiRequestOptions): Promise<{ modelId: string; values: number[] }>;
   predict(text: string, options?: AiPredictOptions): Promise<AiPrediction>;
   run(text: string, options?: AiRunOptions): Promise<AiRunResult>;
   setTools(tools: AiTool[]): void;
@@ -329,12 +337,66 @@ export interface AiAgent {
 export interface AiAPI {
   createAgent(options?: AiModelOptions & { tools?: AiTool[] }): AiAgent;
   extract(text: string, schema: AiSchema, options?: AiPredictOptions & AiModelOptions): Promise<AiJsonObject | null>;
-  embed(text: string, options?: AiRequestOptions & AiModelOptions): Promise<{ modelId: string; values: number[] }>;
+}
+
+/** A function the AI may call while answering, e.g. to read the bot's state. */
+export interface LlmTool<Input = any> {
+  name: string;
+  description: string;
+  /** JSON Schema of the input object. Omit for a tool without input. */
+  parameters?: AiSchema;
+  /** Its return value (anything JSON-serializable) is shown to the AI. */
+  run(input: Input): unknown | Promise<unknown>;
+}
+export interface LlmAskOptions {
+  /** Instructions, e.g. a persona: "You are Steve, a grumpy miner. Keep replies under 100 characters." */
+  system?: string;
+  /** Functions the AI may call before it answers. */
+  tools?: LlmTool[];
+  maxTokens?: number;
+}
+export interface LlmChatOptions extends LlmAskOptions {
+  /** How many messages the chat remembers. Defaults to 20. */
+  memory?: number;
+}
+export interface LlmChat {
+  /** Send a message and get the reply. Replies are made one at a time, in order. */
+  send(message: string): Promise<string>;
+  /** The remembered conversation. */
+  readonly history: { role: 'user' | 'assistant'; content: string }[];
+  clear(): void;
+}
+/**
+ * The AI provider the user set up in Settings (Claude, Gemini, OpenAI,
+ * OpenRouter or a local Ollama). Most users have none: check `isAvailable()`.
+ *
+ * @example
+ * // A chat bot that answers when its name is mentioned.
+ * const chat = script.llm.createChat({
+ *   system: `You are ${bot.username}, a friendly player on a Minecraft server. Reply in one short line.`,
+ *   tools: [{ name: 'health', description: 'Your health and food.', run: () => ({ health: bot.health, food: bot.food }) }],
+ * });
+ * bot.on('chat', async (username, message) => {
+ *   if (username === bot.username || !message.includes(bot.username)) return;
+ *   bot.chat(await chat.send(`${username}: ${message}`));
+ * });
+ */
+export interface LlmAPI {
+  /** True when the user added an AI provider in Settings. */
+  isAvailable(): Promise<boolean>;
+  /** One question, one answer. */
+  ask(prompt: string, options?: LlmAskOptions): Promise<string>;
+  /** Like `ask`, but the answer is parsed JSON. Describe the shape you want in the prompt. */
+  askJson<T = any>(prompt: string, options?: LlmAskOptions): Promise<T>;
+  /** A conversation that remembers earlier messages. */
+  createChat(options?: LlmChatOptions): LlmChat;
 }
 
 export interface ScriptAPI {
   /** Local inference. Agents start with no tools and do not load a model until used. */
   ai: AiAPI;
+  /** Cloud AI through the user's own provider (see {@link LlmAPI}); unavailable for most users. */
+  llm: LlmAPI;
   stop(): void;
   restart(): Promise<never>;
   /**
@@ -436,6 +498,13 @@ export interface ScriptAPI {
 
   startAction(options: ActionArgs): Promise<any>;
   getActiveScripts(): Promise<ActiveScriptsType>;
+  /**
+   * Details of an installed plugin, profile script or chain (`chain:<id>`),
+   * such as the ids a `scriptSelect` option stores. Resolves to `null` when
+   * the id is unknown or blocked on this profile. Chains only have `pluginId`,
+   * `name`, `description` and `scriptType`.
+   */
+  getPluginInfo(pluginId: string): Promise<MacroInfo | null>;
   /** Returns the live Minecraft-bridge client for the given id. */
   getMcClient(clientId: string): IMcClient;
   getMcClients(): Promise<{ username: string; clientId: string }[]>;
@@ -672,6 +741,15 @@ export interface ConsoleAPI {
 
 export type Awaitable<T> = T | Promise<T>;
 
+/**
+ * Enters `gamemode` on servers the built-in join flow does not fit. Resolve
+ * once the bot is there; return `false` or throw when it could not get there.
+ */
+export type JoinHandler = (gamemode: string, bot: Bot) => Awaitable<boolean | void>;
+
+/** Reads the bot's current gamemode (scoreboard, tab list, world, ...); null when unknown. */
+export type GamemodeDetector = (bot: Bot) => string | null | undefined;
+
 export interface BotMachine<S extends object = Record<string, unknown>>
   extends BotMachineControls {
   bot: Bot | null;
@@ -680,6 +758,19 @@ export interface BotMachine<S extends object = Record<string, unknown>>
   addTask(task: Task<S>): BotMachine<S>;
   addTasks(tasks: Task<S>[]): BotMachine<S>;
   once(when: Guard<S>, run: Action<S>, name?: string): BotMachine<S>;
+  /**
+   * Change another plugin's tasks by name (e.g. from `chain.patch`). Each
+   * throws when there is no task with that name.
+   */
+  insertBefore(name: string, task: Task<S>): BotMachine<S>;
+  insertAfter(name: string, task: Task<S>): BotMachine<S>;
+  replaceTask(name: string, task: Task<S>): BotMachine<S>;
+  removeTask(name: string): BotMachine<S>;
+  /** Run `wrap` instead of the task; call `run(ctx)` inside it to run the original. */
+  wrapTask(
+    name: string,
+    wrap: (ctx: TaskContext<S>, run: Action<S>) => Awaitable<void>,
+  ): BotMachine<S>;
   setState(patch: Partial<S>): BotMachine<S>;
   getState(): S;
   setDelay(ms: number): BotMachine<S>;
@@ -696,6 +787,78 @@ export interface BotMachine<S extends object = Record<string, unknown>>
   onError(
     listener: (error: unknown, task: Task<S>, context: TaskContext<S>) => void,
   ): BotMachine<S>;
+}
+
+/** A chain step, as seen through the `chain` API. */
+export interface ChainStepInfo {
+  id: string;
+  name: string;
+  /** Plugin id of the step's action. */
+  scriptId: string;
+  /** The step's option overrides, including those from `chain.setOptions`. */
+  options: Record<string, unknown>;
+  /** False when skipped with `chain.disableStep`; `chain.runStep` still runs it. */
+  enabled: boolean;
+}
+
+/**
+ * The chain a plugin runs in: `require('JNbot').chain`, or `null` outside a
+ * chain. A chain's setup code gets it as `chain`. Steps are referred to by id,
+ * plugin id (the first step running that plugin) or name. Prefer the plugin id: it
+ * keeps working when a step or plugin is renamed. Changes (options, patches, disabled or added steps) last until the
+ * chain moves on to the next alt.
+ *
+ * @example
+ * // Setup code: Kit Collector keeps its kits, and Auto Salvage makes room
+ * // whenever its inventory fills up, after which Kit Collector carries on.
+ * chain.setOptions('Kit Collector', { itemTransfer: 'keep' });
+ * chain.patch('Kit Collector', (machine) => {
+ *   machine.wrapTask('Depositing items', async (ctx, run) => {
+ *     if (ctx.bot.inventory.emptySlotCount() < 8) await chain.runStep('Auto Salvage');
+ *     await run(ctx);
+ *   });
+ * });
+ */
+export interface ChainAPI {
+  readonly id: string;
+  readonly name: string;
+  /** The bot the chain runs on right now. */
+  readonly bot: Bot;
+  /** Values returned by earlier steps (plus `alt`), filled into `{key}` placeholders. */
+  readonly data: Record<string, unknown>;
+  /** Every step, in order. */
+  readonly steps: ChainStepInfo[];
+  /** The step running right now (the innermost one when a step runs another). */
+  readonly current: ChainStepInfo | null;
+  /**
+   * Run a step on the chain's bot, exactly as the chain would: with its option
+   * overrides and `setOptions`, then `options` on top. Resolves false when it fails.
+   */
+  runStep(step: string, options?: Record<string, unknown>): Promise<boolean>;
+  /**
+   * Always run a step with these options, on top of its overrides (e.g. to
+   * make sure Kit Collector keeps its kits). Merges with earlier calls.
+   */
+  setOptions(step: string, options: Record<string, unknown>): void;
+  /**
+   * Change the tasks of each `BotMachine` the step starts, right before it
+   * starts. Throwing (e.g. a task name that does not exist) fails the step.
+   */
+  patch(step: string, patch: (machine: BotMachine<any>) => void): void;
+  /** Skip a step when the chain gets to it. */
+  disableStep(step: string): void;
+  enableStep(step: string): void;
+  /** Add a step after `after` (default: at the end). */
+  addStep(
+    step: { scriptId: string; name?: string; options?: Record<string, unknown> },
+    after?: string,
+  ): ChainStepInfo;
+  /** After the current step, go to this step instead. */
+  goTo(step: string): void;
+  /** After the current step, move on to the next alt. */
+  skipAlt(): void;
+  /** After the current step, stop the chain. */
+  stop(): void;
 }
 
 export interface TaskContext<S extends object = Record<string, unknown>> {
@@ -796,20 +959,155 @@ export interface BotMachineOptions<S extends object = Record<string, unknown>> {
  * as `any`.
  * ======================================================================== */
 
+/** Transfer mode for `bot.transfer`; `'keep'` does nothing (handy for a mode setting). */
+export type TransferMode = 'keep' | 'trade' | 'gift' | 'window' | 'trash';
+
+/**
+ * A `bot.items()` filter or query. A list holding filter objects matches when any entry matches,
+ * e.g. `['kit', { type: 'clock' }, (item) => item.count < 5]`; a list of only strings is a name list.
+ */
+export type TransferItemFilter = ItemQueryFilter | ItemQuery | (ItemQueryFilter | ItemQuery)[];
+
+/** A crate key to send with a trade or gift. */
+export interface TransferKey {
+  /** Key type as shown in game, e.g. `'vote'`, `'rare'`. */
+  keyName: string;
+  amount: number;
+}
+
+export interface TransferOptions {
+  /** Inventory items to transfer, as a `bot.items()` filter (or a list of them, any may match). Default: every item. */
+  items?: TransferItemFilter;
+  /** Inventory items to never transfer, as a `bot.items()` filter (or a list of them, any may match). */
+  exclude?: TransferItemFilter;
+  /** trade/gift: the receiving player. Asked for when missing. */
+  username?: string;
+  /** window: the command that opens the window, e.g. `'/ec'`. */
+  command?: string;
+  /** trade/gift: crate keys to send along. */
+  keys?: TransferKey[];
+  /** Send the `keys` even when there are no items to transfer. @default true */
+  keysWithoutItems?: boolean;
+  /** Give up after this many ms; the result then has `completed: false`. */
+  timeout?: number | null;
+  /** window: shift-click items in instead of dragging them. @default true */
+  shiftClick?: boolean;
+}
+
+/** What a transfer moved out of the inventory. */
+export interface TransferResult {
+  /** False when the transfer hit its `timeout`. */
+  completed: boolean;
+  /** Items that left the inventory, per item id. */
+  items: { name: string; displayName: string; count: number }[];
+  /** Total number of items that left the inventory. */
+  count: number;
+}
+
+/** BotMachine state of a transfer; custom modes read it in their tasks. */
+export interface TransferState {
+  /** The transferable items in the player inventory (live; slots match the open window). */
+  items: ItemQuery;
+  itemFilter: (item: Item) => boolean;
+  keys: TransferKey[];
+  /** Every option passed to `bot.transfer`, also custom ones. */
+  options: TransferOptions & Record<string, unknown>;
+  /** The mode's target, under its `target` name (e.g. `state.username`). */
+  [target: string]: unknown;
+}
+
+export interface TransferModeDefinition {
+  /** Name of the required parameter, also accepted as the plain second argument. `'username'` is asked for when missing; `'command'` must start with `/`. */
+  target?: string;
+  /** Whether the mode accepts `keys`. @default false */
+  keys?: boolean;
+  /** The BotMachine tasks; they must call `machine.finish()` when done. */
+  tasks: Task<TransferState>[] | ((state: TransferState) => Task<TransferState>[]);
+}
+
+/** The second argument is the mode's target (username, command, ...) or the options. */
+export interface TransferCall {
+  (mode: 'trade' | 'gift', username?: string, options?: TransferOptions): Promise<TransferResult>;
+  (mode: 'window', command: string, options?: TransferOptions): Promise<TransferResult>;
+  (mode: TransferMode, options?: TransferOptions): Promise<TransferResult>;
+  /** A mode added with `bot.transfer.addMode`. */
+  (mode: string, target?: unknown, options?: TransferOptions & Record<string, unknown>): Promise<TransferResult>;
+}
+
+/**
+ * Transfer inventory items. Resolves with what left the inventory.
+ *
+ * @example
+ *   await bot.transfer('gift', 'Zola');                                  // everything
+ *   await bot.transfer('trade', 'Zola', { items: { type: 'diamond' } });
+ *   await bot.transfer('gift', 'Zola', { keys: [{ keyName: 'vote', amount: 3 }] });
+ *   await bot.transfer('window', '/ec', { exclude: { lore: 'soulbound' } });
+ *   await bot.transfer('trash', { exclude: ['kit', { type: 'clock' }] });
+ *   await bot.items({ lore: 'rare' }).transfer('gift', 'Zola');         // only matching items
+ *   const { count } = await bot.transfer('trash');                      // number of items trashed
+ */
+export interface TransferFn extends TransferCall {
+  trade(username?: string, options?: TransferOptions): Promise<TransferResult>;
+  gift(username?: string, options?: TransferOptions): Promise<TransferResult>;
+  window(command: string, options?: TransferOptions): Promise<TransferResult>;
+  trash(options?: TransferOptions): Promise<TransferResult>;
+  /** Every mode this bot supports, including added ones. */
+  readonly modes: string[];
+  /**
+   * Add (or replace) a mode for this bot, e.g. from the server's bot extension.
+   * It also gets a shortcut: `bot.transfer.<name>(target, options)`.
+   *
+   * @example
+   *   bot.transfer.addMode('auction', {
+   *     target: 'price',
+   *     tasks: [
+   *       { name: 'Done', when: ({ state }) => !state.items.has(), run: ({ machine }) => machine.finish() },
+   *       {
+   *         name: 'Listing item',
+   *         when: () => true,
+   *         run: async ({ bot, state }) => {
+   *           await bot.equip(state.items.first(), 'hand');
+   *           bot.chat(`/ah sell ${state.price}`);
+   *           await bot.waitForTicks(20);
+   *         },
+   *       },
+   *     ],
+   *   });
+   *   await bot.items('diamond').transfer('auction', 500);
+   */
+  addMode(name: string, definition: TransferModeDefinition): void;
+  /** This bot's server-specific transfer config; see {@link TransferConfig}. */
+  config: TransferConfig;
+  /**
+   * Deep-merge overrides into this bot's transfer config. Call it from the
+   * server's bot extension when a server changes its trade/gift/trash GUI.
+   *
+   * @example
+   *   bot.transfer.configure({
+   *     gift: { command: '/send {username}', confirmButton: ['lime_dye', 'confirm'] },
+   *     trash: { windowTitle: ['bin'] },
+   *   });
+   */
+  configure: (overrides: TransferConfigOverrides) => TransferConfig;
+  /** Restore the built-in defaults. */
+  resetConfig: () => TransferConfig;
+}
+
+/** @deprecated Use {@link TransferMode} with `bot.transfer`. */
 export type TransferItemMode =
   | 'keep'
   | 'trade'
   | 'gift'
   | 'window'
-  | 'tradeWithKeys'
   | 'trash'
   | 0
   | 1
   | 2
   | 3
-  | 4
+  | 4 // legacy: trade with `sendKeys: true`
   | 5;
 
+/** @deprecated Use {@link TransferOptions} with `bot.transfer`. */
 export interface TransferItemsOptions {
   username?: string;
   command?: string;
@@ -817,19 +1115,21 @@ export interface TransferItemsOptions {
   filter?: (string | number)[];
   itemFilter?: (item: Item) => boolean;
   keep?: boolean; // whether to pass/keep the item if not filtered
-  keys?: string[]; // How many items it should click on each key ("<keyType>,<amount>")
-  forceTradeKeys?: boolean; // Whether to force trade keys even when no other items are in player inventory
+  sendKeys?: boolean; // Also send crate keys (trade/gift only). @default false
+  keys?: string[]; // Keys to send with `sendKeys` ("<keyType>,<amount>")
+  forceKeys?: boolean; // Send the keys even when no other items are in the player inventory. @default true
   timeout?: number | null;
   shiftClick?: boolean; // Whether to shift click items into window (windowBehaviour only)
 }
 
+/** @deprecated Use {@link TransferFn} (`bot.transfer`). */
 export interface TransferItemsFn {
   (
     mode: 'keep' | 0,
     options?: TransferItemsOptions,
   ): Promise<void>;
   (
-    mode: 'trade' | 'gift' | 'window' | 'tradeWithKeys' | 'trash' | 1 | 2 | 3 | 4 | 5,
+    mode: 'trade' | 'gift' | 'window' | 'trash' | 1 | 2 | 3 | 4 | 5,
     options?: TransferItemsOptions,
   ): Promise<boolean>;
   (
@@ -839,8 +1139,143 @@ export interface TransferItemsFn {
   trade: (options?: TransferItemsOptions) => Promise<boolean>;
   gift: (options?: TransferItemsOptions) => Promise<boolean>;
   window: (options?: TransferItemsOptions) => Promise<boolean>;
-  tradeWithKeys: (options?: TransferItemsOptions) => Promise<boolean>;
   trash: (options?: TransferItemsOptions) => Promise<boolean>;
+  /** Same as `bot.transfer.config`. */
+  config: TransferConfig;
+  configure: TransferFn['configure'];
+  resetConfig: TransferFn['resetConfig'];
+}
+
+/**
+ * Text pattern, matched case-insensitively with color codes stripped. Strings
+ * may contain `{username}`. Pass a list to accept several titles/texts.
+ */
+export type TextMatcher = string | RegExp | ((text: string) => boolean) | TextMatcher[];
+/** Like {@link TextMatcher}, checked against the item id, display name and lore. */
+export type ItemMatcher = string | RegExp | ((item: Item, bot: Bot) => boolean) | ItemMatcher[];
+
+export interface TransferConfig {
+  trade: {
+    /** @default '/trade {username}' */
+    command: string;
+    /** @default ['{username}'] */
+    windowTitle: TextMatcher;
+    /** Your accept button, searched on your side of the window. @default 'glass' */
+    acceptButton: ItemMatcher;
+    /** Fallback accept slot. @default 45 */
+    acceptSlot: number;
+    /** Accept button state meaning that side accepted. @default green/lime glass */
+    acceptedButton: ItemMatcher;
+    /** Columns (from the left) that form your side. @default 4 */
+    offerColumns: number;
+    /** Slots from your accept button to the partner's. @default 6 */
+    partnerAcceptOffset: number;
+    /** When sending keys: button that opens / cycles the key page. */
+    keyButton: ItemMatcher;
+    /** When sending keys: fallback key button slot. @default 36 */
+    keySlot: number;
+    /** @default 'tripwire_hook' */
+    keyItem: ItemMatcher;
+    /** When sending keys: fallback accept slot. @default 27 */
+    keyAcceptSlot: number;
+  };
+  gift: {
+    /** @default '/gift {username}' */
+    command: string;
+    /** @default ['{username}'] */
+    windowTitle: TextMatcher;
+    /** @default ['are you sure'] */
+    confirmWindowTitle: TextMatcher;
+    confirmButton: ItemMatcher;
+    /** Fallback confirm slot. @default 11 */
+    confirmSlot: number;
+    /** @default ['select items to send'] */
+    depositWindowTitle: TextMatcher;
+    /** When sending keys: item name that opens the key page. @default 'send crate keys' */
+    keyButton: string | RegExp | (string | RegExp)[];
+    /** Key page: lore with the number of keys you own; the first group captures the number. @default /keys own(?:ed)?:?\s*(\d+)/i */
+    keysOwnedLore: RegExp;
+    /** Key page: lore with the number of keys already added to the gift. @default /keys being sent:?\s*(\d+)/i */
+    keysSendingLore: RegExp;
+  };
+  trash: {
+    /** @default '/trash' */
+    command: string;
+    /** @default ['trash', 'disposal'] */
+    windowTitle: TextMatcher;
+    /** Searched in the bottom row once the window is full. @default 'delete all items' */
+    confirmButton: ItemMatcher;
+  };
+  /** Other names a key type shows up as. @default { vote: ['voting'] } */
+  keyAliases: Record<string, string[]>;
+}
+
+export type TransferConfigOverrides = {
+  [K in keyof TransferConfig]?: Partial<TransferConfig[K]>;
+};
+
+/**
+ * A string matches as a case-insensitive substring; RegExp and functions get the color-stripped text.
+ * An array matches when any entry matches: `['kit', 'confirm']` matches "Starters Kit" and "Confirmation of trade".
+ */
+export type ItemTextFilter =
+  | string
+  | RegExp
+  | ((text: string) => boolean)
+  | (string | RegExp | ((text: string) => boolean))[];
+
+/** `bot.items()` filter: a name filter, an item predicate, or an object (all given fields must match). */
+export type ItemQueryFilter =
+  | ItemTextFilter
+  | ((item: Item) => boolean)
+  | {
+      /** Custom name, or the vanilla name (e.g. "Golden Apple") when the item isn't renamed. */
+      name?: ItemTextFilter;
+      /** Lore, lines joined with `\n`. */
+      lore?: ItemTextFilter;
+      /** Minecraft item id(s), e.g. `'diamond_sword'`. */
+      type?: string | string[];
+      where?: (item: Item) => boolean;
+      /** Match strings case-sensitively (colors are still stripped). */
+      caseSensitive?: boolean;
+    };
+
+/** Lazy, chainable item search. Scope methods return the same query; iterate with `for…of`. */
+export interface ItemQuery extends Iterable<Item> {
+  /** Container slots, then the player inventory (default). Without a window: only the inventory. */
+  any(): ItemQuery;
+  /** Only the top part of the open window; nothing when no window is open. */
+  container(): ItemQuery;
+  /** Only the player inventory, whether or not a window is open. */
+  inventory(): ItemQuery;
+  /** Only the 9 hotbar slots. */
+  hotbar(): ItemQuery;
+  /** Container rows (0-based, 9 slots each). With `cols`, only slots in both. */
+  rows(...rows: number[]): ItemQuery;
+  /** Container columns (0-8). */
+  cols(...cols: number[]): ItemQuery;
+  /** Exact window slot indexes. */
+  slots(...slots: number[]): ItemQuery;
+  first(): Item | null;
+  all(): Item[];
+  has(): boolean;
+  /** Sum of `item.count` over all matches. */
+  count(): number;
+  /** Clicks the first match and returns it, or null when nothing matched. */
+  click(mouseButton?: number, mode?: number): Promise<Item | null>;
+  /** Resolves with the first match as soon as it appears (also in a window opened later), or null after `ticks` (default 100). */
+  wait(ticks?: number): Promise<Item | null>;
+  /** Whether `item` passes this query's name/lore/type/where filters (the scope is ignored). */
+  matches(item: Item | null): boolean;
+  /**
+   * Transfer the matching inventory items; same as `bot.transfer` with `items` set to this query.
+   * Only the filters count: items always come from the player inventory.
+   *
+   * @example
+   *   await bot.items({ type: 'diamond' }).transfer('trade', 'Zola');
+   *   await bot.items('kit').transfer('trash');
+   */
+  transfer: TransferCall;
 }
 
 export type BotPluginExtensions = {
@@ -848,8 +1283,34 @@ export type BotPluginExtensions = {
   mainVersion: number;
   join: (gamemode: string, options?: Record<string, unknown>) => Promise<void>;
   isOnline: () => boolean;
+  /** Current gamemode from the detector, else the last gamemode a join confirmed. */
   getGamemode: () => string | null;
-  itemInfo(item: Item | null): { name: string; info: string };
+  /**
+   * Replace how this bot enters a gamemode; used by `bot.join`, `BotMachine`
+   * and `Bot.join({ gamemode })`. Set it from the profile's on-join action,
+   * before any `await`. Pass `null` to restore the built-in flow.
+   *
+   * @example
+   *   bot.setJoinHandler(async (gamemode, bot) => {
+   *     bot.chat(`/warp ${gamemode}`);
+   *     await bot.waitForTicks(40);
+   *   });
+   */
+  setJoinHandler: (handler: JoinHandler | null) => void;
+  /**
+   * Tell `bot.getGamemode()` how to read the current gamemode on this server.
+   *
+   * @example
+   *   bot.setGamemodeDetector((bot) => bot.scoreboard.sidebar?.title ?? null);
+   */
+  setGamemodeDetector: (detector: GamemodeDetector | null) => void;
+  itemInfo: {
+    (item: Item | null): { name: string; info: string };
+    /** Only the custom name (cheaper than the full call). */
+    name(item: Item | null): string;
+    /** Only the lore, lines joined with `\n`. */
+    lore(item: Item | null): string;
+  };
   login: (password?: string) => Promise<void>; // Only works if you call this in the start of bot
   /**
    * Send a command that opens a GUI and wait for the matching window. Prefer
@@ -865,7 +1326,26 @@ export type BotPluginExtensions = {
       signal?: { aborted: boolean };
     },
   ) => Promise<unknown | null>;
+  /** Move inventory items by trade, gift, a server window or trash; see {@link TransferFn}. */
+  transfer: TransferFn;
+  /** @deprecated Use `bot.transfer(mode, target, options)` or `bot.items(...).transfer(...)`. */
   transferItems: TransferItemsFn;
+  /**
+   * Search items by name, lore or type in the open window and/or the player inventory.
+   * Strings match as a case-insensitive substring after stripping `§` color codes and
+   * small caps (`'kit'` matches `§6ᴋɪᴛ Warrior`). Results are lazy and plain `Item`s.
+   *
+   * @example
+   *   const kit = bot.items('kit').first();                 // window first, then inventory
+   *   const button = bot.items(['confirm', 'accept']).first(); // any of these
+   *   await bot.items({ name: 'shard', lore: 'buy' }).container().click();
+   *   const diamonds = bot.items({ type: 'diamond' }).inventory().count();
+   *   const confirm = await bot.items('Confirm').wait(40);  // null after 40 ticks
+   */
+  items: (query?: ItemQueryFilter) => ItemQuery;
+  /** Strips color codes and small caps and lowercases, e.g. `'§lᴋɪᴛ'` → `'kit'`. */
+  cleanText: (text: string) => string;
+  /** @deprecated Use `bot.items(query)`, e.g. `bot.items('Diamond').first()`. */
   findWindowSlots: (
     filter: { name?: string; lore?: string } | string,
     options?: {

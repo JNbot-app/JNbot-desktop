@@ -9,6 +9,7 @@ import RecipeCompiler from './RecipeCompiler';
 import RecipeExecutionError from './RecipeExecutionError';
 import RecipeRuntime from './RecipeRuntime';
 import { resolvePluginOptions } from './resolvePluginOptions';
+import { withPreset } from '../../../../../common/pluginPresets';
 import { startBotAutomation } from '../automation';
 import type { AutomationDocument } from '../../../../../common/automation';
 
@@ -62,7 +63,7 @@ async function runRecording(args: RunnerArgs, callOptions?: JSCallOptions) {
     'absolute';
   const inputs = {
     ...scriptOptions,
-    ...args.optionOverrides,
+    ...withPreset(args.optionOverrides ?? {}),
     ...(callOptions?.args?.[1] && typeof callOptions.args[1] === 'object'
       ? callOptions.args[1]
       : {}),

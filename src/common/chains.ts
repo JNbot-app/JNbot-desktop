@@ -4,6 +4,7 @@
  */
 
 import { reminderDueAt, type Reminder } from './cooldowns';
+import type { PluginOptionSchema } from './types/pluginOptions.d';
 
 /** What a chain does after a step. `step:<id>` jumps to that step. */
 export type ChainNext =
@@ -46,6 +47,16 @@ export type Chain = {
   id: string;
   /** Ordered list of steps to run for each alt. */
   chains: ChainStep[];
+  /**
+   * JavaScript run for each alt before its steps, with `chain` (the chain
+   * API), `bot` and `options` in scope — e.g. to set step options or patch a step.
+   */
+  setup?: string;
+  /**
+   * The chain's own options, defined like a plugin's `config`. Their values
+   * are stored with the run settings and given to the setup code as `options`.
+   */
+  config?: PluginOptionSchema;
   /** Display name, mirrored from {@link ChainOptions.name} for the chain list. */
   name?: string;
   /** Legacy nested run settings; new chains store them in `settings.scripts[id]`. */
@@ -117,3 +128,39 @@ export function fillPlaceholders(
     ]),
   );
 }
+
+/**
+ * Starter setup code for a chain, using its own step names so it reads as an
+ * example of this chain. Every line is a comment, so it changes nothing.
+ */
+export function defaultChainSetup(chain: Pick<Chain, 'chains'>): string {
+  const quote = (text: string) => `'${text.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  const [first, second] = [chain.chains[0]?.name ?? 'Step name', chain.chains[1]?.name ?? 'Another step'].map(quote);
+  return `// Setup code: runs for every alt before the steps.
+// \`chain\` controls this chain and \`bot\` is the alt's bot. Steps are found by name.
+// Remove the // in front of a line to use it.
+// Docs: https://jnbot.netlify.app/docs/plugins/code-based/script#chains
+// \`options\` holds the values of this chain's own options (gear button above).
+
+// Always run a step with some options, whatever the step's own settings say.
+// Use the option ids of the step's plugin:
+// chain.setOptions(${first}, { optionId: 'value' });
+
+// Skip a step, or only run it from here with chain.runStep:
+// chain.disableStep(${second});
+
+// Change how a step works by name of its task (see the plugin's code), e.g. run
+// another step whenever its inventory is full, then let it carry on:
+// chain.patch(${first}, (machine) => {
+//   machine.wrapTask('Task name', async (ctx, run) => {
+//     if (ctx.bot.inventory.emptySlotCount() < 8) await chain.runStep(${second});
+//     await run(ctx);
+//   });
+// });
+`;
+}
+
+/** Setup code worth storing: none when it is empty or still the starter code. */
+export const chainSetupToSave = (chain: Pick<Chain, 'chains'>, code: string): string | undefined =>
+  code.trim() && code.trim() !== defaultChainSetup(chain).trim() ? code : undefined;
+

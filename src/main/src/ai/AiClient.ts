@@ -3,7 +3,6 @@ import type {
   AiAgent,
   AiTool,
   AiPredictOptions,
-  AiRequestOptions,
   AiJsonObject,
   AiSchema,
   AiModelOptions,
@@ -24,13 +23,8 @@ export default class AiClient implements AiAPI {
     this.operation = operation;
   }
 
-  private model(options: AiModelOptions, embeddings = false): AiModel {
-    const model = resolveModel(options.modelUrl, options.model);
-    if (embeddings && model.variant === 'flash')
-      throw aiError(
-        'AI_UNSUPPORTED_FEATURE',
-        'The flash model does not support embeddings.',
-      );
+  private model(options: AiModelOptions): AiModel {
+    const model = resolveModel(options.modelUrl, options.windowSize);
     if (!this.networkAllowed && !model.builtIn)
       throw aiError(
         'AI_INVALID_INPUT',
@@ -55,12 +49,11 @@ export default class AiClient implements AiAPI {
     const response = await this.once(options, (scope) => ({
       kind: 'extract',
       modelUrl: model.builtIn ? undefined : model.url,
-      model: model.variant,
+      windowSize: model.windowSize,
       text,
       schema: captured,
       maxNewTokens,
       reasoning: options.reasoning ?? false,
-      toolFilterThreshold: options.toolFilterThreshold,
       requestId: scope.id,
       deadline: scope.deadline,
     }));
@@ -70,37 +63,12 @@ export default class AiClient implements AiAPI {
     return response.value;
   }
 
-  async embed(
-    text: string,
-    options: AiRequestOptions & AiModelOptions = {},
-    lifetime: AbortSignal | undefined = undefined,
-  ): Promise<{ modelId: string; values: number[] }> {
-    input(text, options);
-    const model = this.model(options, true);
-    const response = await this.once(
-      options,
-      (scope) => ({
-        kind: 'embed',
-        modelUrl: model.builtIn ? undefined : model.url,
-        model: model.variant,
-        text,
-        requestId: scope.id,
-        deadline: scope.deadline,
-      }),
-      lifetime,
-    );
-    if (response.kind !== 'embedding')
-      throw aiError('AI_INVALID_OUTPUT', 'Expected an embedding response.');
-    return { modelId: response.modelId, values: response.values };
-  }
-
   private async once(
-    options: AiRequestOptions,
+    options: AiPredictOptions,
     request: (scope: RequestScope) => AiRequest,
-    lifetime?: AbortSignal,
   ): Promise<AiResponse> {
     checkContext();
-    const scope = new RequestScope(options, lifetime);
+    const scope = new RequestScope(options);
     try {
       return await this.send(request(scope), scope);
     } finally {

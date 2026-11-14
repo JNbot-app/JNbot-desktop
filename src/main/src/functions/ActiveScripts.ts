@@ -91,6 +91,7 @@ class ActiveScripts_ extends EventEmitter {
         address: s.messagingAddress,
         instanceId: s.instanceId,
         controls: s.controls,
+        presetName: s.presetName,
       };
     });
     obj = {

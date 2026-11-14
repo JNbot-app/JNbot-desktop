@@ -4,9 +4,14 @@ const { Vec3 } = require('vec3');
 const nbt = require('prismarine-nbt');
 const { toChatLine } = require('./extensions/chatParts');
 const { mapToPng, MAP_SIZE } = require('./mapImage');
+const { prompt: askUser } = require('../compiler/scriptApi');
 
 const MAX_MAPS = 64;
 const MAP_PUBLISH_MS = 250;
+// Map captchas hand the bot a map right after joining; maps held later are treated as normal items
+const CAPTCHA_WINDOW_MS = 60_000;
+// Wait for the map to finish drawing before showing it
+const CAPTCHA_SETTLE_MS = 1000;
 // Vanilla closes the sign editor beyond the block interaction range (4.5) + 4
 const SIGN_EDIT_RANGE = 8.5;
 const EYE_HEIGHT = 1.62;
@@ -387,12 +392,56 @@ function attachScreenPrompts(bot, publish) {
         (y + row) * MAP_SIZE + x,
       );
     entry.version++;
+    if (id !== heldMapId()) return;
+    checkCaptcha();
     // Maps in view update every few ticks; batch them
-    if (id === heldMapId() && !mapTimer)
+    if (!mapTimer)
       mapTimer = setTimeout(() => {
         mapTimer = null;
         publish();
       }, MAP_PUBLISH_MS);
+  }
+
+  // -------------------- Map captcha ------------------ \\
+  let spawnedAt = Date.now();
+  let captchaTimer = null;
+  let captchaAsked = null; // `${id}:${version}` of the last map shown; a redrawn map is asked again
+  let captchaPending = false;
+
+  function onSpawn() {
+    spawnedAt = Date.now();
+  }
+
+  /** Asks the user to solve a map the bot holds shortly after joining (opt-in setting). */
+  function checkCaptcha() {
+    if (!global.appSettings?.captcha_prompt || captchaPending) return;
+    if (Date.now() - spawnedAt > CAPTCHA_WINDOW_MS || !maps.has(heldMapId()))
+      return;
+    clearTimeout(captchaTimer);
+    captchaTimer = setTimeout(askCaptcha, CAPTCHA_SETTLE_MS);
+  }
+
+  async function askCaptcha() {
+    const id = heldMapId();
+    const entry = maps.get(id);
+    const key = `${id}:${entry?.version}`;
+    if (!entry || captchaPending || captchaAsked === key) return;
+    captchaAsked = key;
+    captchaPending = true;
+    try {
+      const { response } = await askUser({
+        title: `Captcha for ${bot.username}`,
+        description: 'Type the code shown on the map. It is sent in chat.',
+        placeholder: 'Code',
+        image: getMap(),
+      });
+      const answer = String(response ?? '').trim();
+      if (answer) bot.chat(answer);
+    } catch {
+      // Cancelled; ask again only when the server draws a new map
+    } finally {
+      captchaPending = false;
+    }
   }
 
   /** PNG data URI of the map the bot is holding, or null. Encoded once per map update. */
@@ -432,6 +481,8 @@ function attachScreenPrompts(bot, publish) {
   bot.on('windowOpen', clear);
   bot.on('respawn', clear);
   bot.on('physicsTickEnd', checkSign);
+  bot.on('spawn', onSpawn);
+  bot.on('heldItemChanged', checkCaptcha);
 
   function dispose() {
     for (const [packet, listener] of Object.entries(listeners))
@@ -439,7 +490,10 @@ function attachScreenPrompts(bot, publish) {
     bot.removeListener('windowOpen', clear);
     bot.removeListener('respawn', clear);
     bot.removeListener('physicsTickEnd', checkSign);
+    bot.removeListener('spawn', onSpawn);
+    bot.removeListener('heldItemChanged', checkCaptcha);
     clearTimeout(mapTimer);
+    clearTimeout(captchaTimer);
     maps.clear();
   }
 

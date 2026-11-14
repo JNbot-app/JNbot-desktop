@@ -21,6 +21,7 @@ import type {
 } from '../common/ipcEvents';
 import type { ProfilePublication } from '../common/messaging';
 import { PROFILE_ACTIONS } from '../common/profileActions';
+import { llmRequestOptions } from '../common/llm';
 
 type Event = (event: IpcRendererEvent, ...args: any[]) => void;
 
@@ -137,6 +138,7 @@ const ipcBridge: IpcBridge = {
         event: channel,
         data: args[0],
       },
+      llmRequestOptions(channel),
     );
   },
   // Electron removed `File.path` in v32+; the renderer must resolve a dropped
@@ -266,11 +268,12 @@ class RendererMessenger extends Messenger {
   }
 
   profileRequest<T = unknown>(profileId: number, event: string, data?: unknown) {
-    return this.request<T>('client:profile-action', BACKEND, {
-      profileId,
-      event,
-      data,
-    });
+    return this.request<T>(
+      'client:profile-action',
+      BACKEND,
+      { profileId, event, data },
+      llmRequestOptions(event),
+    );
   }
 }
 

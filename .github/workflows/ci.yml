@@ -21,9 +21,18 @@ jobs:
         with:
           path: app
       # The mobile client contract check compares against the sibling checkout,
-      # which is only readable once JNbot-mobile is public.
+      # which is only readable once JNbot-mobile is public. Prefer the mobile
+      # branch with the same name (paired PRs), else fall back to its default branch.
       - uses: actions/checkout@v5
-        id: mobile
+        id: mobile-branch
+        continue-on-error: true
+        with:
+          repository: JNbot-app/JNbot-mobile
+          ref: ${{ github.head_ref || github.ref_name }}
+          path: jnbot-mobile
+      - uses: actions/checkout@v5
+        id: mobile-default
+        if: steps.mobile-branch.outcome != 'success'
         continue-on-error: true
         with:
           repository: JNbot-app/JNbot-mobile
@@ -35,9 +44,9 @@ jobs:
         working-directory: app
       - name: Plugin reference is up to date
         working-directory: app
-        run: node scripts/build-jnbot-types.mjs --check
+        run: npm run check:plugin-reference
       - name: Mobile client contract is up to date
-        if: steps.mobile.outcome == 'success'
+        if: steps.mobile-branch.outcome == 'success' || steps.mobile-default.outcome == 'success'
         working-directory: app
         run: npm run check:mobile-client-contract
       - run: npx jest

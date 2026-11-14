@@ -8,6 +8,7 @@ import { makeActiveScriptsService } from '../../../services/ActiveScriptsService
 import { useResolvedScript } from './useResolvedScript';
 import { usePanelContext } from '../../other/botSideBar/SidePanelContextProvider';
 import { isPluginDisallowed } from '../../../../common/profiles';
+import RunningControls from '../../macros/RunningControls';
 
 interface Props {
   script: ProfileScript;
@@ -52,28 +53,15 @@ const DashboardScriptCard: FC<Props> = ({ script, infoOverride }) => {
     });
   };
 
-  const toggleRun: React.MouseEventHandler<HTMLElement> = async (e) => {
+  const run: React.MouseEventHandler<HTMLElement> = async (e) => {
     e.stopPropagation();
     if (!info) return;
     const scripts = makeActiveScriptsService(
       useSettingsStore.getState().activeScripts,
     );
-    if (running) {
-      const id = scripts.getInstanceIdsById(info.pluginId)[0];
-      if (id != null) scripts.stopAll(id);
-      else scripts.stopAll(info.pluginId);
-      return;
-    }
     setRunLoading(true);
     try {
-      await scripts.startScript({
-        script: 'macro',
-        arguments: {
-          macroInfo: { name: info.name, pluginId: info.pluginId },
-          devMode: false,
-        },
-        console: 'macro_console',
-      });
+      await scripts.runPlugin({ name: info.name, pluginId: info.pluginId });
     } finally {
       setRunLoading(false);
     }
@@ -132,16 +120,16 @@ const DashboardScriptCard: FC<Props> = ({ script, infoOverride }) => {
         )}
 
         <div className="script-card-buttons">
-          {running ? (
-            <Button
-              onClick={toggleRun}
-              size="small"
-              type="primary"
-              danger
-              className="script-run-btn"
-            >
-              Stop
-            </Button>
+          {running && pluginId ? (
+            <RunningControls
+              pluginId={pluginId}
+              name={info?.name}
+              buttonProps={{
+                size: 'small',
+                type: 'primary',
+                className: 'script-run-btn',
+              }}
+            />
           ) : (
             <Tooltip
               title={
@@ -150,7 +138,7 @@ const DashboardScriptCard: FC<Props> = ({ script, infoOverride }) => {
               }
             >
               <Button
-                onClick={toggleRun}
+                onClick={run}
                 size="small"
                 type="primary"
                 className="script-run-btn"

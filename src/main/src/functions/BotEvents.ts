@@ -1,4 +1,5 @@
 import type { ScriptCooldown } from '../../../common/cooldowns';
+import type { LlmRequest } from '../../../common/llm';
 import {
   BotInfo,
   LogMessage,
@@ -723,6 +724,14 @@ class BotEvents_ {
     return this.script.activeScripts.toObject();
   }
 
+  async GET_PLUGIN_INFO({ pluginId }: { pluginId: string }) {
+    if (!this.script) throw new Error('Script not found');
+    return this.script.scriptHandler.getPluginInfo(
+      this.script.profile.profileId,
+      pluginId,
+    );
+  }
+
   async GET_MINECRAFT_CLIENTS() {
     return this.minecraftBridgeManager.getClients();
   }
@@ -801,6 +810,24 @@ class BotEvents_ {
     return this.script?.scriptHandler.settings.JNdata;
   }
 
+  /* ---------- AI (script.ai and the Discord /ask command) ---------- */
+
+  LLM_STATUS() {
+    return this.script?.scriptHandler.llm?.status() ?? { configured: false };
+  }
+
+  LLM_COMPLETE(request: LlmRequest) {
+    const ai = this.script?.scriptHandler.llm;
+    if (!ai) throw new Error('AI is not available.');
+    return ai.complete(request);
+  }
+
+  LLM_AGENT(input: { prompt: string; caller: string; via: string }) {
+    const script = this.script;
+    if (!script?.scriptHandler.llm) throw new Error('AI is not available.');
+    return script.scriptHandler.llm.agent({ ...input, profileKey: script.profile.profileKey });
+  }
+
   /* ---------- Cooldowns (script API) ---------- */
 
   COOLDOWN_GET(pluginId: string) {
@@ -856,19 +883,22 @@ class BotEvents_ {
       };
     }
 
+    const previous = cooldowns[existing];
+    const keepOptions = previous?.kind !== 'schedule' && previous?.optionsEdited;
     const newCooldown: Reminder = {
       id:
         existing === -1
           ? Math.random().toString(36).substring(2, 9)
-          : cooldowns[existing].id,
+          : previous.id,
       name: reminder.name,
       pluginId,
       reminderId: reminder.reminderId,
       cooldown: reminder.cooldown,
       time: reminder.time ?? Date.now(),
-      options: reminder.options,
-      // Keep the user's auto-run opt-in when a plugin updates its cooldown.
-      autoStart: existing === -1 ? undefined : cooldowns[existing].autoStart,
+      // Keep the user's edits and auto-run opt-in when a plugin updates its cooldown.
+      options: keepOptions ? previous.options : reminder.options,
+      optionsEdited: keepOptions || undefined,
+      autoStart: previous?.autoStart,
     };
 
     if (existing === -1) cooldowns.push(newCooldown);

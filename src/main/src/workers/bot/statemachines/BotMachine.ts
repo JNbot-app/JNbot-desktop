@@ -16,9 +16,9 @@ import BotSession, {
   type BotSessionSnapshot,
 } from '../BotSession';
 import joinGamemode, {
-  gamemodeMatches,
   type JoinTargets,
 } from './joinGamemode/joinGamemodeBehaviourV3';
+import { gamemodeMatches } from '../gamemode';
 
 export type {
   Action,
@@ -114,6 +114,36 @@ export default class BotMachine<S extends object = Record<string, unknown>>
     return this.addTask({ when, run, name, once: true });
   }
 
+  insertBefore(name: string, task: Task<S>): this {
+    this.tasks.splice(this.taskIndex(name), 0, task);
+    return this;
+  }
+
+  insertAfter(name: string, task: Task<S>): this {
+    this.tasks.splice(this.taskIndex(name) + 1, 0, task);
+    return this;
+  }
+
+  replaceTask(name: string, task: Task<S>): this {
+    this.tasks.splice(this.taskIndex(name), 1, task);
+    return this;
+  }
+
+  removeTask(name: string): this {
+    this.tasks.splice(this.taskIndex(name), 1);
+    return this;
+  }
+
+  wrapTask(
+    name: string,
+    wrap: (context: TaskContext<S>, run: Action<S>) => Awaitable<void>,
+  ): this {
+    const task = this.tasks[this.taskIndex(name)];
+    const { run } = task;
+    task.run = (context) => wrap(context, run);
+    return this;
+  }
+
   setState(patch: Partial<S>): this {
     Object.assign(this.state, patch);
     return this;
@@ -206,6 +236,13 @@ export default class BotMachine<S extends object = Record<string, unknown>>
   ): this {
     if (typeof listener === 'function') this.errorListeners.push(listener);
     return this;
+  }
+
+  /** Throws rather than guessing, so a patch never silently misses its task. */
+  private taskIndex(name: string): number {
+    const index = this.tasks.findIndex((task) => task.name === name);
+    if (index === -1) throw new Error(`BotMachine has no task named "${name}"`);
+    return index;
   }
 
   private setupSession(options: BotMachineOptions<S>): void {
@@ -426,4 +463,27 @@ export default class BotMachine<S extends object = Record<string, unknown>>
   ): void {
     global.log(`[${this.label}] ${message}`, level);
   }
+}
+
+/** Changes a machine's tasks, e.g. with `insertAfter` or `wrapTask`. */
+export type MachinePatch = (machine: BotMachine<any>) => void;
+
+const patchedMachines = new WeakSet<BotMachine<any>>();
+
+/**
+ * The `BotMachine` class handed to one plugin run: it applies `patches` to each
+ * machine right before it first starts, so the plugin's tasks are all there.
+ * `patches` is read at that moment, so patches added after the run began apply
+ * too. A machine keeps its tasks when its bot rejoins, so this happens once.
+ */
+export function patchedBotMachine(patches: readonly MachinePatch[]): typeof BotMachine {
+  return class extends BotMachine<any> {
+    start(): this {
+      if (!patchedMachines.has(this)) {
+        patchedMachines.add(this);
+        patches.forEach((patch) => patch(this));
+      }
+      return super.start();
+    }
+  };
 }

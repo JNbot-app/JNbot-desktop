@@ -8,6 +8,13 @@ import Script_ from './Script';
 import EventEmitter from 'node:events';
 import { backendMessaging } from '../messaging';
 
+type QueuedJoin = {
+  botId: number;
+  isPremium: boolean;
+  script: Script_;
+  resolve: (result: { cancelled: boolean }) => void;
+};
+
 class ActiveBots_ extends EventEmitter {
   bots: { [botId: number]: Bot } = {};
   minecraftBots: { [botId: number]: ActiveBotsType[number] } = {};
@@ -22,12 +29,7 @@ class ActiveBots_ extends EventEmitter {
   /** Time the most recent join was granted. */
   private lastJoinAt?: number;
   private joinTimer?: ReturnType<typeof setTimeout>;
-  private joinQueue: {
-    botId: number;
-    isPremium: boolean;
-    script: Script_;
-    resolve: (result: { cancelled: boolean }) => void;
-  }[] = [];
+  private joinQueue: QueuedJoin[] = [];
 
   constructor(
     mainWindow: BrowserWindow,
@@ -72,6 +74,18 @@ class ActiveBots_ extends EventEmitter {
     this.processJoinQueue();
   }
 
+  /** Grant a queued join immediately, skipping the join delay. */
+  joinBotNow(botId: number): boolean {
+    const index = this.joinQueue.findIndex((join) => join.botId === botId);
+    if (index === -1) return false;
+    const [join] = this.joinQueue.splice(index, 1);
+    const changed = this.grantJoin(join);
+    // Re-time the remaining queue from this join.
+    this.processJoinQueue();
+    if (changed) this.send();
+    return true;
+  }
+
   /** Cancel every queued join owned by a script that has stopped. */
   cancelBotJoinRequestsByScript(script: Script_): void {
     const queuedJoins = this.joinQueue;
@@ -114,20 +128,24 @@ class ActiveBots_ extends EventEmitter {
         return;
       }
 
-      const [next] = this.joinQueue.splice(0, 1);
-      const bot = this.getBot(next.botId);
-      let changed = false;
-      if (bot && bot.script.id === next.script.id) {
-        changed = bot.botInfo.status !== 'joining' || !!bot.botInfo.joinAt;
-        bot.botInfo.status = 'joining';
-        delete bot.botInfo.joinAt;
-      }
-
-      this.lastJoinAt = now;
-      next.resolve({ cancelled: false });
+      const changed = this.grantJoin(this.joinQueue.shift()!);
       if (this.updateQueuedJoinStatuses(now + joinDelay, joinDelay) || changed)
         this.send();
     }
+  }
+
+  /** Let a dequeued bot connect. Returns whether its displayed status changed. */
+  private grantJoin(join: QueuedJoin): boolean {
+    const bot = this.getBot(join.botId);
+    let changed = false;
+    if (bot && bot.script.id === join.script.id) {
+      changed = bot.botInfo.status !== 'joining' || !!bot.botInfo.joinAt;
+      bot.botInfo.status = 'joining';
+      delete bot.botInfo.joinAt;
+    }
+    this.lastJoinAt = Date.now();
+    join.resolve({ cancelled: false });
+    return changed;
   }
 
   private updateQueuedJoinStatuses(

@@ -1,9 +1,11 @@
 import * as z from 'zod/v4';
 import { McpInputError } from './mcp';
+import { SCRIPT_KINDS } from './scriptKinds';
 
 import type {
   AltRangeValue,
   ActiveBotFilter,
+  ScriptKind,
   PluginOptionType,
   PluginOptionBase,
   PluginOptionChoice,
@@ -22,6 +24,7 @@ import type {
   PluginOptionCoordinate,
   PluginOptionKeybind,
   PluginOptionActiveBotSelect,
+  PluginOptionScriptSelect,
   PluginOption,
   PluginOptionSection,
   PluginOptionSchema,
@@ -30,6 +33,7 @@ import type {
 export type {
   AltRangeValue,
   ActiveBotFilter,
+  ScriptKind,
   PluginOptionType,
   PluginOptionBase,
   PluginOptionChoice,
@@ -48,6 +52,7 @@ export type {
   PluginOptionCoordinate,
   PluginOptionKeybind,
   PluginOptionActiveBotSelect,
+  PluginOptionScriptSelect,
   PluginOption,
   PluginOptionSection,
   PluginOptionSchema,
@@ -56,7 +61,7 @@ export type {
 export const PLUGIN_OPTION_TYPES = new Set<PluginOptionType>([
   'select', 'multiSelect', 'slider', 'input', 'gamemodeSelect', 'altSelect',
   'altsSelect', 'tagsSelect', 'altRange', 'switch', 'list', 'coordinate', 'keybind',
-  'activeBotSelect',
+  'activeBotSelect', 'scriptSelect',
 ]);
 
 const id = z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/);
@@ -94,6 +99,7 @@ const option = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('coordinate'), defaultValue: z.object({ x: finiteNumber.optional(), y: finiteNumber.optional(), z: finiteNumber.optional(), dimension: z.enum(['overworld', 'nether', 'end']).optional() }).strict().optional(), withDimension: z.boolean().optional() }).strict(),
   z.object({ ...base, type: z.literal('keybind'), defaultValue: z.string().max(80).optional(), simple: z.boolean().optional() }).strict(),
   z.object({ ...base, type: z.literal('activeBotSelect'), botFilter: z.enum(['all', 'bots', 'minecraft']).optional(), filter: z.enum(['all', 'bots', 'minecraft']).optional(), multiple: z.boolean().optional(), clearable: z.boolean().optional(), freeSolo: z.boolean().optional(), defaultValue: z.array(z.string()).max(100).optional() }).strict(),
+  z.object({ ...base, type: z.literal('scriptSelect'), kinds: z.array(z.enum(SCRIPT_KINDS)).max(SCRIPT_KINDS.length).optional(), multiple: z.boolean().optional(), clearable: z.boolean().optional(), placeholder: z.string().max(240).optional(), defaultValue: z.union([z.string(), z.array(z.string()).max(100)]).optional() }).strict(),
 ]);
 
 export const pluginOptionSchemaInput = z.array(

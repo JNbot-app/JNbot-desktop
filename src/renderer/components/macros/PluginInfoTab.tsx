@@ -21,7 +21,7 @@ import {
   EllipsisOutlined,
   ExportOutlined,
   LinkOutlined,
-  PauseOutlined,
+  StopOutlined,
   PushpinFilled,
   PushpinOutlined,
   SyncOutlined,
@@ -37,11 +37,17 @@ import {
   useSettingsStore,
   selectIsMacroActive,
   selectMacroById,
-  selectScripts,
   selectSettings,
+  updateScriptSettings,
 } from '../../redux/settings';
 import { usePluginActions, PluginView } from './usePluginActions';
 import ScriptSettings from '../general/scriptSettings/ScriptSettings';
+import PresetBar from '../general/scriptSettings/presets/PresetBar';
+import LlmPrompt, { type LlmPromptProps } from '../llm/LlmPrompt';
+import LlmOptionChanges from '../llm/LlmOptionChanges';
+import type { LlmOptionsResult } from '../../../common/llm';
+import RunningControls from './RunningControls';
+import { selectedPresetId } from '../../../common/pluginPresets';
 import BannerHero from './BannerHero';
 import { usePanelContext } from '../other/botSideBar/SidePanelContextProvider';
 import { openShareModal } from '../share/useShareTarget';
@@ -99,8 +105,8 @@ const Header: React.FC<{
   running: boolean;
   pinned: boolean;
   profileScript?: ProfileScript;
-  onToggleRun: () => Promise<void> | void;
-}> = ({ plugin, running, pinned, profileScript, onToggleRun }) => {
+  onRun: () => Promise<void> | void;
+}> = ({ plugin, running, pinned, profileScript, onRun }) => {
   const { token } = theme.useToken();
   const { author } = getAuthorInfo(plugin, profileScript);
   const actionBar = (
@@ -109,7 +115,7 @@ const Header: React.FC<{
       running={running}
       pinned={pinned}
       profileScript={profileScript}
-      onToggleRun={onToggleRun}
+      onRun={onRun}
     />
   );
 
@@ -240,8 +246,8 @@ const ActionBar: React.FC<{
   running: boolean;
   pinned: boolean;
   profileScript?: ProfileScript;
-  onToggleRun: () => Promise<void> | void;
-}> = ({ plugin, running, pinned, profileScript, onToggleRun }) => {
+  onRun: () => Promise<void> | void;
+}> = ({ plugin, running, pinned, profileScript, onRun }) => {
   const actions = usePluginActions();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const shareUpdate = useShareUpdateAction('plugin', plugin.pluginId);
@@ -322,20 +328,18 @@ const ActionBar: React.FC<{
       {/* Space.Compact doesn't forward refs, so Popconfirm needs a DOM anchor. */}
       <span>
         <Space.Compact>
-          <Button
-            type={running ? 'default' : 'primary'}
-            danger={running}
-            icon={running ? <PauseOutlined /> : <CaretRightOutlined />}
-            onClick={() => onToggleRun()}
-          >
-            {running
-              ? plugin.scriptType === 'action'
-                ? 'Stop Action'
-                : 'Stop Plugin'
-              : plugin.scriptType === 'action'
-                ? 'Run Action'
-                : 'Run Plugin'}
-          </Button>
+          {running ? (
+            <RunningControls
+              pluginId={plugin.pluginId}
+              name={plugin.name}
+              stopLabel={plugin.scriptType === 'action' ? 'Stop Action' : 'Stop Plugin'}
+              stopIcon={<StopOutlined />}
+            />
+          ) : (
+            <Button type="primary" icon={<CaretRightOutlined />} onClick={() => onRun()}>
+              {plugin.scriptType === 'action' ? 'Run Action' : 'Run Plugin'}
+            </Button>
+          )}
           {moreMenuItems.length > 0 && (
             <Dropdown
               trigger={['click']}
@@ -344,7 +348,6 @@ const ActionBar: React.FC<{
             >
               <Button
                 type={running ? 'default' : 'primary'}
-                danger={running}
                 icon={<EllipsisOutlined />}
               />
             </Dropdown>
@@ -494,6 +497,27 @@ const OptionsView: React.FC<{
   errors?: Record<string, string>;
   onClearError?: (field: string) => void;
 }> = ({ plugin, errors, onClearError }) => {
+  const presetId = useSettingsStore((state) =>
+    selectedPresetId(state.settings.scripts?.[plugin.pluginId]),
+  );
+  // Bumped after the AI changes values, so the form re-reads them.
+  const [revision, setRevision] = useState(0);
+  const describeSettings: LlmPromptProps['onSubmit'] = async (description, run) => {
+    const result = await run<LlmOptionsResult>('LLM_GENERATE', { kind: 'options', description, pluginId: plugin.pluginId });
+    if (!result) return undefined;
+    return (dismiss) => (
+      <LlmOptionChanges
+        result={result}
+        onDiscard={dismiss}
+        onApply={() => {
+          for (const [optionId, value] of Object.entries(result.values))
+            updateScriptSettings({ optionId, value, scriptName: plugin.pluginId });
+          setRevision((current) => current + 1);
+          dismiss();
+        }}
+      />
+    );
+  };
   if (!plugin.config || plugin.config.length === 0) {
     return (
       <Typography.Text type="secondary">
@@ -503,12 +527,24 @@ const OptionsView: React.FC<{
   }
 
   return (
-    <ScriptSettings
-      options={plugin.config}
-      scriptName={plugin.pluginId}
-      errors={errors}
-      onClearError={onClearError}
-    />
+    <Flex vertical gap={8}>
+      <PresetBar pluginId={plugin.pluginId} />
+      <LlmPrompt
+        collapsedLabel="Suggest settings with AI"
+        placeholder="Describe the settings, e.g. only farm wheat and go slower"
+        button="Suggest"
+        writingLabel="Choosing values"
+        onSubmit={describeSettings}
+      />
+      {/* The form only reads its values on mount, so remount it per preset. */}
+      <ScriptSettings
+        key={`${presetId}-${revision}`}
+        options={plugin.config}
+        scriptName={plugin.pluginId}
+        errors={errors}
+        onClearError={onClearError}
+      />
+    </Flex>
   );
 };
 
@@ -521,7 +557,6 @@ const PluginInfoTab: React.FC<{ data: PanelData }> = ({ data }) => {
   const livePlugin = useSettingsStore(selectMacroById(initialPlugin.pluginId));
   const plugin = !profileScript && livePlugin ? livePlugin : initialPlugin;
   const running = useSettingsStore(selectIsMacroActive(plugin.pluginId));
-  const scripts = useSettingsStore(selectScripts);
   const { pluginData } = useSettingsStore(selectSettings);
   const isPinned = pluginData?.[plugin.pluginId]?.pinned ?? false;
 
@@ -534,25 +569,10 @@ const PluginInfoTab: React.FC<{ data: PanelData }> = ({ data }) => {
 
   const errors = optionErrors[plugin.pluginId];
 
-  const onToggleRun = async () => {
-    if (profileScript) {
-      const id = scripts.getInstanceIdsById(plugin.pluginId)[0];
-      if (id != null) {
-        scripts.stopAll(id);
-        return;
-      }
-      await scripts.startScript({
-        script: 'macro',
-        arguments: {
-          macroInfo: { name: plugin.name, pluginId: plugin.pluginId },
-          devMode: false,
-        },
-        console: 'macro_console',
-      });
-      return;
-    }
-    await actions.toggleRun(plugin);
-  };
+  const onRun = () =>
+    actions.run(
+      profileScript ? { name: plugin.name, pluginId: plugin.pluginId } : plugin,
+    );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -561,7 +581,7 @@ const PluginInfoTab: React.FC<{ data: PanelData }> = ({ data }) => {
         running={running}
         pinned={isPinned}
         profileScript={profileScript}
-        onToggleRun={onToggleRun}
+        onRun={onRun}
       />
       <Segmented
         block

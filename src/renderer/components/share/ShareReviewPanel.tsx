@@ -20,6 +20,7 @@ import { initShares, useShares } from '../../redux/shares';
 import { usePanelContext } from '../other/botSideBar/SidePanelContextProvider';
 import type { SharePanelData } from '../other/botSideBar/panelTabs';
 import ShareContents from './ShareContents';
+import ShareAskAi from './ShareAskAi';
 import ShareHeader from './ShareHeader';
 import ShareInstallCheck, { choiceKey } from './ShareInstallCheck';
 import shareRequest from './shareRequest';
@@ -186,6 +187,7 @@ const ShareReviewPanel: React.FC<SharePanelData> = ({
         reviewed={reviewed}
       />
       <ShareContents overview={overview} />
+      <ShareAskAi overview={overview} load={async () => preview ?? (await load())} />
 
       {checking && preview ? (
         <div ref={checkRef}>

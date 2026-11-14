@@ -6,7 +6,40 @@ Create or update plugins with `save_plugin`; do not merely return source code wh
 
 ## Entrypoints
 
-Normal plugins own their bot lifecycle. Import `script` and read persistent options from `script.settings`.
+Normal plugins own their bot lifecycle. Import `script` and read persistent options from `script.settings`. Pick the join pattern by how many alts the plugin drives:
+
+- **One alt** (an `altSelect` option, a main account, a single bot): drive it with `BotMachine`, which joins, logs in, enters the gamemode and reconnects after kicks. For a short one-off step, `await Bot.join({ username }, { gamemode, login: true })` is enough. Do not use `forEachBot` or `getAlts().slice(0, 1)` for this.
+- **Many alts** (loop over the user's alts with filters such as tags, ranks, `altRange`, ignored alts): use `script.forEachBot(script.getAlts(), script.settings)`. It filters the alts, wires the pause/skip/previous buttons, joins each alt and ends it after the loop body.
+
+```js
+const { BotMachine, script } = require('jnbot');
+
+async function main() {
+  new BotMachine(
+    [
+      {
+        name: 'open kits menu',
+        when: ({ bot, state }) => !state.claimed && !bot.currentWindow,
+        run: ({ bot }) => bot.openWindow('/kit'),
+      },
+      {
+        name: 'claim kit',
+        when: ({ bot, state }) => !state.claimed && bot.getWindowTitle()?.includes('Kits'),
+        run: async ({ bot, state }) => {
+          await bot.items(script.settings.kit).click();
+          state.claimed = true;
+        },
+      },
+      { name: 'done', when: ({ state }) => state.claimed, run: ({ machine }) => machine.stop() }, // stop() also disconnects the bot
+    ],
+    { options: { username: script.settings.alt }, join: { gamemode: script.settings.gamemode, login: true } },
+  )
+    .onFinish(() => script.stop())
+    .start();
+}
+
+main();
+```
 
 ```js
 const { script } = require('jnbot');
@@ -29,7 +62,22 @@ async function main(bot, settings, args = []) {
 }
 ```
 
+When a server's gamemode join or gamemode display does not match JNbot's defaults, override them per bot from the profile's on-join action, before any `await`. `bot.join`, `BotMachine` and `Bot.join({ gamemode })` all use the handler; reconnects, relog retries and sessions keep working. The handler resolves once the bot is in the gamemode and returns `false` or throws when it could not get there. The detector makes `bot.getGamemode()` report the current gamemode; without one it reports the last gamemode a join confirmed.
+
+```js
+async function main(bot) {
+  bot.setGamemodeDetector((bot) => bot.scoreboard.sidebar?.title ?? null);
+  bot.setJoinHandler(async (gamemode, bot) => {
+    await bot.openWindow('/menu');
+    if (!(await bot.items(gamemode).click())) return false;
+    await bot.waitForTicks(40);
+  });
+}
+```
+
 In a chain, `args[0]` holds the values returned by earlier steps (plus `alt`, the bot's username). Return an object to add values for later steps, which users can insert into text options as `{name}`. Return `false` or throw to mark the step as failed, so the chain follows its "If it fails" choice. A chain can be started like a plugin with `script.startPlugin({ pluginId: 'chain:<chainId>' })`.
+
+A chain can also store setup code: JavaScript that runs for every alt before the steps, with `chain`, `bot` and `options` in scope (`return` and `await` work); `options` holds the values of the chain's own options, defined with the same schema as a plugin's `config` and set in the chain's settings. Inside it, and in plugins run by a chain (`require('JNbot').chain`, `null` elsewhere), the chain API controls the chain for the current alt: read `steps`, `current`, `bot` and `data`; a step is referred to by its id, plugin id (first step running it; survives renames) or name; `setOptions(step, options)` forces options for a step; `runStep(step, options?)` runs a step with its overrides plus yours; `disableStep`/`enableStep`, `addStep`, `goTo`, `skipAlt` and `stop` change what comes next. `chain.patch(step, machine => …)` changes another plugin's `BotMachine` tasks by name (`insertBefore`, `insertAfter`, `replaceTask`, `removeTask`, `wrapTask`) right before it starts, without editing that plugin.
 
 ## Options
 
@@ -49,6 +97,7 @@ Add an option for any value a user may want to change without editing code. Read
 | `list` | object array | 1–6 unique `fields` |
 | `coordinate` | `{ x?, y?, z?, dimension? }` | optional `withDimension` |
 | `keybind` | string | optional `simple` |
+| `scriptSelect` | script ID / ID array with `multiple` | optional `kinds` (`profileScript`, `action`, `recording`, `plugin`, `chain`; default all) |
 
 ```json
 [
@@ -78,23 +127,45 @@ Use `valueByFieldId` only to make an eligible `select`, `gamemodeSelect`, `altSe
 
 ## Preferred APIs
 
+Cloud AI is available through `script.llm` when the user added an AI provider (Claude, Gemini, OpenAI, OpenRouter or Ollama) in Settings; most users have not, so check `await script.llm.isAvailable()` first and degrade gracefully. Use `script.llm.ask(prompt, { system, tools })` for one answer, `askJson` for parsed JSON, and `createChat({ system, tools, memory })` for a conversation that remembers earlier messages (`chat.send(text)` returns the reply). Tools are `{ name, description, parameters?, run(input) }`; their results are sent back to the model. Use it for free-form text such as a chat persona; prefer `script.ai` for local tool calling and extraction.
+
 Local AI is available through `script.ai`. Create an agent with explicit tool names, descriptions, object JSON Schemas, and optional handlers. `predict()` returns proposed calls without executing them. `run()` makes one prediction and executes its accepted calls sequentially, retaining completed results if a later handler fails. Handler results are not sent back to the model. Each input is independent; unchanged tools stay prepared. Agents start with no tools and support `setTools`, `addTool`, `removeTool`, and `dispose`.
 
-Choose `model: 'main'` for accuracy or `model: 'flash'` for lower memory use and faster inference. Main is the default. Both support tool calls and `script.ai.extract(text, schema, options)`, which returns a validated object or `null`. Reasoning is disabled by default. Pass `{ reasoning: true }` to `agent.predict()`, `agent.run()`, or `script.ai.extract()` to generate reasoning before tool calls. Pass `false` or omit the option to skip reasoning; predictions then return `reasoning: null`. `agent.embed(text, options)` returns `{ modelId, values }` using the agent's selected Gemma model, including its custom model URL. It accepts `signal` and `timeoutMs`, works without tools, and cancels when the agent is disposed. `script.ai.embed(text, options)` also remains available. Both embedding methods reject flash with `AI_UNSUPPORTED_FEATURE`. Rebuild stored embeddings when the model ID changes.
+There is one built-in model. It supports tool calls and `script.ai.extract(text, schema, options)`, which returns a validated object or `null`. Reasoning is disabled by default. Pass `{ reasoning: true }` to `agent.predict()`, `agent.run()`, or `script.ai.extract()` to generate reasoning before tool calls; predictions otherwise return `reasoning: null`.
 
-Tool filtering is disabled by default. On main, pass `{ toolFilterThreshold: 0.75 }` to `agent.predict()`, `agent.run()`, or `script.ai.extract()` to retain only tools whose name and description meet that cosine threshold. Values must be finite and between -1 and 1. Omit it or pass `null` to disable it; flash bypasses filtering. Tool vectors are cached in the inference worker, and the query encoding is shared with memory. When no tools survive, inference returns no match without decoding. Calibrate the threshold on your messages: similarity alone does not reliably distinguish placing from breaking, selling from buying, negation, or exact prices. The value 0.75 is an example, not a recommended default.
+`windowSize` sets how many tokens the model can look back on (1 to 8192, default 512). Raise it, for example to 1024, when the tool list plus the message is longer than about 512 tokens; larger windows use more memory and are a little slower. Pass it to `createAgent({ tools, windowSize })` or `extract(text, schema, { windowSize })`.
 
-Pass `modelUrl` to `createAgent({ tools, model, modelUrl })`, `extract(text, schema, { model, modelUrl })`, or `embed(text, { model: 'main', modelUrl })` to use a custom model. The URL must download an HTTPS `.cact` file compatible with the selected variant. Omit it or pass a blank string to use the configured release model. An agent keeps its selected variant and URL. Downloads happen at first inference; creation and tool edits do not load a model. Installed files work offline, and flash can reuse a compatible installed main file. Publish new custom model versions at new URLs. Download or loading failures report an error without substituting another model. AI-authored plugins with external network access disabled cannot select custom models.
+The tool list is prefilled once and cached: later requests with the same tools only process the new message, so keep an agent's tools stable between requests for the fastest responses.
+
+Pass `modelUrl` to `createAgent({ tools, modelUrl })` or `extract(text, schema, { modelUrl })` to use a custom model. The URL must download an HTTPS `.cact` file compatible with the built-in model. Omit it or pass a blank string to use the configured release model. Downloads happen at first inference; creation and tool edits do not load a model. Installed files work offline. Publish new custom model versions at new URLs. Download or loading failures report an error without substituting another model. AI-authored plugins with external network access disabled cannot select custom models.
 
 The model focuses on English. All supplied tools must fit within the model context; registration has no fixed tool count limit. Optional fields can be absent, and confidence can be `null`. Supported schema keywords are the fields of `AiSchema`; unsupported keywords fail at registration. Requests default to a 120-second deadline and 512 output tokens. Options accept `signal`, `timeoutMs`, and `maxNewTokens` where applicable. `run()` has no completion loop or step limit. A running handler cannot recursively call AI. Existing plugin permissions still apply to handlers.
 
 Native support must be packaged for the device. Local inference supports desktop builds, Android ARM64, and iOS device and simulator builds. Other Android architectures return `AI_UNSUPPORTED_PLATFORM`. The app command UI and typing previews are not part of this API.
 
-- Use `script.forEachBot(script.getAlts(), script.settings)` for multi-alt scripts; its settings object enables standard alt filters.
+- Use `script.forEachBot(script.getAlts(), script.settings)` only when looping over several alts; its settings object enables the standard alt filters. For one alt use `BotMachine` with `options: { username }` (or `Bot.join`). Inside a `forEachBot` loop you can still hand the yielded bot to `new BotMachine(tasks, { bot })`.
 - Use `await bot.openWindow(command)` rather than sending a command then waiting for a window event.
-- Use `bot.findWindowSlots()` before relying on slot numbers and `await bot.transferItems()` for supported transfer flows.
+- Use `bot.items(name)` before relying on slot numbers and `await bot.transfer(mode, target, { items, exclude, keys })` (or `bot.items(query).transfer(mode, target)`) to trade, gift, store or trash items.
 - Import JNbot helpers from `require('jnbot')`. Supported sandbox modules include `axios`, `events`, selected Prismarine modules, `vec3`, and `assert`; AI-authored plugins cannot use process, child processes, proxy APIs, account passwords, Fabric clients, or managed servers.
 - [IMPORTANT] Use `BotMachine` for the entire bot task. Avoid creating long functions. Split the task up into smaller steps. This will allow the bot to recover from errors like if some action failed or the bot gets suddenly kicked to hub, BotMachine allows you to deal with these scenarios much easier. For the `when` condition, try to find when the bot should perform the action. For example, if the bot doesn\'t have a window opened -> do window action. Or if specific window must be opened, we can check it using bot.getWindowTitle(). Avoid doing stuff like state.step = "step1" and then checking for state.step === "step1" in the next task.
+
+## Common mistakes
+
+Check the plugin against this list before saving it.
+
+- **`forEachBot` for one account.** `script.forEachBot(script.getAlts().slice(0, 1), ...)` or a loop over a single `altSelect` value. Use `new BotMachine(tasks, { options: { username }, join: { gamemode, login: true } })` or `Bot.join` instead.
+- **Not awaiting work inside a `forEachBot` loop.** The bot is ended as soon as the loop body returns, so starting a BotMachine or registering listeners without awaiting them disconnects the bot immediately. Await the work, e.g. `await new Promise((resolve) => new BotMachine(tasks, { bot }).onFinish(resolve).start())`.
+- **Sharing one task array between machines.** `once` progress is stored on the task objects, so build the tasks in a function and call it per bot.
+- **Step counters in BotMachine state.** `state.step = 2` then `when: ({ state }) => state.step === 2` breaks after a kick or failed action. Guard on what the bot can observe: open window and its title, inventory contents, position, timestamps.
+- **One long linear `async` function.** It cannot recover from kicks, lag or a menu that did not open. Split it into BotMachine tasks.
+- **Sending a command and waiting for `windowOpen`.** Use `const window = await bot.openWindow(command)` and handle `null` (timed out).
+- **Hard-coded slot numbers.** Menus differ per server and update; look items up with `bot.items(name)` or `bot.items({ lore })` (case-insensitive substring, colors stripped). `bot.findWindowSlots` is deprecated.
+- **Hard-coded values the user may want to change.** Commands, item names, accounts, gamemodes, delays and amounts belong in options. Never give passwords, tokens or API keys a default value.
+- **Joining a bot inside an action.** Actions receive an already-connected bot; only normal plugins join.
+- **Deprecated globals.** Import everything from `require('jnbot')` (`script`, `Bot`, `BotMachine`, ...) instead of the global `script`, `join`, `BotMachine` or `BotStatemachine`; use `console.log` instead of `log`.
+- **Using `script.llm` without `await script.llm.isAvailable()`.** Most users have no AI provider; notify them and stop instead of throwing.
+- **Forgetting `main()`.** Normal plugins must call `main()` at the end of the file; actions must not.
+- **Inventing API members.** If a method is not in the reference, it does not exist. Look it up with `get_jnbot_reference` or ask instead of guessing.
 
 # Compact plugin examples
 
@@ -112,7 +183,7 @@ async function main() {
   };
   // Use an HTTPS URL for a compatible fine-tuned .cact model, or leave blank.
   const modelUrl = '';
-  const agent = script.ai.createAgent({ model: 'flash', modelUrl });
+  const agent = script.ai.createAgent({ modelUrl, windowSize: 512 });
   agent.addTool({
     name: 'set_quantity',
     description: 'Set the requested item quantity',
@@ -126,9 +197,7 @@ async function main() {
     console.log(await agent.predict('Set quantity to 7')); // No handler runs.
     const result = await agent.run('Set quantity to 7');
     if (result.status === 'failed') console.log(result.error, result.results);
-    console.log(await script.ai.extract('The quantity is 3', schema, { model: 'flash', modelUrl }));
-    const { modelId, values } = await script.ai.embed('diamond sword', { model: 'main' });
-    console.log(modelId, values.length);
+    console.log(await script.ai.extract('The quantity is 3', schema, { modelUrl }));
     agent.removeTool('set_quantity');
     agent.setTools([]);
   } finally {
@@ -175,11 +244,11 @@ async function main(bot, settings, args = []) {
 Record yourself fighting in the JNbot Client, train, then let a bot copy you. Recordings store raw observations, so you can change `features` and train again without recording again.
 
 ```json
-[{"name":"Brain","options":[{"id":"mode","label":"Mode","type":"select","options":[{"label":"Record (JNbot Client)","value":"record"},{"label":"Train","value":"train"},{"label":"Run on bot","value":"run"}],"defaultValue":"record"},{"id":"minutes","label":"Record minutes","type":"input","inputType":"number","defaultValue":"10"}]}]
+[{"name":"Brain","options":[{"id":"mode","label":"Mode","type":"select","options":[{"label":"Record (JNbot Client)","value":"record"},{"label":"Train","value":"train"},{"label":"Run on bot","value":"run"}],"defaultValue":"record"},{"id":"minutes","label":"Record minutes","type":"input","inputType":"number","defaultValue":"10"},{"id":"alt","label":"Bot account","type":"altSelect"}]}]
 ```
 
 ```js
-const { Brain, script } = require('jnbot');
+const { Bot, Brain, script } = require('jnbot');
 
 const brain = new Brain({
   name: 'mob-fighter',
@@ -215,10 +284,9 @@ async function main() {
   } else if (mode === 'train') {
     console.log(await brain.train());
   } else {
-    for await (const bot of script.forEachBot(script.getAlts().slice(0, 1), {})) {
-      script.onExit(brain.run(bot));
-      await new Promise(() => {}); // run until the plugin is stopped
-    }
+    const bot = await Bot.join({ username: script.settings.alt }, { login: true });
+    script.onExit(brain.run(bot));
+    await new Promise(() => {}); // run until the plugin is stopped
   }
 }
 
@@ -243,6 +311,160 @@ const brain = new Brain({
   },
   heads: ['forward', 'strafe', 'jump', 'attack', 'use', Brain.hold({ seeds: /wheat_seeds/ })],
 });
+```
+
+# Complete example plugins
+
+Each example is a full plugin: the option schema followed by the source. Copy the structure, not the server-specific details (commands, window titles, item names), which differ per server and should be options.
+
+## Single alt: claim a kit on a timer (BotMachine)
+
+One account, runs until the user stops it. BotMachine joins, enters the gamemode and reconnects after kicks; the tasks only describe what to do in each situation.
+
+```json
+[{"name":"General","options":[{"id":"alt","label":"Account","type":"altSelect"},{"id":"gamemode","label":"Gamemode","type":"gamemodeSelect"},{"id":"command","label":"Kit command","type":"input","defaultValue":"/kit"},{"id":"kit","label":"Kit item name","type":"input","defaultValue":"Daily"},{"id":"minutes","label":"Claim every (minutes)","type":"slider","min":1,"max":1440,"step":1,"defaultValue":60}]}]
+```
+
+```js
+const { BotMachine, script } = require('jnbot');
+
+const { alt, gamemode, command, kit, minutes } = script.settings;
+
+function claimTasks() {
+  return [
+    {
+      name: 'open kits menu',
+      when: ({ bot, state }) => Date.now() >= state.nextClaim && !bot.currentWindow,
+      run: ({ bot }) => bot.openWindow(command),
+    },
+    {
+      name: 'claim kit',
+      when: ({ bot, state }) => Date.now() >= state.nextClaim && Boolean(bot.currentWindow),
+      run: async ({ bot, state }) => {
+        if (!(await bot.items(kit).container().click()))
+          console.warn(`No "${kit}" item in ${bot.getWindowTitle()}`);
+        bot.closeWindow(bot.currentWindow);
+        state.nextClaim = Date.now() + minutes * 60_000;
+      },
+    },
+  ];
+}
+
+async function main() {
+  const machine = new BotMachine(claimTasks(), {
+    options: { username: alt },
+    join: { gamemode, login: true },
+    state: { nextClaim: 0 },
+  }).start();
+  script.onExit(() => machine.stop());
+}
+
+main();
+```
+
+## Many alts: collect kits and send them to a main account (forEachBot + BotMachine)
+
+`forEachBot` filters the alts with the standard options (`gamemode`, `altRange`, `ignoreAlts`, `withTags`), joins each one and ends it after the loop body. The body awaits a per-bot BotMachine, so the bot stays online until its tasks are done.
+
+```json
+[{"name":"Alts","options":[{"id":"gamemode","label":"Gamemode","type":"gamemodeSelect"},{"id":"altRange","label":"Alt range","type":"altRange"},{"id":"withTags","label":"Only alts with tags","type":"tagsSelect"},{"id":"ignoreAlts","label":"Ignore alts","type":"altsSelect"}]},{"name":"Transfer","options":[{"id":"mainAccount","label":"Main account","type":"altSelect"},{"id":"transferMode","label":"Transfer with","type":"select","options":[{"label":"/trade","value":"trade"},{"label":"/gift","value":"gift"}],"defaultValue":"trade"},{"id":"kitCommand","label":"Kit command","type":"input","defaultValue":"/kit"},{"id":"kit","label":"Kit item name","type":"input","defaultValue":"Daily"}]}]
+```
+
+```js
+const { BotMachine, script } = require('jnbot');
+
+const { mainAccount, transferMode, kitCommand, kit } = script.settings;
+
+// Build tasks per bot: `once` progress is stored on the task objects.
+function collectTasks() {
+  return [
+    {
+      name: 'claim kit',
+      once: true,
+      when: () => true,
+      run: async ({ bot }) => {
+        const window = await bot.openWindow(kitCommand);
+        if (!window) return;
+        await bot.items(kit).container().click();
+        bot.closeWindow(window);
+      },
+    },
+    {
+      name: 'send items',
+      when: () => true,
+      run: async ({ bot, machine }) => {
+        await bot.transfer(transferMode, mainAccount, { timeout: 60_000 });
+        machine.finish();
+      },
+    },
+  ];
+}
+
+async function main() {
+  const alts = script.getAlts().filter((alt) => alt.username !== mainAccount);
+  for await (const bot of script.forEachBot(alts, script.settings)) {
+    await new Promise((resolve) =>
+      new BotMachine(collectTasks(), { bot, disableAutoReconnect: true }).onFinish(resolve).start(),
+    );
+  }
+}
+
+main();
+```
+
+## Single alt: AI chat companion (script.llm with a fallback)
+
+Most users have no AI provider set up, so check `isAvailable()` and tell the user what to do instead of failing.
+
+```json
+[{"name":"General","options":[{"id":"alt","label":"Account","type":"altSelect"},{"id":"gamemode","label":"Gamemode","type":"gamemodeSelect"},{"id":"persona","label":"Personality","type":"input","defaultValue":"a friendly, helpful player"}]}]
+```
+
+```js
+const { Bot, script } = require('jnbot');
+
+async function main() {
+  if (!(await script.llm.isAvailable())) {
+    script.notification({ type: 'warning', title: 'AI chat', message: 'Add an AI provider in Settings to use this plugin.' });
+    return script.stop();
+  }
+
+  const bot = await Bot.join({ username: script.settings.alt }, { gamemode: script.settings.gamemode, login: true });
+  const chat = script.llm.createChat({
+    system: `You are ${bot.username}, ${script.settings.persona} on a Minecraft server. Reply in one short line.`,
+    memory: 30,
+  });
+
+  bot.on('chat', async (username, message) => {
+    if (username === bot.username || !message.toLowerCase().includes(bot.username.toLowerCase())) return;
+    bot.chat(await chat.send(`${username}: ${message}`));
+  });
+}
+
+main();
+```
+
+## Action for chains: buy an item
+
+Actions run on a bot that is already online. `args[0]` holds values from earlier chain steps; the returned object adds values for later steps (`{item}` in text options). Return `false` or throw to take the chain's "If it fails" branch.
+
+```json
+[{"name":"General","options":[{"id":"command","label":"Shop command","type":"input","defaultValue":"/shop"},{"id":"item","label":"Item name","type":"input","defaultValue":"Diamond"}]}]
+```
+
+```js
+async function main(bot, settings, args = []) {
+  const previous = args[0] ?? {};
+  const window = await bot.openWindow(settings.command);
+  if (!window) return false;
+
+  if (!(await bot.items(settings.item).container().click())) {
+    bot.closeWindow(window);
+    return false;
+  }
+  bot.closeWindow(window);
+  return { item: settings.item, boughtBy: previous.alt ?? bot.username };
+}
 ```
 
 # Full Plugin API Types
@@ -362,6 +584,15 @@ interface Window {
   craftingResultSlot: number;
   requiresConfirmation: boolean;
   selectedItem: Item | null;
+  /** Number of empty slots in the inventory section of the window. */
+  emptySlotCount(): number;
+  /** Index of the first empty slot in [start, end), or null if there is none. */
+  firstEmptySlotRange(start: number, end: number): number | null;
+  /** Index of the last empty slot in [start, end], or null if there is none. */
+  lastEmptySlotRange(start: number, end: number): number | null;
+  firstEmptyHotbarSlot(): number | null;
+  firstEmptyContainerSlot(): number | null;
+  firstEmptyInventorySlot(hotbarFirst?: boolean): number | null;
 }
 
 interface RecipeItem {
@@ -2319,8 +2550,13 @@ interface RecordingPacket {
   n: string;
   /** delta time from recording start, ms */
   dt: number;
-  /** packet params */
+  /**
+   * Packet params. On disk a packet may carry `r` instead; reading the
+   * recording decodes it into `p`.
+   */
   p: Record<string, any>;
+  /** Raw packet body (packet id included), base64; only in the file on disk. */
+  r?: string;
   /** free-form metadata */
   m: Record<string, any>;
   /** direction; absent on legacy recordings (treat as 'c2s') */
@@ -2336,6 +2572,8 @@ type AltRangeValue = [string | null, string | null];
 
 type ActiveBotFilter = 'all' | 'bots' | 'minecraft';
 
+type ScriptKind = 'profileScript' | 'action' | 'recording' | 'plugin' | 'chain';
+
 type PluginOptionType =
   | 'select'
   | 'multiSelect'
@@ -2350,7 +2588,8 @@ type PluginOptionType =
   | 'list'
   | 'coordinate'
   | 'keybind'
-  | 'activeBotSelect';
+  | 'activeBotSelect'
+  | 'scriptSelect';
 
 interface PluginOptionBase {
   id: string;
@@ -2481,6 +2720,18 @@ interface PluginOptionActiveBotSelect extends PluginOptionBase {
   defaultValue?: string[];
 }
 
+/** Pick scripts by id; pass an id to `script.startPlugin()` or `script.getPluginInfo()`. */
+interface PluginOptionScriptSelect extends PluginOptionBase {
+  type: 'scriptSelect';
+  /** Kinds of script to offer. Omit to offer every kind. */
+  kinds?: ScriptKind[];
+  /** Store a string array instead of a single id. */
+  multiple?: boolean;
+  clearable?: boolean;
+  placeholder?: string;
+  defaultValue?: string | string[];
+}
+
 type PluginOption =
   | PluginOptionInput
   | PluginOptionSwitch
@@ -2495,7 +2746,8 @@ type PluginOption =
   | PluginOptionList
   | PluginOptionCoordinate
   | PluginOptionKeybind
-  | PluginOptionActiveBotSelect;
+  | PluginOptionActiveBotSelect
+  | PluginOptionScriptSelect;
 
 interface PluginOptionSection {
   name: string;
@@ -2536,8 +2788,8 @@ type PluginOptionSchema = PluginOptionSection[];
 
 
 
-type MacroLanguage = 'js' | 'ts' | 'components';
-type MacroScriptType = 'script' | 'action' | 'profileUi';
+type MacroLanguage = 'js' | 'ts' | 'components' | 'recording';
+type MacroScriptType = 'script' | 'action' | 'profileUi' | 'botExtension';
 
 type MacroInfo = {
   name: string;
@@ -2708,6 +2960,9 @@ type StartPluginOptions = {
   name: string;
   /** A plugin's id, or `chain:<chainId>` to start one of the user's chains. */
   pluginId: string;
+  /** Run on this preset, by name or id ("default" for Default). Unset uses the selected preset. */
+  preset?: string;
+  /** Applied on top of the preset's options. */
   optionOverrides?: Record<string, any>;
   /* @deprecated */
   quitOnExit?: boolean | string;
@@ -2719,6 +2974,8 @@ type PromptOptions = {
   placeholder?: string;
   defaultValue?: string;
   description?: string;
+  /** Image URL (e.g. a data URI) shown above the input */
+  image?: string;
 };
 
 type NotificationOptions = {
@@ -2745,6 +3002,9 @@ type ProgressUpdate = {
 type ActionArgs = {
   actionId: string;
   bot?: Bot;
+  /** Run on this preset, by name or id ("default" for Default). Unset uses the selected preset. */
+  preset?: string;
+  /** Applied on top of the preset's options. */
   optionOverrides?: Record<string, unknown>;
   args: any[];
 };
@@ -2789,14 +3049,16 @@ interface AiTool {
   handler?: (arguments_: AiJsonObject) => AiJson | void | Promise<AiJson | void>;
 }
 interface AiRequestOptions { signal?: AbortSignal; timeoutMs?: number; }
-/** Select a built-in variant, optionally overriding its compatible HTTPS model download. */
-interface AiModelOptions { model?: 'main' | 'flash'; modelUrl?: string; }
+interface AiModelOptions {
+  /** Optional HTTPS download of a compatible model, replacing the built-in one. */
+  modelUrl?: string;
+  /** Tokens the model can look back on (1-8192). Defaults to 512; raise it for long prompts or large tool lists. */
+  windowSize?: number;
+}
 interface AiPredictOptions extends AiRequestOptions {
   maxNewTokens?: number;
   /** Generate reasoning before tool calls. Defaults to false. */
   reasoning?: boolean;
-  /** Optional Gemma tool cosine threshold in [-1, 1]. Omit or null disables it. Main model only; flash bypasses filtering. */
-  toolFilterThreshold?: number | null;
 }
 type AiRunOptions = AiPredictOptions;
 interface AiCall { name: string; arguments: AiJsonObject; }
@@ -2821,8 +3083,6 @@ interface AiRunResult {
   error?: AiError;
 }
 interface AiAgent {
-  /** Embed text with this agent's Gemma model. Flash rejects with AI_UNSUPPORTED_FEATURE. */
-  embed(text: string, options?: AiRequestOptions): Promise<{ modelId: string; values: number[] }>;
   predict(text: string, options?: AiPredictOptions): Promise<AiPrediction>;
   run(text: string, options?: AiRunOptions): Promise<AiRunResult>;
   setTools(tools: AiTool[]): void;
@@ -2834,12 +3094,66 @@ interface AiAgent {
 interface AiAPI {
   createAgent(options?: AiModelOptions & { tools?: AiTool[] }): AiAgent;
   extract(text: string, schema: AiSchema, options?: AiPredictOptions & AiModelOptions): Promise<AiJsonObject | null>;
-  embed(text: string, options?: AiRequestOptions & AiModelOptions): Promise<{ modelId: string; values: number[] }>;
+}
+
+/** A function the AI may call while answering, e.g. to read the bot's state. */
+interface LlmTool<Input = any> {
+  name: string;
+  description: string;
+  /** JSON Schema of the input object. Omit for a tool without input. */
+  parameters?: AiSchema;
+  /** Its return value (anything JSON-serializable) is shown to the AI. */
+  run(input: Input): unknown | Promise<unknown>;
+}
+interface LlmAskOptions {
+  /** Instructions, e.g. a persona: "You are Steve, a grumpy miner. Keep replies under 100 characters." */
+  system?: string;
+  /** Functions the AI may call before it answers. */
+  tools?: LlmTool[];
+  maxTokens?: number;
+}
+interface LlmChatOptions extends LlmAskOptions {
+  /** How many messages the chat remembers. Defaults to 20. */
+  memory?: number;
+}
+interface LlmChat {
+  /** Send a message and get the reply. Replies are made one at a time, in order. */
+  send(message: string): Promise<string>;
+  /** The remembered conversation. */
+  readonly history: { role: 'user' | 'assistant'; content: string }[];
+  clear(): void;
+}
+/**
+ * The AI provider the user set up in Settings (Claude, Gemini, OpenAI,
+ * OpenRouter or a local Ollama). Most users have none: check `isAvailable()`.
+ *
+ * @example
+ * // A chat bot that answers when its name is mentioned.
+ * const chat = script.llm.createChat({
+ *   system: `You are ${bot.username}, a friendly player on a Minecraft server. Reply in one short line.`,
+ *   tools: [{ name: 'health', description: 'Your health and food.', run: () => ({ health: bot.health, food: bot.food }) }],
+ * });
+ * bot.on('chat', async (username, message) => {
+ *   if (username === bot.username || !message.includes(bot.username)) return;
+ *   bot.chat(await chat.send(`${username}: ${message}`));
+ * });
+ */
+interface LlmAPI {
+  /** True when the user added an AI provider in Settings. */
+  isAvailable(): Promise<boolean>;
+  /** One question, one answer. */
+  ask(prompt: string, options?: LlmAskOptions): Promise<string>;
+  /** Like `ask`, but the answer is parsed JSON. Describe the shape you want in the prompt. */
+  askJson<T = any>(prompt: string, options?: LlmAskOptions): Promise<T>;
+  /** A conversation that remembers earlier messages. */
+  createChat(options?: LlmChatOptions): LlmChat;
 }
 
 interface ScriptAPI {
   /** Local inference. Agents start with no tools and do not load a model until used. */
   ai: AiAPI;
+  /** Cloud AI through the user's own provider (see {@link LlmAPI}); unavailable for most users. */
+  llm: LlmAPI;
   stop(): void;
   restart(): Promise<never>;
   /**
@@ -2941,6 +3255,13 @@ interface ScriptAPI {
 
   startAction(options: ActionArgs): Promise<any>;
   getActiveScripts(): Promise<ActiveScriptsType>;
+  /**
+   * Details of an installed plugin, profile script or chain (`chain:<id>`),
+   * such as the ids a `scriptSelect` option stores. Resolves to `null` when
+   * the id is unknown or blocked on this profile. Chains only have `pluginId`,
+   * `name`, `description` and `scriptType`.
+   */
+  getPluginInfo(pluginId: string): Promise<MacroInfo | null>;
   /** Returns the live Minecraft-bridge client for the given id. */
   getMcClient(clientId: string): IMcClient;
   getMcClients(): Promise<{ username: string; clientId: string }[]>;
@@ -3177,6 +3498,15 @@ interface ConsoleAPI {
 
 type Awaitable<T> = T | Promise<T>;
 
+/**
+ * Enters `gamemode` on servers the built-in join flow does not fit. Resolve
+ * once the bot is there; return `false` or throw when it could not get there.
+ */
+type JoinHandler = (gamemode: string, bot: Bot) => Awaitable<boolean | void>;
+
+/** Reads the bot's current gamemode (scoreboard, tab list, world, ...); null when unknown. */
+type GamemodeDetector = (bot: Bot) => string | null | undefined;
+
 interface BotMachine<S extends object = Record<string, unknown>>
   extends BotMachineControls {
   bot: Bot | null;
@@ -3185,6 +3515,19 @@ interface BotMachine<S extends object = Record<string, unknown>>
   addTask(task: Task<S>): BotMachine<S>;
   addTasks(tasks: Task<S>[]): BotMachine<S>;
   once(when: Guard<S>, run: Action<S>, name?: string): BotMachine<S>;
+  /**
+   * Change another plugin's tasks by name (e.g. from `chain.patch`). Each
+   * throws when there is no task with that name.
+   */
+  insertBefore(name: string, task: Task<S>): BotMachine<S>;
+  insertAfter(name: string, task: Task<S>): BotMachine<S>;
+  replaceTask(name: string, task: Task<S>): BotMachine<S>;
+  removeTask(name: string): BotMachine<S>;
+  /** Run `wrap` instead of the task; call `run(ctx)` inside it to run the original. */
+  wrapTask(
+    name: string,
+    wrap: (ctx: TaskContext<S>, run: Action<S>) => Awaitable<void>,
+  ): BotMachine<S>;
   setState(patch: Partial<S>): BotMachine<S>;
   getState(): S;
   setDelay(ms: number): BotMachine<S>;
@@ -3201,6 +3544,78 @@ interface BotMachine<S extends object = Record<string, unknown>>
   onError(
     listener: (error: unknown, task: Task<S>, context: TaskContext<S>) => void,
   ): BotMachine<S>;
+}
+
+/** A chain step, as seen through the `chain` API. */
+interface ChainStepInfo {
+  id: string;
+  name: string;
+  /** Plugin id of the step's action. */
+  scriptId: string;
+  /** The step's option overrides, including those from `chain.setOptions`. */
+  options: Record<string, unknown>;
+  /** False when skipped with `chain.disableStep`; `chain.runStep` still runs it. */
+  enabled: boolean;
+}
+
+/**
+ * The chain a plugin runs in: `require('JNbot').chain`, or `null` outside a
+ * chain. A chain's setup code gets it as `chain`. Steps are referred to by id,
+ * plugin id (the first step running that plugin) or name. Prefer the plugin id: it
+ * keeps working when a step or plugin is renamed. Changes (options, patches, disabled or added steps) last until the
+ * chain moves on to the next alt.
+ *
+ * @example
+ * // Setup code: Kit Collector keeps its kits, and Auto Salvage makes room
+ * // whenever its inventory fills up, after which Kit Collector carries on.
+ * chain.setOptions('Kit Collector', { itemTransfer: 'keep' });
+ * chain.patch('Kit Collector', (machine) => {
+ *   machine.wrapTask('Depositing items', async (ctx, run) => {
+ *     if (ctx.bot.inventory.emptySlotCount() < 8) await chain.runStep('Auto Salvage');
+ *     await run(ctx);
+ *   });
+ * });
+ */
+interface ChainAPI {
+  readonly id: string;
+  readonly name: string;
+  /** The bot the chain runs on right now. */
+  readonly bot: Bot;
+  /** Values returned by earlier steps (plus `alt`), filled into `{key}` placeholders. */
+  readonly data: Record<string, unknown>;
+  /** Every step, in order. */
+  readonly steps: ChainStepInfo[];
+  /** The step running right now (the innermost one when a step runs another). */
+  readonly current: ChainStepInfo | null;
+  /**
+   * Run a step on the chain's bot, exactly as the chain would: with its option
+   * overrides and `setOptions`, then `options` on top. Resolves false when it fails.
+   */
+  runStep(step: string, options?: Record<string, unknown>): Promise<boolean>;
+  /**
+   * Always run a step with these options, on top of its overrides (e.g. to
+   * make sure Kit Collector keeps its kits). Merges with earlier calls.
+   */
+  setOptions(step: string, options: Record<string, unknown>): void;
+  /**
+   * Change the tasks of each `BotMachine` the step starts, right before it
+   * starts. Throwing (e.g. a task name that does not exist) fails the step.
+   */
+  patch(step: string, patch: (machine: BotMachine<any>) => void): void;
+  /** Skip a step when the chain gets to it. */
+  disableStep(step: string): void;
+  enableStep(step: string): void;
+  /** Add a step after `after` (default: at the end). */
+  addStep(
+    step: { scriptId: string; name?: string; options?: Record<string, unknown> },
+    after?: string,
+  ): ChainStepInfo;
+  /** After the current step, go to this step instead. */
+  goTo(step: string): void;
+  /** After the current step, move on to the next alt. */
+  skipAlt(): void;
+  /** After the current step, stop the chain. */
+  stop(): void;
 }
 
 interface TaskContext<S extends object = Record<string, unknown>> {
@@ -3301,20 +3716,155 @@ interface BotMachineOptions<S extends object = Record<string, unknown>> {
  * as `any`.
  * ======================================================================== */
 
+/** Transfer mode for `bot.transfer`; `'keep'` does nothing (handy for a mode setting). */
+type TransferMode = 'keep' | 'trade' | 'gift' | 'window' | 'trash';
+
+/**
+ * A `bot.items()` filter or query. A list holding filter objects matches when any entry matches,
+ * e.g. `['kit', { type: 'clock' }, (item) => item.count < 5]`; a list of only strings is a name list.
+ */
+type TransferItemFilter = ItemQueryFilter | ItemQuery | (ItemQueryFilter | ItemQuery)[];
+
+/** A crate key to send with a trade or gift. */
+interface TransferKey {
+  /** Key type as shown in game, e.g. `'vote'`, `'rare'`. */
+  keyName: string;
+  amount: number;
+}
+
+interface TransferOptions {
+  /** Inventory items to transfer, as a `bot.items()` filter (or a list of them, any may match). Default: every item. */
+  items?: TransferItemFilter;
+  /** Inventory items to never transfer, as a `bot.items()` filter (or a list of them, any may match). */
+  exclude?: TransferItemFilter;
+  /** trade/gift: the receiving player. Asked for when missing. */
+  username?: string;
+  /** window: the command that opens the window, e.g. `'/ec'`. */
+  command?: string;
+  /** trade/gift: crate keys to send along. */
+  keys?: TransferKey[];
+  /** Send the `keys` even when there are no items to transfer. @default true */
+  keysWithoutItems?: boolean;
+  /** Give up after this many ms; the result then has `completed: false`. */
+  timeout?: number | null;
+  /** window: shift-click items in instead of dragging them. @default true */
+  shiftClick?: boolean;
+}
+
+/** What a transfer moved out of the inventory. */
+interface TransferResult {
+  /** False when the transfer hit its `timeout`. */
+  completed: boolean;
+  /** Items that left the inventory, per item id. */
+  items: { name: string; displayName: string; count: number }[];
+  /** Total number of items that left the inventory. */
+  count: number;
+}
+
+/** BotMachine state of a transfer; custom modes read it in their tasks. */
+interface TransferState {
+  /** The transferable items in the player inventory (live; slots match the open window). */
+  items: ItemQuery;
+  itemFilter: (item: Item) => boolean;
+  keys: TransferKey[];
+  /** Every option passed to `bot.transfer`, also custom ones. */
+  options: TransferOptions & Record<string, unknown>;
+  /** The mode's target, under its `target` name (e.g. `state.username`). */
+  [target: string]: unknown;
+}
+
+interface TransferModeDefinition {
+  /** Name of the required parameter, also accepted as the plain second argument. `'username'` is asked for when missing; `'command'` must start with `/`. */
+  target?: string;
+  /** Whether the mode accepts `keys`. @default false */
+  keys?: boolean;
+  /** The BotMachine tasks; they must call `machine.finish()` when done. */
+  tasks: Task<TransferState>[] | ((state: TransferState) => Task<TransferState>[]);
+}
+
+/** The second argument is the mode's target (username, command, ...) or the options. */
+interface TransferCall {
+  (mode: 'trade' | 'gift', username?: string, options?: TransferOptions): Promise<TransferResult>;
+  (mode: 'window', command: string, options?: TransferOptions): Promise<TransferResult>;
+  (mode: TransferMode, options?: TransferOptions): Promise<TransferResult>;
+  /** A mode added with `bot.transfer.addMode`. */
+  (mode: string, target?: unknown, options?: TransferOptions & Record<string, unknown>): Promise<TransferResult>;
+}
+
+/**
+ * Transfer inventory items. Resolves with what left the inventory.
+ *
+ * @example
+ *   await bot.transfer('gift', 'Zola');                                  // everything
+ *   await bot.transfer('trade', 'Zola', { items: { type: 'diamond' } });
+ *   await bot.transfer('gift', 'Zola', { keys: [{ keyName: 'vote', amount: 3 }] });
+ *   await bot.transfer('window', '/ec', { exclude: { lore: 'soulbound' } });
+ *   await bot.transfer('trash', { exclude: ['kit', { type: 'clock' }] });
+ *   await bot.items({ lore: 'rare' }).transfer('gift', 'Zola');         // only matching items
+ *   const { count } = await bot.transfer('trash');                      // number of items trashed
+ */
+interface TransferFn extends TransferCall {
+  trade(username?: string, options?: TransferOptions): Promise<TransferResult>;
+  gift(username?: string, options?: TransferOptions): Promise<TransferResult>;
+  window(command: string, options?: TransferOptions): Promise<TransferResult>;
+  trash(options?: TransferOptions): Promise<TransferResult>;
+  /** Every mode this bot supports, including added ones. */
+  readonly modes: string[];
+  /**
+   * Add (or replace) a mode for this bot, e.g. from the server's bot extension.
+   * It also gets a shortcut: `bot.transfer.<name>(target, options)`.
+   *
+   * @example
+   *   bot.transfer.addMode('auction', {
+   *     target: 'price',
+   *     tasks: [
+   *       { name: 'Done', when: ({ state }) => !state.items.has(), run: ({ machine }) => machine.finish() },
+   *       {
+   *         name: 'Listing item',
+   *         when: () => true,
+   *         run: async ({ bot, state }) => {
+   *           await bot.equip(state.items.first(), 'hand');
+   *           bot.chat(`/ah sell ${state.price}`);
+   *           await bot.waitForTicks(20);
+   *         },
+   *       },
+   *     ],
+   *   });
+   *   await bot.items('diamond').transfer('auction', 500);
+   */
+  addMode(name: string, definition: TransferModeDefinition): void;
+  /** This bot's server-specific transfer config; see {@link TransferConfig}. */
+  config: TransferConfig;
+  /**
+   * Deep-merge overrides into this bot's transfer config. Call it from the
+   * server's bot extension when a server changes its trade/gift/trash GUI.
+   *
+   * @example
+   *   bot.transfer.configure({
+   *     gift: { command: '/send {username}', confirmButton: ['lime_dye', 'confirm'] },
+   *     trash: { windowTitle: ['bin'] },
+   *   });
+   */
+  configure: (overrides: TransferConfigOverrides) => TransferConfig;
+  /** Restore the built-in defaults. */
+  resetConfig: () => TransferConfig;
+}
+
+/** @deprecated Use {@link TransferMode} with `bot.transfer`. */
 type TransferItemMode =
   | 'keep'
   | 'trade'
   | 'gift'
   | 'window'
-  | 'tradeWithKeys'
   | 'trash'
   | 0
   | 1
   | 2
   | 3
-  | 4
+  | 4 // legacy: trade with `sendKeys: true`
   | 5;
 
+/** @deprecated Use {@link TransferOptions} with `bot.transfer`. */
 interface TransferItemsOptions {
   username?: string;
   command?: string;
@@ -3322,19 +3872,21 @@ interface TransferItemsOptions {
   filter?: (string | number)[];
   itemFilter?: (item: Item) => boolean;
   keep?: boolean; // whether to pass/keep the item if not filtered
-  keys?: string[]; // How many items it should click on each key ("<keyType>,<amount>")
-  forceTradeKeys?: boolean; // Whether to force trade keys even when no other items are in player inventory
+  sendKeys?: boolean; // Also send crate keys (trade/gift only). @default false
+  keys?: string[]; // Keys to send with `sendKeys` ("<keyType>,<amount>")
+  forceKeys?: boolean; // Send the keys even when no other items are in the player inventory. @default true
   timeout?: number | null;
   shiftClick?: boolean; // Whether to shift click items into window (windowBehaviour only)
 }
 
+/** @deprecated Use {@link TransferFn} (`bot.transfer`). */
 interface TransferItemsFn {
   (
     mode: 'keep' | 0,
     options?: TransferItemsOptions,
   ): Promise<void>;
   (
-    mode: 'trade' | 'gift' | 'window' | 'tradeWithKeys' | 'trash' | 1 | 2 | 3 | 4 | 5,
+    mode: 'trade' | 'gift' | 'window' | 'trash' | 1 | 2 | 3 | 4 | 5,
     options?: TransferItemsOptions,
   ): Promise<boolean>;
   (
@@ -3344,8 +3896,143 @@ interface TransferItemsFn {
   trade: (options?: TransferItemsOptions) => Promise<boolean>;
   gift: (options?: TransferItemsOptions) => Promise<boolean>;
   window: (options?: TransferItemsOptions) => Promise<boolean>;
-  tradeWithKeys: (options?: TransferItemsOptions) => Promise<boolean>;
   trash: (options?: TransferItemsOptions) => Promise<boolean>;
+  /** Same as `bot.transfer.config`. */
+  config: TransferConfig;
+  configure: TransferFn['configure'];
+  resetConfig: TransferFn['resetConfig'];
+}
+
+/**
+ * Text pattern, matched case-insensitively with color codes stripped. Strings
+ * may contain `{username}`. Pass a list to accept several titles/texts.
+ */
+type TextMatcher = string | RegExp | ((text: string) => boolean) | TextMatcher[];
+/** Like {@link TextMatcher}, checked against the item id, display name and lore. */
+type ItemMatcher = string | RegExp | ((item: Item, bot: Bot) => boolean) | ItemMatcher[];
+
+interface TransferConfig {
+  trade: {
+    /** @default '/trade {username}' */
+    command: string;
+    /** @default ['{username}'] */
+    windowTitle: TextMatcher;
+    /** Your accept button, searched on your side of the window. @default 'glass' */
+    acceptButton: ItemMatcher;
+    /** Fallback accept slot. @default 45 */
+    acceptSlot: number;
+    /** Accept button state meaning that side accepted. @default green/lime glass */
+    acceptedButton: ItemMatcher;
+    /** Columns (from the left) that form your side. @default 4 */
+    offerColumns: number;
+    /** Slots from your accept button to the partner's. @default 6 */
+    partnerAcceptOffset: number;
+    /** When sending keys: button that opens / cycles the key page. */
+    keyButton: ItemMatcher;
+    /** When sending keys: fallback key button slot. @default 36 */
+    keySlot: number;
+    /** @default 'tripwire_hook' */
+    keyItem: ItemMatcher;
+    /** When sending keys: fallback accept slot. @default 27 */
+    keyAcceptSlot: number;
+  };
+  gift: {
+    /** @default '/gift {username}' */
+    command: string;
+    /** @default ['{username}'] */
+    windowTitle: TextMatcher;
+    /** @default ['are you sure'] */
+    confirmWindowTitle: TextMatcher;
+    confirmButton: ItemMatcher;
+    /** Fallback confirm slot. @default 11 */
+    confirmSlot: number;
+    /** @default ['select items to send'] */
+    depositWindowTitle: TextMatcher;
+    /** When sending keys: item name that opens the key page. @default 'send crate keys' */
+    keyButton: string | RegExp | (string | RegExp)[];
+    /** Key page: lore with the number of keys you own; the first group captures the number. @default /keys own(?:ed)?:?\s*(\d+)/i */
+    keysOwnedLore: RegExp;
+    /** Key page: lore with the number of keys already added to the gift. @default /keys being sent:?\s*(\d+)/i */
+    keysSendingLore: RegExp;
+  };
+  trash: {
+    /** @default '/trash' */
+    command: string;
+    /** @default ['trash', 'disposal'] */
+    windowTitle: TextMatcher;
+    /** Searched in the bottom row once the window is full. @default 'delete all items' */
+    confirmButton: ItemMatcher;
+  };
+  /** Other names a key type shows up as. @default { vote: ['voting'] } */
+  keyAliases: Record<string, string[]>;
+}
+
+type TransferConfigOverrides = {
+  [K in keyof TransferConfig]?: Partial<TransferConfig[K]>;
+};
+
+/**
+ * A string matches as a case-insensitive substring; RegExp and functions get the color-stripped text.
+ * An array matches when any entry matches: `['kit', 'confirm']` matches "Starters Kit" and "Confirmation of trade".
+ */
+type ItemTextFilter =
+  | string
+  | RegExp
+  | ((text: string) => boolean)
+  | (string | RegExp | ((text: string) => boolean))[];
+
+/** `bot.items()` filter: a name filter, an item predicate, or an object (all given fields must match). */
+type ItemQueryFilter =
+  | ItemTextFilter
+  | ((item: Item) => boolean)
+  | {
+      /** Custom name, or the vanilla name (e.g. "Golden Apple") when the item isn't renamed. */
+      name?: ItemTextFilter;
+      /** Lore, lines joined with `\n`. */
+      lore?: ItemTextFilter;
+      /** Minecraft item id(s), e.g. `'diamond_sword'`. */
+      type?: string | string[];
+      where?: (item: Item) => boolean;
+      /** Match strings case-sensitively (colors are still stripped). */
+      caseSensitive?: boolean;
+    };
+
+/** Lazy, chainable item search. Scope methods return the same query; iterate with `for…of`. */
+interface ItemQuery extends Iterable<Item> {
+  /** Container slots, then the player inventory (default). Without a window: only the inventory. */
+  any(): ItemQuery;
+  /** Only the top part of the open window; nothing when no window is open. */
+  container(): ItemQuery;
+  /** Only the player inventory, whether or not a window is open. */
+  inventory(): ItemQuery;
+  /** Only the 9 hotbar slots. */
+  hotbar(): ItemQuery;
+  /** Container rows (0-based, 9 slots each). With `cols`, only slots in both. */
+  rows(...rows: number[]): ItemQuery;
+  /** Container columns (0-8). */
+  cols(...cols: number[]): ItemQuery;
+  /** Exact window slot indexes. */
+  slots(...slots: number[]): ItemQuery;
+  first(): Item | null;
+  all(): Item[];
+  has(): boolean;
+  /** Sum of `item.count` over all matches. */
+  count(): number;
+  /** Clicks the first match and returns it, or null when nothing matched. */
+  click(mouseButton?: number, mode?: number): Promise<Item | null>;
+  /** Resolves with the first match as soon as it appears (also in a window opened later), or null after `ticks` (default 100). */
+  wait(ticks?: number): Promise<Item | null>;
+  /** Whether `item` passes this query's name/lore/type/where filters (the scope is ignored). */
+  matches(item: Item | null): boolean;
+  /**
+   * Transfer the matching inventory items; same as `bot.transfer` with `items` set to this query.
+   * Only the filters count: items always come from the player inventory.
+   *
+   * @example
+   *   await bot.items({ type: 'diamond' }).transfer('trade', 'Zola');
+   *   await bot.items('kit').transfer('trash');
+   */
+  transfer: TransferCall;
 }
 
 type BotPluginExtensions = {
@@ -3353,8 +4040,34 @@ type BotPluginExtensions = {
   mainVersion: number;
   join: (gamemode: string, options?: Record<string, unknown>) => Promise<void>;
   isOnline: () => boolean;
+  /** Current gamemode from the detector, else the last gamemode a join confirmed. */
   getGamemode: () => string | null;
-  itemInfo(item: Item | null): { name: string; info: string };
+  /**
+   * Replace how this bot enters a gamemode; used by `bot.join`, `BotMachine`
+   * and `Bot.join({ gamemode })`. Set it from the profile's on-join action,
+   * before any `await`. Pass `null` to restore the built-in flow.
+   *
+   * @example
+   *   bot.setJoinHandler(async (gamemode, bot) => {
+   *     bot.chat(`/warp ${gamemode}`);
+   *     await bot.waitForTicks(40);
+   *   });
+   */
+  setJoinHandler: (handler: JoinHandler | null) => void;
+  /**
+   * Tell `bot.getGamemode()` how to read the current gamemode on this server.
+   *
+   * @example
+   *   bot.setGamemodeDetector((bot) => bot.scoreboard.sidebar?.title ?? null);
+   */
+  setGamemodeDetector: (detector: GamemodeDetector | null) => void;
+  itemInfo: {
+    (item: Item | null): { name: string; info: string };
+    /** Only the custom name (cheaper than the full call). */
+    name(item: Item | null): string;
+    /** Only the lore, lines joined with `\n`. */
+    lore(item: Item | null): string;
+  };
   login: (password?: string) => Promise<void>; // Only works if you call this in the start of bot
   /**
    * Send a command that opens a GUI and wait for the matching window. Prefer
@@ -3370,7 +4083,26 @@ type BotPluginExtensions = {
       signal?: { aborted: boolean };
     },
   ) => Promise<unknown | null>;
+  /** Move inventory items by trade, gift, a server window or trash; see {@link TransferFn}. */
+  transfer: TransferFn;
+  /** @deprecated Use `bot.transfer(mode, target, options)` or `bot.items(...).transfer(...)`. */
   transferItems: TransferItemsFn;
+  /**
+   * Search items by name, lore or type in the open window and/or the player inventory.
+   * Strings match as a case-insensitive substring after stripping `§` color codes and
+   * small caps (`'kit'` matches `§6ᴋɪᴛ Warrior`). Results are lazy and plain `Item`s.
+   *
+   * @example
+   *   const kit = bot.items('kit').first();                 // window first, then inventory
+   *   const button = bot.items(['confirm', 'accept']).first(); // any of these
+   *   await bot.items({ name: 'shard', lore: 'buy' }).container().click();
+   *   const diamonds = bot.items({ type: 'diamond' }).inventory().count();
+   *   const confirm = await bot.items('Confirm').wait(40);  // null after 40 ticks
+   */
+  items: (query?: ItemQueryFilter) => ItemQuery;
+  /** Strips color codes and small caps and lowercases, e.g. `'§lᴋɪᴛ'` → `'kit'`. */
+  cleanText: (text: string) => string;
+  /** @deprecated Use `bot.items(query)`, e.g. `bot.items('Diamond').first()`. */
   findWindowSlots: (
     filter: { name?: string; lore?: string } | string,
     options?: {
@@ -3935,6 +4667,8 @@ declare module 'JNbot' {
   const RECORDINGS_PATH: string;
   /** The host-app script API. */
   const script: ScriptAPI;
+  /** The chain this plugin runs in, or `null` outside a chain. */
+  const chain: ChainAPI | null;
   /** Create a bot from a profile and join in one call. */
   const join: (profile: BotProfile, options?: JoinOptions) => Promise<Bot>;
   export {
@@ -3953,6 +4687,7 @@ declare module 'JNbot' {
     DebugPlugin,
     RECORDINGS_PATH,
     script,
+    chain,
     join,
   };
 }
@@ -4001,6 +4736,3 @@ declare function clearTimeout(id: any): void;
 declare function clearInterval(id: any): void;
 declare function clearImmediate(id: any): void;
 ```
-
-
-[IMPORTANT] Use `BotMachine` for the entire bot task. Avoid creating long functions. Split the task up into smaller steps. This will allow the bot to recover from errors like if some action failed or the bot gets suddenly kicked to hub, BotMachine allows you to deal with these scenarios much easier. For the `when` condition, try to find when the bot should perform the action. For example, if the bot doesn't have a window opened -> do window action. Or if specific window must be opened, we can check it using bot.getWindowTitle(). Avoid doing stuff like state.step = "step1" and then checking for state.step === "step1" in the next task.

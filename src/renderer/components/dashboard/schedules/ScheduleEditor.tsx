@@ -5,7 +5,6 @@ import {
   DatePicker,
   Form,
   Input,
-  InputNumber,
   Select,
   Space,
   Switch,
@@ -13,11 +12,13 @@ import {
 } from 'antd';
 import dayjs from 'dayjs';
 import {
+  DAY,
+  presetRepeat,
   REPEAT_CHOICES,
+  repeatInterval,
   repeatPreset,
   scheduleError,
   type RepeatPreset,
-  type ScheduleRepeat,
   type ScriptSchedule,
 } from '../../../../common/cooldowns';
 import {
@@ -27,12 +28,14 @@ import {
   useSettingsStore,
 } from '../../../redux/settings';
 import { usePanelContext } from '../../other/botSideBar/SidePanelContextProvider';
-import { useScheduleScripts } from './useScheduleScripts';
+import { useRunnableScripts } from '../../../hooks/useRunnableScripts';
+import DurationFields from '../cooldowns/DurationFields';
 import ScheduleOverrides from './ScheduleOverrides';
+import ScriptSelect from '../../general/scriptSettings/ScriptSelect';
 
 export default function ScheduleEditor({ schedule }: SchedulePanelData) {
   const { setPanel } = usePanelContext();
-  const { scripts, loading } = useScheduleScripts();
+  const { scripts, loading } = useRunnableScripts();
   const canUseAccounts = useSettingsStore(selectCanUseAccounts);
   const [name, setName] = useState(schedule?.name ?? '');
   const [pluginId, setPluginId] = useState(schedule?.pluginId ?? '');
@@ -45,9 +48,8 @@ export default function ScheduleEditor({ schedule }: SchedulePanelData) {
   const [preset, setPreset] = useState<RepeatPreset>(
     repeatPreset(schedule?.repeat),
   );
-  const [every, setEvery] = useState(schedule?.repeat?.every ?? 1);
-  const [unit, setUnit] = useState<ScheduleRepeat['unit']>(
-    schedule?.repeat?.unit ?? 'day',
+  const [customRepeat, setCustomRepeat] = useState(
+    repeatInterval(schedule?.repeat) || DAY,
   );
   const [enabled, setEnabled] = useState(schedule?.autoStart ?? true);
   const [options, setOptions] = useState<Record<string, unknown>>(
@@ -65,13 +67,7 @@ export default function ScheduleEditor({ schedule }: SchedulePanelData) {
       pluginId,
       nextRunAt: nextRunAt.valueOf(),
       autoStart: enabled,
-      repeat:
-        preset === 'never'
-          ? undefined
-          : {
-              every: preset === 'custom' ? every : 1,
-              unit: preset === 'custom' ? unit : preset,
-            },
+      repeat: presetRepeat(preset, customRepeat),
       options: Object.keys(options).length ? options : undefined,
     };
     const validation = scheduleError(next);
@@ -93,18 +89,14 @@ export default function ScheduleEditor({ schedule }: SchedulePanelData) {
   return (
     <Form layout="vertical" onFinish={save}>
       <Form.Item label="Script" htmlFor="schedule-script" required>
-        <Select
+        <ScriptSelect
           id="schedule-script"
-          showSearch
-          optionFilterProp="label"
+          scripts={scripts}
           loading={loading}
           value={pluginId || undefined}
           placeholder="Choose a script"
-          options={scripts.map(({ info }) => ({
-            label: info.name,
-            value: info.pluginId,
-          }))}
-          onChange={(id: string) => {
+          onChange={(next) => {
+            const id = next as string;
             setPluginId(id);
             setOptions({});
             setError(undefined);
@@ -145,26 +137,7 @@ export default function ScheduleEditor({ schedule }: SchedulePanelData) {
       </Form.Item>
       {preset === 'custom' && (
         <Form.Item label="Run every">
-          <Space.Compact style={{ width: '100%' }}>
-            <InputNumber
-              aria-label="Repeat interval"
-              min={1}
-              precision={0}
-              value={every}
-              onChange={(value) => setEvery(value ?? 0)}
-              style={{ width: '50%' }}
-            />
-            <Select
-              aria-label="Repeat unit"
-              style={{ width: '50%' }}
-              value={unit}
-              onChange={setUnit}
-              options={['hour', 'day', 'week'].map((value) => ({
-                label: `${value}s`,
-                value,
-              }))}
-            />
-          </Space.Compact>
+          <DurationFields value={customRepeat} onChange={setCustomRepeat} />
         </Form.Item>
       )}
       <Form.Item label="Enabled">

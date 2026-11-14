@@ -22,8 +22,12 @@ const mobileBackend = path.join(
 const electronMockPlugin = {
   name: 'electron-mock',
   setup(build) {
-    build.onResolve({ filter: /^axios$/ }, () => ({
-      path: path.join(root, 'src/mobile-backend/mobileHttp.ts'),
+    // CommonJS wrapper so both `require('axios')` (plugins, legacy JS) and
+    // `import axios from 'axios'` receive the axios object, not the ES namespace.
+    build.onResolve({ filter: /^axios$/ }, () => ({ path: 'axios', namespace: 'mobile-axios' }));
+    build.onLoad({ filter: /.*/, namespace: 'mobile-axios' }, () => ({
+      contents: "module.exports = require('./mobileHttp.ts').default;",
+      loader: 'js', resolveDir: path.join(root, 'src/mobile-backend'),
     }));
     build.onResolve({ filter: /^discord\.js$/ }, () => ({ path: 'discord.js', namespace: 'mobile-discord-disabled' }));
     build.onLoad({ filter: /.*/, namespace: 'mobile-discord-disabled' }, () => ({
@@ -32,6 +36,12 @@ const electronMockPlugin = {
     build.onResolve({ filter: /^@xmcl\// }, () => ({ path: 'xmcl', namespace: 'mobile-launcher-disabled' }));
     build.onLoad({ filter: /.*/, namespace: 'mobile-launcher-disabled' }, () => ({
       contents: 'const Unsupported=class { constructor(){ throw new Error("Minecraft launcher/server management is not supported by the mobile runtime."); } }; module.exports=new Proxy({}, { get(){ return Unsupported; } });', loader: 'js',
+    }));
+    // Only serves MCP over HTTP, which the phone never starts. Loading it subclasses
+    // the global `Request`, which makes Node load undici and its WebAssembly client.
+    build.onResolve({ filter: /^@modelcontextprotocol\/node$/ }, () => ({ path: 'mcp-node', namespace: 'mobile-mcp-http-disabled' }));
+    build.onLoad({ filter: /.*/, namespace: 'mobile-mcp-http-disabled' }, () => ({
+      contents: 'module.exports={ toNodeHandler(){ throw new Error("MCP over HTTP is not supported by the mobile runtime."); } };', loader: 'js',
     }));
     build.onResolve({ filter: /^xxhash-wasm$/ }, () => ({ path: 'xxhash-wasm', namespace: 'mobile-wasm-disabled' }));
     build.onLoad({ filter: /.*/, namespace: 'mobile-wasm-disabled' }, () => ({

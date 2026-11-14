@@ -240,62 +240,58 @@ html {
   overflow: hidden;
 }
 
-.settings-tabs,
-.settings-tabs>.ant-tabs-body-holder,
-.settings-tabs>.ant-tabs-body-holder>.ant-tabs-body,
-.settings-tabs .ant-tabs-content {
+.settings-layout {
+  display: flex;
   height: 100%;
   min-height: 0;
 }
 
-.settings-tabs>.ant-tabs-nav {
-  width: 200px;
-  margin: 0;
-  padding: 12px;
+.settings-nav {
+  display: flex;
+  flex: 0 0 232px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 12px;
+  overflow-y: auto;
   background: var(--ant-color-fill-quaternary);
 }
 
-.settings-tabs>.ant-tabs-nav .ant-tabs-ink-bar {
+.settings-nav {
+  scrollbar-width: none;
+}
+
+.settings-nav::-webkit-scrollbar {
   display: none;
 }
 
-.settings-tabs>.ant-tabs-nav .ant-tabs-tab {
-  margin: 0 0 4px !important;
-  padding: 9px 12px;
-  border-radius: 8px;
+.settings-nav .ant-menu.ant-menu-root {
+  background: transparent;
+  border: 0;
+  border-inline-end: 0;
 }
 
-.settings-tabs>.ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-btn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.settings-tabs>.ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-icon {
-  display: flex;
-  margin: 0;
-}
-
-.settings-tabs>.ant-tabs-nav .ant-tabs-tab-active {
-  background: var(--ant-color-primary-bg);
-}
-
-.settings-tabs>.ant-tabs-body-holder {
-  overflow: hidden;
-}
-
-.settings-tabs .ant-tabs-content {
+.settings-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 28px 36px;
   overflow-y: auto;
-  padding: 32px 40px;
 }
 
 .settings-section-title.ant-typography {
-  margin: 0 0 4px;
+  margin: 0 0 16px;
   padding-right: 32px;
 }
 
-.settings-section-title--spaced.ant-typography {
+.settings-card.ant-card {
   margin-bottom: 16px;
+}
+
+.settings-card .settings-list-row:first-child {
+  padding-top: 4px;
+}
+
+.settings-card .settings-list-row:last-child {
+  padding-bottom: 4px;
 }
 
 .settings-list-row {
@@ -394,29 +390,17 @@ html {
     min-height: 300px;
   }
 
-  .settings-tabs {
+  .settings-layout {
     flex-direction: column;
   }
 
-  .settings-tabs>.ant-tabs-nav {
-    width: 100%;
-    padding: 6px 12px 0;
+  .settings-nav {
+    flex-basis: auto;
+    padding: 12px 18px;
   }
 
-  .settings-tabs>.ant-tabs-nav .ant-tabs-nav-wrap {
-    overflow-x: auto;
-  }
-
-  .settings-tabs>.ant-tabs-nav .ant-tabs-nav-list {
-    flex-direction: row;
-  }
-
-  .settings-tabs>.ant-tabs-nav .ant-tabs-ink-bar {
-    display: none;
-  }
-
-  .settings-tabs .ant-tabs-content {
-    padding: 4px 18px 18px;
+  .settings-content {
+    padding: 16px 18px;
   }
 
   .settings-list-item {
@@ -1015,31 +999,40 @@ textarea.mc-field {
 }
 
 .script-settings-btn {
-  border: none;
-  background-color: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
   padding: 3px 5px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  color: rgba(255, 255, 255, 0.85);
+  background-color: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(6px);
+  border-radius: 8px;
 }
 
-.script-settings-btn:hover {
-  background-color: rgba(255, 255, 255, 0.2);
+.script-settings-btn:hover:not(:disabled) {
+  color: #fff !important;
+  background-color: rgba(255, 255, 255, 0.24) !important;
 }
 
 .script-run-btn {
   height: auto !important;
   padding: 4px 15px;
   font-weight: 500;
-  border-radius: 4px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  transition: all 0.2s ease !important;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
-.script-run-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
+/* Secondary (add-instance) button of the running controls, on the dark overlay */
+.script-card-buttons .script-run-btn.ant-btn-default {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.16);
+  border-color: transparent;
+  backdrop-filter: blur(6px);
+}
+
+.script-card-buttons .script-run-btn.ant-btn-default:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.28);
+  color: #fff;
 }
 
 /* Script modal styles */

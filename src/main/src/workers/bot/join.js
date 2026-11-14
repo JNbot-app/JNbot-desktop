@@ -19,9 +19,7 @@ const {
 } = require('./proxyConnect.js');
 const resourceFixPlugin = require('./extensions/resourceFixExtension.js');
 const installProxyKeepAlive = require('./proxyKeepAlive.js');
-const {
-  applyChunkRenderDistanceFilter,
-} = require('./extensions/chunkFilterExtension.js');
+const chunkCacheExtension = require('./extensions/chunkCacheExtension.js');
 const realisticMotionExtension = require('./extensions/realisticMotionExtension.js');
 const mouseExtension = require('./extensions/mouseExtension.js');
 const abilitiesExtension = require('./extensions/abilitiesExtension.js');
@@ -32,7 +30,8 @@ const packetThreadExtension = require('./extensions/packetThreadExtension.js');
  *  (see `loadPlugins` below) so it can see / override everything the built-in
  *  plugins installed.
  */
-const BOT_PLUGINS = [packetThreadExtension, usserPlugin, botActions, botProxy, transferItems, mouseExtension, abilitiesExtension, realisticMotionExtension];
+// chunkCacheExtension must precede packetThreadExtension (see its header).
+const BOT_PLUGINS = [chunkCacheExtension, packetThreadExtension, usserPlugin, botActions, botProxy, transferItems, mouseExtension, abilitiesExtension, realisticMotionExtension];
 
 function nextBotId() {
   if (!workerData?.sharedArray) return 1;
@@ -67,7 +66,7 @@ async function joinServer(options = {}, scriptOptions = {}) {
     requiresConfirmation = false, // Waits until the server sends a confirmation transaction back after clicking on a slot
     resolveOnSpawn = true,
     signal = null, // AbortSignal: cancels an in-flight join (e.g. skip during the join-delay queue)
-    chunkLoadLimit = null, // If enabled, the bot will discard any chunks 
+    chunkLoadLimit = null, // Max chunk radius the bot keeps loaded (see chunkCacheExtension)
 
     // proxy: {  url: "http://username:password@ip:port" }
   } = scriptOptions;
@@ -376,6 +375,7 @@ function joinWithBot(botOptions, alt, joinOptions, botId) {
         global.appSettings?.render_distance ??
         (isMobile ? 2 : 12);
       botOptions.viewDistance = renderDistance;
+      botOptions.chunkLoadLimit = joinOptions.chunkLoadLimit;
       const reducedEvents =
         global.appSettings?.reduced_events ?? isMobile;
       if (reducedEvents) {
@@ -393,9 +393,6 @@ function joinWithBot(botOptions, alt, joinOptions, botId) {
       }
       bot = mineflayer.createBot(botOptions);
       if (botOptions.__viaProxy) installProxyKeepAlive(bot._client);
-      if (typeof joinOptions.chunkLoadLimit === 'number' && joinOptions.chunkLoadLimit > 0) {
-        applyChunkRenderDistanceFilter(bot, joinOptions.chunkLoadLimit);
-      }
       if (reducedEvents) {
         bot._client?.removeAllListeners?.('update_light');
       }

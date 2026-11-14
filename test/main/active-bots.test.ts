@@ -243,5 +243,27 @@ describe('ActiveBots_', () => {
       expect(res1.cancelled).toBe(true);
       expect(res2.cancelled).toBe(true);
     });
+
+    it('joinBotNow grants a queued join immediately and re-times the rest', async () => {
+      jest.useFakeTimers();
+      try {
+        const script: any = { id: 's-join-now', runtimeProfileId: 1, runtimeScriptId: 1 };
+        for (const botId of [110, 111, 112])
+          activeBots.addBot({ botId, username: `bot${botId}`, status: 'queued' } as any, script);
+
+        activeBots.waitForBotJoinRequest(110, script, false);
+        const skipped = activeBots.waitForBotJoinRequest(112, script, false);
+        activeBots.waitForBotJoinRequest(111, script, false);
+        const now = Date.now();
+
+        expect(activeBots.joinBotNow(112)).toBe(true);
+        await expect(skipped).resolves.toEqual({ cancelled: false });
+        expect(activeBots.getBot(112)?.botInfo.status).toBe('joining');
+        expect(activeBots.getBot(111)?.botInfo.joinAt).toBe(now + 2000);
+        expect(activeBots.joinBotNow(112)).toBe(false);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 });

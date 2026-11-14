@@ -61,6 +61,8 @@ scripts/keys/profileScripts.private.pem
 scripts/keys/plugins.ed25519.private.pem
 scripts/marketplace-config.local.mjs
 
+test/replay/recordings
+
 esbuild/meta.json
 native/needle/build/
 native/needle/engine/

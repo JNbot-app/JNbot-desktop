@@ -4,7 +4,6 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import {
   source,
-  dependencies,
   fingerprint,
   nodeHeaders,
   openblas,
@@ -19,7 +18,6 @@ const directory = path.join(source, 'engine/mobile', engineRevision);
 const key = fingerprint();
 fs.mkdirSync(directory, { recursive: true });
 const headers = nodeHeaders();
-const llama = dependencies();
 const android = !process.argv.includes('--ios');
 const ios = !process.argv.includes('--android');
 if (android) {
@@ -48,7 +46,6 @@ if (android) {
     ...options,
     '-DCMAKE_BUILD_TYPE=Release',
     '-DJNBOT_MOBILE=ON',
-    `-DLLAMA_SOURCE_DIR=${llama}`,
     `-DNODE_INCLUDE_DIR=${headers}`,
     `-DNEEDLE_OPENBLAS_ROOT=${blas}`,
   ]);
@@ -84,8 +81,7 @@ if (ios) {
       `-DCMAKE_SYSTEM_PROCESSOR=${arch}`,
       '-DCMAKE_OSX_DEPLOYMENT_TARGET=15.1',
       '-DJNBOT_MOBILE=ON',
-      `-DLLAMA_SOURCE_DIR=${llama}`,
-      `-DNODE_INCLUDE_DIR=${headers}`,
+        `-DNODE_INCLUDE_DIR=${headers}`,
     ]);
     run('cmake', ['--build', build, '--target', 'jnbot_inference', '-j', '4']);
     const archives = [];

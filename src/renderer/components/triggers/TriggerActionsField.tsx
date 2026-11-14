@@ -10,6 +10,7 @@ import {
 } from '../../../common/triggers';
 import { groupActionOptions } from '../../utils/actionOptions';
 import SelectFolder from '../other/SelectFolder';
+import PresetSelect from '../general/scriptSettings/presets/PresetSelect';
 import { TRIGGER_ACTION_ICONS } from './triggerUi';
 
 type Props = {
@@ -72,17 +73,24 @@ function ActionField({
       );
     case 'scriptAction':
       return (
-        <Select
-          aria-label="Script action"
-          showSearch
-          optionFilterProp="label"
-          loading={scriptActions === null}
-          value={action.id || undefined}
-          options={groupActionOptions(scriptActions ?? [])}
-          placeholder="Choose a script action"
-          onChange={(id: string) => onChange({ ...action, id })}
-          style={{ width: '100%' }}
-        />
+        <Flex vertical gap={8}>
+          <Select
+            aria-label="Script action"
+            showSearch
+            optionFilterProp="label"
+            loading={scriptActions === null}
+            value={action.id || undefined}
+            options={groupActionOptions(scriptActions ?? [])}
+            placeholder="Choose a script action"
+            onChange={(id: string) => onChange({ type: action.type, id })}
+            style={{ width: '100%' }}
+          />
+          <PresetSelect
+            pluginId={action.id}
+            value={action.preset}
+            onChange={(preset) => onChange({ ...action, preset })}
+          />
+        </Flex>
       );
     case 'log':
       return (

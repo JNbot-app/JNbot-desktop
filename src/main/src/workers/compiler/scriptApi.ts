@@ -17,6 +17,7 @@ import {
   StartPluginOptions,
 } from 'common/types/pluginApi';
 import scriptActionRunner from './scriptActions';
+import { findPresetId, withPreset } from '../../../../common/pluginPresets';
 import { isOnlineMode } from 'common/serverAuthentication';
 
 const BUTTON_TYPES = new Set(['default', 'primary', 'dashed', 'link', 'text']);
@@ -62,6 +63,7 @@ export function prompt(opts: PromptOptions): Promise<{ response: string }> {
       placeholder: opts.placeholder,
       defaultValue: opts.defaultValue,
       description: opts.description,
+      image: opts.image,
       promptID,
       scriptInstance: workerData.id,
       scriptId: workerData.pluginId,
@@ -197,9 +199,22 @@ export function onExit(handler: () => void): () => void {
   return workerScript.onceMessage('TERMINATE', handler);
 }
 
+/** Add a preset, picked by name or id, to a run's option overrides. */
+function presetOverrides(
+  pluginId: string,
+  preset?: string,
+  optionOverrides?: Record<string, any>,
+) {
+  if (!preset) return optionOverrides;
+  const presetId = findPresetId(global.settings.scripts?.[pluginId], preset);
+  if (!presetId) throw new Error(`${pluginId} has no preset "${preset}"`);
+  return withPreset(optionOverrides ?? {}, presetId);
+}
+
 export function startPlugin({
   name,
   pluginId,
+  preset,
   optionOverrides,
 }: StartPluginOptions) {
   if (!pluginId) throw new Error('startPlugin: name and pluginId are required');
@@ -210,7 +225,10 @@ export function startPlugin({
     'START_SCRIPT',
     {
       script: 'macro',
-      arguments: { macroInfo: { name, pluginId }, optionOverrides },
+      arguments: {
+        macroInfo: { name, pluginId },
+        optionOverrides: presetOverrides(pluginId, preset, optionOverrides),
+      },
     },
   ]);
 }
@@ -237,6 +255,13 @@ export function startScript({
 
 export function stopScript({ name }: { name: string }) {
   stopPlugin({ pluginId: name });
+}
+
+export async function getPluginInfo(
+  pluginId: string,
+): Promise<MacroInfo | null> {
+  if (!pluginId) throw new Error('getPluginInfo: pluginId is required');
+  return workerScript.sendAsync('GET_PLUGIN_INFO', { pluginId });
 }
 
 export async function getActiveScripts(): Promise<any> {
@@ -443,16 +468,23 @@ export async function runAction(
 export async function startAction({
   actionId,
   bot,
+  preset,
   optionOverrides,
   args,
 }: {
   actionId: string;
   bot?: Bot;
+  preset?: string;
   optionOverrides?: Record<string, unknown>;
   args: any[];
 }): Promise<any> {
   if (!actionId) throw new Error('startAction: action ID is required');
-  return scriptActionRunner({ id: actionId, bot, args, optionOverrides });
+  return scriptActionRunner({
+    id: actionId,
+    bot,
+    args,
+    optionOverrides: presetOverrides(actionId, preset, optionOverrides),
+  });
 }
 
 /* ---------- Alts ---------- */

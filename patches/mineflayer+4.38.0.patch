@@ -1,8 +1,48 @@
+diff --git a/node_modules/mineflayer/lib/plugins/bed.js b/node_modules/mineflayer/lib/plugins/bed.js
+index 9b526f6..7b00fa1 100644
+--- a/node_modules/mineflayer/lib/plugins/bed.js
++++ b/node_modules/mineflayer/lib/plugins/bed.js
+@@ -70,7 +70,7 @@ function inject (bot) {
+     } else {
+       bot._client.write('entity_action', {
+         entityId: bot.entity.id,
+-        actionId: 2,
++        actionId: 'stop_sleeping',
+         jumpBoost: 0
+       })
+     }
 diff --git a/node_modules/mineflayer/lib/plugins/entities.js b/node_modules/mineflayer/lib/plugins/entities.js
-index 696d7e9..325e244 100644
+index 696d7e9..4cac4aa 100644
 --- a/node_modules/mineflayer/lib/plugins/entities.js
 +++ b/node_modules/mineflayer/lib/plugins/entities.js
-@@ -368,7 +368,6 @@ function inject (bot) {
+@@ -271,18 +271,22 @@ function inject (bot) {
+     entity.yaw = conv.fromNotchianYawByte(packet.yaw)
+     entity.pitch = conv.fromNotchianPitchByte(packet.pitch)
+     entity.headPitch = conv.fromNotchianPitchByte(packet.headPitch)
+-    const notchVel = new Vec3(packet.velocity.x, packet.velocity.y, packet.velocity.z)
+-    entity.velocity.update(conv.fromNotchVelocity(notchVel))
++    entity.velocity.update(velocityOf(packet.velocity))
+     entity.metadata = parseMetadata(packet.metadata, entity.metadata)
+ 
+     bot.emit('entitySpawn', entity)
+   })
+ 
++  // Since 1.21.9 velocities are a low precision vector in blocks/tick, before in 1/8000 blocks/tick
++  function velocityOf ({ x, y, z }) {
++    const vel = new Vec3(x, y, z)
++    return bot.registry.version['>=']('1.21.9') ? vel : conv.fromNotchVelocity(vel)
++  }
++
+   bot._client.on('entity_velocity', (packet) => {
+     // entity velocity
+     const entity = fetchEntity(packet.entityId)
+-    const notchVel = new Vec3(packet.velocity.x, packet.velocity.y, packet.velocity.z)
+-    entity.velocity.update(conv.fromNotchVelocity(notchVel))
++    entity.velocity.update(velocityOf(packet.velocity))
+   })
+ 
+   bot._client.on('entity_destroy', (packet) => {
+@@ -368,7 +372,6 @@ function inject (bot) {
  
      if (eventName === 'entityHandSwap' && entity.equipment) {
        [entity.equipment[0], entity.equipment[1]] = [entity.equipment[1], entity.equipment[0]]
@@ -10,7 +50,7 @@ index 696d7e9..325e244 100644
      }
  
      if (eventName) bot.emit(eventName, entity)
-@@ -743,8 +742,9 @@ function inject (bot) {
+@@ -743,8 +746,9 @@ function inject (bot) {
      }
    })
  
@@ -21,7 +61,7 @@ index 696d7e9..325e244 100644
      const passenger = fetchEntity(packet.entityId)
      const vehicle = packet.vehicleId === -1 ? null : fetchEntity(packet.vehicleId)
  
-@@ -770,31 +770,32 @@ function inject (bot) {
+@@ -770,31 +774,32 @@ function inject (bot) {
      }
    })
  
@@ -67,7 +107,7 @@ index 696d7e9..325e244 100644
      }
    })
  
-@@ -856,6 +857,17 @@ function inject (bot) {
+@@ -856,6 +861,17 @@ function inject (bot) {
      useEntity(target, 0)
    }
  
@@ -85,7 +125,7 @@ index 696d7e9..325e244 100644
    function moveVehicle (left, forward) {
      if (bot.supportFeature('newPlayerInputPacket')) {
        // docs:
-@@ -870,28 +882,18 @@ function inject (bot) {
+@@ -870,28 +886,18 @@ function inject (bot) {
          }
        })
      } else {
@@ -189,20 +229,21 @@ index 94ff325..9490af3 100644
      }
    })
 diff --git a/node_modules/mineflayer/lib/plugins/inventory.js b/node_modules/mineflayer/lib/plugins/inventory.js
-index 264b5d6..41d4fd2 100644
+index 264b5d6..27d5dae 100644
 --- a/node_modules/mineflayer/lib/plugins/inventory.js
 +++ b/node_modules/mineflayer/lib/plugins/inventory.js
-@@ -28,6 +28,8 @@
+@@ -28,6 +28,8 @@ function inject (bot, { hideErrors }) {
  
    let eatingTask = createDoneTask()
    let sequence = 0
 +  // Block prediction sequence (1.19+), shared by every packet that carries one, like the vanilla client
 +  bot._nextSequence = () => ++sequence
-
+ 
    let nextActionNumber = 0 // < 1.17
    let stateId = -1
-@@ -73,22 +75,21 @@
-
+@@ -72,7 +74,9 @@ function inject (bot, { hideErrors }) {
+   })
+ 
    bot._client.on('entity_status', (packet) => {
 -    if (packet.entityId === bot.entity.id && packet.entityStatus === 9 && !eatingTask.done) {
 +    // 9: the bot finished eating; other statuses, or other entities' (a mob dying), don't end its item use
@@ -211,8 +252,7 @@ index 264b5d6..41d4fd2 100644
        eatingTask.finish()
      }
      bot.usingHeldItem = false
-   })
-
+@@ -81,12 +85,9 @@ function inject (bot, { hideErrors }) {
    let previousHeldItem = null
    bot.on('heldItemChanged', (heldItem) => {
      // we only disable the item if the item type or count changes
@@ -228,9 +268,7 @@ index 264b5d6..41d4fd2 100644
      if (!eatingTask.done) {
        eatingTask.finish()
      }
-     bot.usingHeldItem = false
-   })
-@@ -119,42 +120,41 @@
+@@ -119,42 +120,41 @@ function inject (bot, { hideErrors }) {
  
    function activateItem (offHand = false) {
      bot.usingHeldItem = true
@@ -293,7 +331,7 @@ index 264b5d6..41d4fd2 100644
      bot.usingHeldItem = false
    }
 diff --git a/node_modules/mineflayer/lib/plugins/physics.js b/node_modules/mineflayer/lib/plugins/physics.js
-index cecae69..4b88533 100644
+index cecae69..788368a 100644
 --- a/node_modules/mineflayer/lib/plugins/physics.js
 +++ b/node_modules/mineflayer/lib/plugins/physics.js
 @@ -6,6 +6,7 @@ const { performance } = require('perf_hooks')
@@ -304,22 +342,26 @@ index cecae69..4b88533 100644
  
  module.exports = inject
  
-@@ -20,7 +21,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+@@ -20,7 +21,9 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
    const physics = Physics(bot.registry, world)
  
    const positionUpdateSentEveryTick = bot.supportFeature('positionUpdateSentEveryTick')
 -
++  // Vanilla reports moves over 0.03 blocks, and since 1.18.2 over 0.0002 blocks
++  const minReportedMoveSquared = bot.registry.version['>=']('1.18.2') ? 2.0E-4 * 2.0E-4 : 9.0E-4
 +  const hasConfigurationState = bot.supportFeature('hasConfigurationState')
    bot.jumpQueued = false
    bot.jumpTicks = 0 // autojump cooldown
  
-@@ -76,8 +77,25 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+@@ -76,8 +79,27 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
    }
  
    function tickPhysics (now) {
 +    if (bot._client.state !== 'play') return
      if (!bot.entity?.position || !Number.isFinite(bot.entity.position.x)) return // entity not ready
      if (bot.blockAt(bot.entity.position) == null) return // check if chunk is unloaded
++    // Vanilla handles the mouse and keys (Minecraft#handleKeybinds) before the player moves
++    if (shouldUsePhysics) bot.emit('physicsTickStart')
 +    if (bot.vehicle) {
 +      if (shouldUsePhysics) {
 +        // Vanilla removes entities that fell out of the world, which drops the rider where it is
@@ -339,7 +381,7 @@ index cecae69..4b88533 100644
      if (bot.physicsEnabled && shouldUsePhysics) {
        physics.simulatePlayer(new PlayerState(bot, controlState), world).apply(bot)
        bot.emit('physicsTick')
-@@ -85,6 +103,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+@@ -85,6 +107,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
      }
      if (shouldUsePhysics) {
        updatePosition(now)
@@ -347,7 +389,7 @@ index cecae69..4b88533 100644
      }
    }
  
-@@ -153,12 +172,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+@@ -153,12 +176,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
      return false
    }
  
@@ -361,7 +403,7 @@ index cecae69..4b88533 100644
      // Increment the yaw in baby steps so that notchian clients (not the server) can keep up.
      const dYaw = deltaYaw(bot.entity.yaw, lastSentYaw)
      const dPitch = bot.entity.pitch - (lastSentPitch || 0)
-@@ -169,13 +183,103 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+@@ -169,13 +187,104 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
      lastSentYaw += math.clamp(-maxDeltaYaw, dYaw, maxDeltaYaw)
      lastSentPitch += math.clamp(-maxDeltaPitch, dPitch, maxDeltaPitch)
  
@@ -454,21 +496,85 @@ index cecae69..4b88533 100644
 +    // Don't send position with invalid coordinates (NaN after death)
 +    if (!Number.isFinite(bot.entity.position.x)) return
 +
++    sendStateChanges()
 +    const { yaw, pitch } = nextLook()
      const position = bot.entity.position
      const onGround = bot.entity.onGround
  
      // Only send a position update if necessary, select the appropriate packet
 -    const positionUpdated = lastSent.x !== position.x || lastSent.y !== position.y || lastSent.z !== position.z ||
-+    // Like vanilla, moves under 0.03 blocks aren't reported until the next forced update
++    // Like vanilla, small moves aren't reported until the next forced update
 +    const dx = position.x - lastSent.x
 +    const dy = position.y - lastSent.y
 +    const dz = position.z - lastSent.z
-+    const positionUpdated = dx * dx + dy * dy + dz * dz > 9.0E-4 ||
++    const positionUpdated = dx * dx + dy * dy + dz * dz > minReportedMoveSquared ||
        // Send a position update every second, even if no other update was made
        // This function rounds to the nearest 50ms (or PHYSICS_INTERVAL_MS) and checks if a second has passed.
        (Math.round((now - lastSent.time) / PHYSICS_INTERVAL_MS) * PHYSICS_INTERVAL_MS) >= 1000
-@@ -474,7 +578,14 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+@@ -237,7 +346,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+     }
+     bot._client.write('entity_action', {
+       entityId: bot.entity.id,
+-      actionId: bot.supportFeature('entityActionUsesStringMapper') ? 'start_elytra_flying' : 8,
++      actionId: 'start_fall_flying',
+       jumpBoost: 0
+     })
+   }
+@@ -249,30 +358,29 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+     controlState[control] = state
+     if (control === 'jump' && state) {
+       bot.jumpQueued = true
+-    } else if (control === 'sprint') {
+-      bot._client.write('entity_action', {
+-        entityId: bot.entity.id,
+-        actionId: bot.supportFeature('entityActionUsesStringMapper')
+-          ? (state ? 'start_sprinting' : 'stop_sprinting')
+-          : (state ? 3 : 4),
+-        jumpBoost: 0
+-      })
+-    } else if (control === 'sneak') {
+-      if (bot.supportFeature('newPlayerInputPacket')) {
+-        // In 1.21.6+, sneak is handled via player_input packet
+-        bot._client.write('player_input', {
+-          inputs: {
+-            shift: state
+-          }
+-        })
+-      } else {
+-        // Legacy entity_action approach for older versions
+-        bot._client.write('entity_action', {
+-          entityId: bot.entity.id,
+-          actionId: state ? 0 : 1,
+-          jumpBoost: 0
+-        })
+-      }
++    }
++    // Sprint/sneak changes are sent with the next tick's movement, like vanilla (see sendStateChanges)
++  }
++
++  // What the server was last told; vanilla starts a new player not sprinting or sneaking
++  const sentState = { sprint: false, sneak: false }
++  const resetSentState = () => { sentState.sprint = false; sentState.sneak = false }
++
++  // Vanilla sendPosition(): sprint, then sneak (before 1.21.2; later sneak is in player_input), then the move
++  function sendStateChanges () {
++    const action = (name) => bot._client.write('entity_action', {
++      entityId: bot.entity.id,
++      // Every version maps action names to ids; the ids shifted in 1.21.6
++      actionId: name,
++      jumpBoost: 0
++    })
++    if (controlState.sprint !== sentState.sprint) {
++      sentState.sprint = controlState.sprint
++      action(sentState.sprint ? 'start_sprinting' : 'stop_sprinting')
++    }
++    if (!bot.supportFeature('newPlayerInputPacket') && controlState.sneak !== sentState.sneak) {
++      sentState.sneak = controlState.sneak
++      action(sentState.sneak ? 'start_sneaking' : 'stop_sneaking')
+     }
+   }
+ 
+@@ -474,18 +582,33 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
    }
  
    let respawnTimer = 0
@@ -484,7 +590,17 @@ index cecae69..4b88533 100644
    bot.on('death', () => {
      shouldUsePhysics = false
      respawnTimer = Date.now()
-@@ -487,5 +598,9 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+   })
+-  bot.on('respawn', () => { shouldUsePhysics = false })
++  bot.on('respawn', () => {
++    shouldUsePhysics = false
++    resetSentState()
++  })
+   bot.on('login', () => {
+     shouldUsePhysics = false
++    resetSentState()
+     if (doPhysicsTimer === null) {
+       lastPhysicsFrameTime = performance.now()
        doPhysicsTimer = setInterval(doPhysics, PHYSICS_INTERVAL_MS)
      }
    })

@@ -104,7 +104,7 @@ const StepProfileUi: FC<Props> = ({ value, onChange }) => {
           scriptType="profileUi"
           value={value}
           onChange={onChange}
-          candidatesTitle="Your Profile-UI plugins"
+          placeholder="Select a profile UI plugin"
           createModal={{
             title: 'Create profile-UI plugin',
             defaultName: 'My profile UI',

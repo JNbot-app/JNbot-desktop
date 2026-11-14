@@ -47,7 +47,7 @@ describe('Script_ lifecycle and state methods', () => {
       { script: 'miner', scriptId: 'plugin-miner', scriptName: 'MinerScript', arguments: {} } as any,
       mockScriptHandler,
       mockProfile,
-      { instanceId: 42 },
+      { instanceId: 42, presetId: 'default' },
       new Uint16Array(10),
     );
   });

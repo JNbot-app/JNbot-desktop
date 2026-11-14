@@ -1,14 +1,12 @@
 import type { AiCall } from '../../../../common/types/pluginApi';
 import type { EnginePrediction } from '../NeedleEngine';
 import type { ToolDefinition } from '../protocol';
-import { aiError, filterThreshold, isObject, jsonValue } from '../schema';
+import { aiError, isObject, jsonValue } from '../schema';
 import { loadModel } from './model';
 import Tokenizer from './tokenizer';
 import prepareTools from './tools';
 import PreparedGrammar from './grammar';
-import ToolFilter, { pooled } from './toolFilter';
 import { CallTracker, constrainedLogProbability, gateCalls } from './output';
-import provenance from '../../../../../native/needle/vendor/provenance.json';
 
 export interface NativeBinding {
   invoke(operation: string, ...args: unknown[]): unknown;
@@ -28,6 +26,13 @@ interface PreparedTools {
   restore: (call: AiCall) => AiCall;
 }
 
+const NO_PREDICTION: EnginePrediction = {
+  calls: [],
+  suppressedCalls: [],
+  confidence: null,
+  reasoning: null,
+};
+
 export default class InferenceRuntime {
   private readonly context: number;
 
@@ -37,21 +42,14 @@ export default class InferenceRuntime {
 
   private prepared?: PreparedTools;
 
-  private filtered?: PreparedTools;
-
-  private prefixPrepared?: PreparedTools;
-
-  private toolFilter?: ToolFilter;
-
-  private extraction = false;
+  private windowSize?: number;
 
   constructor(
     private readonly binding: NativeBinding,
     file: string,
-    readonly variant: 'main' | 'flash',
   ) {
     try {
-      const model = loadModel(file, variant);
+      const model = loadModel(file);
       this.context = model.context;
       this.tokenizer = new Tokenizer(model.tokenizer);
       if (
@@ -62,117 +60,61 @@ export default class InferenceRuntime {
         throw aiError('AI_MODEL', 'Unsupported model dimensions.');
       this.logits = new Float32Array(model.vocab);
       binding.invoke('load', file, model.decoder.offset, model.decoder.length);
-      if ('weights' in model) {
-        if (binding.invoke('identity') !== provenance.encoderSourceSha256)
-          throw aiError(
-            'AI_MODEL',
-            'Inference build differs from the supported model contract.',
-          );
-        binding.invoke('attach', model.weights);
-        binding.invoke(
-          'encoder',
-          file,
-          model.encoder.offset,
-          model.encoderContext,
-        );
-      }
     } catch (error) {
       binding.invoke('close');
       throw error;
     }
   }
 
-  private prepare(
-    tools: ToolDefinition[],
-    key: string,
-    extraction: boolean,
-    restore: (call: AiCall) => AiCall,
-  ): PreparedTools {
-    const system = extraction
-      ? '<|im_start|>system\nExtract structured facts from the input.<|im_end|>\n'
-      : '';
-    const prefix = `${system}<|im_start|>user\n<tools>${JSON.stringify(tools)}</tools>\n`;
-    const tokenized = this.tokenizer.preparePrefix(prefix);
-    return {
-      key,
-      tools,
-      tokens: [this.tokenizer.bos, ...tokenized.tokens],
-      suffix: tokenized.append,
-      grammar: new PreparedGrammar(tools, this.tokenizer),
-      restore,
-    };
+  /** Changing the window rebuilds the KV cache, which also drops the cached tool prefix. */
+  private setWindow(size: number): void {
+    if (size === this.windowSize) return;
+    if (!Number.isSafeInteger(size) || size < 1 || size > this.context)
+      throw aiError(
+        'AI_INVALID_INPUT',
+        `windowSize must be an integer from 1 to ${this.context}.`,
+      );
+    this.binding.invoke('window', size);
+    this.windowSize = size;
   }
 
+  /**
+   * Prepares the prompt prefix for a toolset. The native engine keeps the state after
+   * these tokens, so later requests with the same tools skip their prefill.
+   */
   init(tools: ToolDefinition[], extraction = false): void {
     const key = JSON.stringify([tools, extraction]);
     if (this.prepared?.key === key) return;
     const adapted = prepareTools(tools);
-    const prepared = this.prepare(
-      adapted.tools,
+    const system = extraction
+      ? '<|im_start|>system\nExtract structured facts from the input.<|im_end|>\n'
+      : '';
+    const prefix = `${system}<|im_start|>user\n<tools>${JSON.stringify(adapted.tools)}</tools>\n`;
+    const tokenized = this.tokenizer.preparePrefix(prefix);
+    const prepared: PreparedTools = {
       key,
-      extraction,
-      adapted.restore,
-    );
+      tools: adapted.tools,
+      tokens: [this.tokenizer.bos, ...tokenized.tokens],
+      suffix: tokenized.append,
+      grammar: new PreparedGrammar(adapted.tools, this.tokenizer),
+      restore: adapted.restore,
+    };
     this.binding.invoke('reset');
-    this.binding.invoke('prefix', 0);
+    this.binding.invoke('prefix', prepared.tokens.length);
     this.prepared = prepared;
-    this.extraction = extraction;
-    this.filtered = undefined;
-    this.prefixPrepared = undefined;
-    this.toolFilter?.setTools(prepared.tools);
   }
 
   complete(
     text: string,
     maxNewTokens: number,
-    reasoning = false,
-    toolFilterThreshold: number | null = null,
+    reasoning: boolean,
+    windowSize: number,
   ): EnginePrediction {
-    let { prepared } = this;
+    const { prepared } = this;
     if (!prepared) throw aiError('AI_ENGINE', 'Tools are not prepared.');
-    const threshold = filterThreshold(toolFilterThreshold);
-    const deferred = this.variant === 'main' && threshold !== undefined;
+    this.setWindow(windowSize);
     this.binding.invoke('reset');
     try {
-      if (deferred) {
-        if (!this.toolFilter) {
-          this.toolFilter = new ToolFilter();
-          this.toolFilter.setTools(prepared.tools);
-        }
-        if (!prepared.tools.length)
-          return {
-            calls: [],
-            suppressedCalls: [],
-            confidence: null,
-            reasoning: null,
-          };
-        this.toolFilter.prepare(this.binding);
-        const query = pooled(
-          this.binding.invoke(
-            'encode',
-            `task: search result | query: ${text}`,
-            false,
-            true,
-          ),
-        );
-        const selected = this.toolFilter.select(query, threshold, this.binding);
-        if (!selected.length)
-          return {
-            calls: [],
-            suppressedCalls: [],
-            confidence: null,
-            reasoning: null,
-          };
-        const key = JSON.stringify(selected.map((tool) => tool.name));
-        if (this.filtered?.key !== key)
-          this.filtered = this.prepare(
-            selected,
-            key,
-            this.extraction,
-            prepared.restore,
-          );
-        prepared = this.filtered;
-      }
       const ids = Int32Array.from([
         ...prepared.tokens,
         ...prepared.suffix(`${text}<|im_end|>\n<|im_start|>assistant\n`),
@@ -186,17 +128,6 @@ export default class InferenceRuntime {
       const tracker = new CallTracker();
       const callLogProbabilities: number[][] = [];
       const sampler = prepared.grammar.sampler();
-      if (this.prefixPrepared && this.prefixPrepared !== prepared)
-        this.binding.invoke('prefix', 0);
-      this.binding.invoke('prefix', prepared.tokens.length);
-      this.prefixPrepared = prepared;
-      if (deferred) this.binding.invoke('prepare');
-      else if (this.variant === 'main')
-        this.binding.invoke(
-          'encode',
-          `task: search result | query: ${text}`,
-          true,
-        );
       this.binding.invoke('eval', ids, this.logits);
       const single = new Int32Array(1);
       for (let step = 0; step < maxNewTokens; step += 1) {
@@ -234,12 +165,7 @@ export default class InferenceRuntime {
         }
       }
       if (sampler.mode !== 'done' && sampler.mode !== 'closed')
-        return {
-          calls: [],
-          suppressedCalls: [],
-          confidence: null,
-          reasoning: null,
-        };
+        return NO_PREDICTION;
       const values = jsonValue(sampler.value);
       if (!Array.isArray(values))
         throw aiError('AI_INVALID_OUTPUT', 'Invalid model response.');
@@ -256,14 +182,11 @@ export default class InferenceRuntime {
         const scores = callLogProbabilities[index] ?? [0];
         return Math.exp(scores.reduce((a, b) => a + b, 0) / scores.length);
       });
-      const head =
-        this.variant === 'flash' ? this.binding.invoke('confidence') : null;
+      const head = this.binding.invoke('confidence');
       const headConfidence = typeof head === 'number' ? head : null;
-      // The per-call floor is calibrated for the main model only.
       const gated = gateCalls(calls, prepared.tools, text, {
         headConfidence,
-        callProbabilities:
-          this.variant === 'main' ? callProbabilities : undefined,
+        callProbabilities,
       });
       const { restore } = prepared;
       return {
@@ -287,29 +210,13 @@ export default class InferenceRuntime {
     }
   }
 
-  embed(text: string): number[] {
-    if (this.variant === 'flash')
-      throw aiError(
-        'AI_UNSUPPORTED_FEATURE',
-        'The flash model does not support embeddings.',
-      );
-    const values = this.binding.invoke(
-      'encode',
-      `task: search result | query: ${text}`,
-      false,
-    );
-    return Array.from(pooled(values));
-  }
-
   reset(): void {
     this.binding.invoke('reset');
   }
 
   close(): void {
     this.prepared = undefined;
-    this.filtered = undefined;
-    this.prefixPrepared = undefined;
-    this.toolFilter = undefined;
+    this.windowSize = undefined;
     this.binding.invoke('close');
   }
 

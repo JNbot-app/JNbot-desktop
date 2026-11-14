@@ -52,13 +52,6 @@ export function checkout(name, url, revision) {
   run('git', ['-C', directory, 'diff', '--quiet', 'HEAD', '--']);
   return directory;
 }
-export function dependencies() {
-  return checkout(
-    'llama.cpp',
-    'https://github.com/ggml-org/llama.cpp.git',
-    provenance.llamaRevision,
-  );
-}
 export function openblas(build, options = [], arch = process.arch) {
   const directory = checkout(
     'openblas',
@@ -99,10 +92,6 @@ export function notices(destination) {
   fs.copyFileSync(
     path.join(source, 'vendor/LICENSE'),
     path.join(directory, 'runtime-LICENSE.txt'),
-  );
-  fs.copyFileSync(
-    path.join(dependencies(), 'LICENSE'),
-    path.join(directory, 'llama-LICENSE.txt'),
   );
   const blas = path.join(source, 'engine/openblas/LICENSE');
   if (fs.existsSync(blas))
@@ -168,7 +157,6 @@ export function buildDesktop() {
     '-B',
     build,
     '-DCMAKE_BUILD_TYPE=Release',
-    `-DLLAMA_SOURCE_DIR=${dependencies()}`,
     `-DNODE_INCLUDE_DIR=${headers}`,
   ];
   if (process.platform === 'darwin')

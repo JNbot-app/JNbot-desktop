@@ -273,17 +273,13 @@ export const recipeActions: Record<string, ActionHandler> = {
   },
 
   async botTransferItems(context, { mode, username }) {
-    const bot = context.getBot();
-    const transferMode =
-      mode === 'trade' ? 1 : mode === 'gift' ? 2 : mode === 'window' ? 3 : 0;
-    if (!transferMode) throw new Error(`Unknown transfer mode: ${mode}`);
-    if (transferMode !== 3 && !username) {
-      throw new Error('Transfer items needs a player username.');
+    if (!['trade', 'gift', 'window', 'trash'].includes(mode)) {
+      throw new Error(`Unknown transfer mode: ${mode}`);
     }
-    await bot.transferItems(
-      transferMode,
-      transferMode === 3 ? { command: username } : { username },
-    );
+    if (mode !== 'trash' && !username) {
+      throw new Error('Transfer items needs a player username or command.');
+    }
+    await context.getBot().transfer(mode, mode === 'trash' ? undefined : username);
   },
 
   async botWait(context, { ticks }) {

@@ -1,10 +1,6 @@
 const Statemachine = require('./Statemachine');
-const {
-  gamemodeTranslate,
-  gamemodeTranslateReverse,
-} = require('./joinGamemode/joinGamemodeBehaviourV2');
-const joinGamemodeBehaviourV3 = require('./joinGamemode/joinGamemodeBehaviourV3').default;
-
+const joinGamemode = require('./joinGamemode/joinGamemodeBehaviourV3').default;
+const { gamemodeMatches } = require('../gamemode');
 
 const {
   getKickAction,
@@ -33,16 +29,9 @@ class BotStatemachine extends Statemachine {
       this.targets.joinOptions.gamemode = this.targets.joinOptions.gamemode
         .toLowerCase()
         .replace(/[^a-z]/g, '');
-
-      if (this.targets.joinOptions.gamemode in gamemodeTranslate) {
-        this.targets.joinOptions.gamemode =
-          gamemodeTranslate[this.targets.joinOptions.gamemode];
-      }
     }
     if (this.options.extensions.joinGm) {
-      // The V3 adapter runs the join to completion and tears down its own
-      // listeners/timeouts (runJoinCleanup), so no companion "finish" behaviour
-      // is needed here as there was for the old V2 Statemachine action.
+      // joinGamemode runs to completion and cleans up after itself.
       this.behaviours.unshift(this.__joinGamemodeAction);
     }
     if (this.options.extensions.joinServer)
@@ -109,62 +98,11 @@ class BotStatemachine extends Statemachine {
   get __joinGamemodeAction() {
     return {
       name: 'Join Gamemode',
-      shouldTrigger: (bot, targets) => {
-        // console.log(
-        //   !bot
-        //     ?.getGamemode()
-        //     ?.toLowerCase()
-        //     .replace(/[^a-z]/, '')
-        //     .includes(
-        //       gamemodeTranslate[targets.joinOptions?.gamemode] ||
-        //         targets.joinOptions?.gamemode
-        //     ),
-        //   bot?.getGamemode()?.toLowerCase(),
-        //   gamemodeTranslate[targets.joinOptions?.gamemode] ||
-        //     targets.joinOptions?.gamemode
-        // );
-
-        // console.log(
-        //   'Current gamemode: ',
-        //   bot
-        //     ?.getGamemode()
-        //     ?.toLowerCase()
-        //     .replace(/[^a-z]/, ''),
-        //   ' Target gamemode: ',
-        //   gamemodeTranslate[targets.joinOptions?.gamemode] ||
-        //     targets.joinOptions?.gamemode,
-        // );
-
-        if (!targets.joinOptions?.gamemode) {
-          return false;
-        }
-
-        if (targets.__join_data?.hasFinished) {
-          // used for optimistic join
-          return false;
-        }
-
-        
-        let gmStr = bot
-        ?.getGamemode()
-        ?.toLowerCase()
-        .replace(/[^a-z]/, '');
-        if (gmStr in gamemodeTranslateReverse) {
-          gmStr = gamemodeTranslateReverse[gmStr];
-        }
-        
-        // console.log(gmStr, gamemodeTranslate[targets.joinOptions?.gamemode] ||
-        //     targets.joinOptions?.gamemode, !gmStr?.includes?.(
-        //   gamemodeTranslate[targets.joinOptions?.gamemode] ||
-        //     targets.joinOptions?.gamemode
-        // ))
-        return !gmStr?.includes?.(
-          gamemodeTranslate[targets.joinOptions?.gamemode] ||
-            targets.joinOptions?.gamemode
-        );
-      },
+      shouldTrigger: (bot, targets) =>
+        !!targets.joinOptions?.gamemode &&
+        !gamemodeMatches(bot?.getGamemode(), targets.joinOptions.gamemode),
       action: async (bot, targets) =>
-        await joinGamemodeBehaviourV3(bot, targets.joinOptions.gamemode),
+        await joinGamemode(bot, targets.joinOptions.gamemode),
     };
   }
 }

@@ -1,3 +1,4 @@
+import { getRunnableScripts } from '../../src/cli/v2/actions';
 import { OutputRouter, redact } from '../../src/cli/v2/output';
 import { layoutForWidth } from '../../src/cli/v2/layout';
 import { commandArguments } from '../../src/cli/v2/commandLine';
@@ -113,5 +114,40 @@ describe('CLI v2 helpers', () => {
     expect(commandArguments("profile use 'jartex network'")).toEqual([
       'profile', 'use', 'jartex network',
     ]);
+  });
+});
+
+describe('getRunnableScripts', () => {
+  const info = (pluginId: string, scriptType = 'script') => ({ pluginId, name: pluginId, scriptType });
+  const runtime = {
+    handler: {
+      getBootstrapRuntime: () => ({ profileId: 1, profileKey: 'p' }),
+      isPluginDisallowed: (_: number, id: string) => id === 'blocked',
+      macros: {
+        toList: () => [info('shared', 'action'), info('library'), info('blocked'), info('ui', 'profileUi')],
+      },
+      settings: {
+        JNdata: { data: { p: { scripts: [{ id: 's1', pluginId: 'shared' }, { id: 's2', pluginId: 'broken' }] } } },
+        profiles: {
+          scripts: {
+            resolveInfo: async ({ id }: { id: string }) =>
+              id === 's1' ? { info: info('shared', 'action') } : { error: 'Failed' },
+          },
+        },
+        getProfileSettings: () => ({
+          scripts: { chains: { c1: { id: 'c1', chains: [], name: 'Old' } }, c1: { name: 'Daily' } },
+        }),
+      },
+    },
+  } as any;
+
+  it('lists runnable scripts once, with profile scripts first and chains last', async () => {
+    const scripts = await getRunnableScripts(runtime);
+    expect(scripts.map(({ info: { pluginId }, profileScriptId }) => [pluginId, profileScriptId])).toEqual([
+      ['shared', 's1'],
+      ['library', undefined],
+      ['chain:c1', undefined],
+    ]);
+    expect(scripts[2].info.name).toBe('Daily');
   });
 });

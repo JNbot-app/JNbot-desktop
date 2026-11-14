@@ -4,7 +4,7 @@ import type {
   AiRequestOptions,
   AiPredictOptions,
 } from '../../../common/types/pluginApi';
-import { aiError, filterThreshold } from './schema';
+import { aiError } from './schema';
 import scheduleDeadline from './deadline';
 
 const handlerContext = new AsyncLocalStorage<boolean>();
@@ -35,7 +35,6 @@ export function input(text: string, options: AiPredictOptions): number {
   positive(options.timeoutMs, 120_000, 'timeoutMs');
   if (options.reasoning !== undefined && typeof options.reasoning !== 'boolean')
     throw aiError('AI_INVALID_INPUT', 'reasoning must be a boolean.');
-  filterThreshold(options.toolFilterThreshold);
   return positive(options.maxNewTokens, 512, 'maxNewTokens');
 }
 

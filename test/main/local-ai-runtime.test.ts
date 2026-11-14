@@ -13,6 +13,7 @@ jest.mock('../../src/main/src/workers/lib/workerScript', () => ({
 jest.mock('../../src/main/src/workers/bot/statemachines/BotMachine', () => ({
   __esModule: true,
   default: jest.fn(),
+  patchedBotMachine: jest.fn(),
 }));
 jest.mock('../../src/main/src/workers/bot/Bot', () => ({
   __esModule: true,

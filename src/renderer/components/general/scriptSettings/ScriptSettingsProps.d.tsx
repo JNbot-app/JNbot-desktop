@@ -3,6 +3,7 @@ import type {
   PluginListField,
   PluginOptionSchema,
   PluginOptionType,
+  ScriptKind,
 } from '../../../../common/pluginOptions';
 
 export type { AltRangeValue } from '../../../../common/pluginOptions';
@@ -190,6 +191,21 @@ export interface ScriptSettingsProps_ActiveBotSelect
   placeholder?: string;
 }
 
+/**
+ * Select one or multiple scripts by id. Stored value is a string, or string[]
+ * when `multiple` is set.
+ */
+export interface ScriptSettingsProps_ScriptSelect
+  extends ScriptSettingProps_main {
+  type: 'scriptSelect';
+  /** Kinds of script to offer. Omit to offer every kind. */
+  kinds?: ScriptKind[];
+  multiple?: boolean;
+  clearable?: boolean;
+  placeholder?: string;
+  defaultValue?: string | string[];
+}
+
 export type ScriptSettingProps =
   | ScriptSettingsProps_Select
   | ScriptSettingsProps_MultiSelect
@@ -204,7 +220,8 @@ export type ScriptSettingProps =
   | ScriptSettingsProps_List
   | ScriptSettingsProps_Coordinate
   | ScriptSettingsProps_Keybind
-  | ScriptSettingsProps_ActiveBotSelect;
+  | ScriptSettingsProps_ActiveBotSelect
+  | ScriptSettingsProps_ScriptSelect;
 
 export interface ScriptSettingsSection extends Omit<PluginOptionSchema[number], 'options'> {
   options: ScriptSettingProps[];

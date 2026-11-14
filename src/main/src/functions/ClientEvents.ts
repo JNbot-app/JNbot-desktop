@@ -37,6 +37,8 @@ import { SearchProjectOptions } from '@xmcl/modrinth';
 import { backendMessaging } from '../messaging';
 import AccessControl from './AccessControl';
 import type { Address } from '../../../common/messaging';
+import type { LlmAskShareInput, LlmCancelInput, LlmConfig, LlmExplainErrorInput, LlmGenerateInput, LlmModelsInput, LlmWritePluginInput } from '../../../common/llm';
+import type LlmService from './llm/LlmService';
 import {
   MANAGE_PROFILES,
   USE_ACCOUNTS,
@@ -52,6 +54,8 @@ import {
   isOnlineMode,
 } from '../../../common/serverAuthentication';
 import { isSensitivePluginOption, type PluginOption } from '../../../common/pluginOptions';
+import { presetValues } from '../../../common/pluginPresets';
+import { pluginOptionChoices } from './pluginOptionChoices';
 import type ProfileRuntime from './ProfileRuntime';
 import { pluginSecurity } from './signing';
 import { PROFILE_ACTIONS } from '../../../common/profileActions';
@@ -112,6 +116,7 @@ class ClientEvents_ {
   windowHandler: WindowHandler_;
   registeredSockets: Set<Socket> = new Set();
   mcpManager?: McpManager;
+  llm?: LlmService;
   readonly accessControl: AccessControl;
   readonly profileTransfer: ProfileTransfer;
   readonly shares: ShareService;
@@ -277,6 +282,46 @@ class ClientEvents_ {
   MCP_CLEAR_AUDIT() {
     this.requireMcpManager().clearAudit();
     return true;
+  }
+
+  /* ---------- Optional AI features (bring your own key) ---------- */
+
+  LLM_STATUS() {
+    // The mobile app's embedded backend has no AI service.
+    return this.llm?.status() ?? { configured: false };
+  }
+
+  LLM_SET_CONFIG(input: LlmConfig | null) {
+    return this.requireLlm().setConfig(input);
+  }
+
+  LLM_TEST() {
+    return this.requireLlm().test();
+  }
+
+  LLM_MODELS(input: LlmModelsInput) {
+    return this.requireLlm().models(input);
+  }
+
+  LLM_WRITE_PLUGIN(input: LlmWritePluginInput, _event?: unknown, origin?: Address) {
+    return this.requireLlm().writePlugin(input, origin);
+  }
+
+  LLM_EXPLAIN_ERROR(input: LlmExplainErrorInput, _event?: unknown, origin?: Address) {
+    return this.requireLlm().explainError(input, origin);
+  }
+
+  LLM_ASK_SHARE(input: LlmAskShareInput, _event?: unknown, origin?: Address) {
+    return this.requireLlm().askAboutShare(input, origin);
+  }
+
+  LLM_CANCEL(input: LlmCancelInput) {
+    this.llm?.cancel(input.streamId);
+  }
+
+  private requireLlm(): LlmService {
+    if (!this.llm) throw new Error('AI is still starting.');
+    return this.llm;
   }
 
   private requireMcpManager(): McpManager {
@@ -516,6 +561,8 @@ class ClientEvents_ {
         });
         return true;
       }
+      case 'JOIN_BOT_NOW':
+        return runtime.activeBots.joinBotNow(Number(data?.botId));
       case 'LAUNCH_MINECRAFT':
         return this.scriptHandler.minecraftManager.launchMinecraft(data, {
           profileId,
@@ -608,38 +655,15 @@ class ClientEvents_ {
         if (!plugin?.pluginId) throw new Error('A plugin is required.');
         const profile = this.settings.JNdata.data[runtime.profileKey];
         const settings = this.settings.getProfileSettings(runtime.profileKey);
-        const toOptionChoices = (values?: readonly string[]) =>
-          (values ?? []).map((value) => ({ label: value, value }));
-        const getOptionChoices = (option: PluginOption) => {
-          switch (option.type) {
-            case 'gamemodeSelect':
-              return toOptionChoices(option.gamemodes ?? profile?.gamemodes ?? []);
-            case 'altSelect':
-            case 'altsSelect':
-            case 'altRange':
-              return toOptionChoices(Object.keys(settings.altData ?? {}));
-            case 'tagsSelect':
-              return (settings.altTags ?? []).map(({ name, id }) => ({
-                label: name,
-                value: id,
-              }));
-            case 'select':
-              return option.options;
-            case 'multiSelect':
-              return toOptionChoices(option.options);
-            default:
-              return undefined;
-          }
-        };
         const mapOption = (option: PluginOption) => {
           return {
             ...option,
-            options: getOptionChoices(option),
+            options: pluginOptionChoices(option, profile, settings),
             supported: option.type !== 'keybind',
             ...(option.type === 'keybind' ? { unsupportedReason: 'Configure keybinds on desktop.' } : {}),
           };
         };
-        const values = { ...(settings.scripts?.[plugin.pluginId] ?? {}) } as Record<string, unknown>;
+        const values = presetValues(settings.scripts?.[plugin.pluginId]) as Record<string, unknown>;
         for (const section of plugin.config ?? []) {
           for (const option of section.options ?? []) {
             if (isSensitivePluginOption(option)) delete values[option.id];
@@ -661,6 +685,8 @@ class ClientEvents_ {
       }
       case 'EXPORT_PORTABLE_PROFILE':
         return this.profileTransfer.export(runtime.profileKey);
+      case 'LLM_GENERATE':
+        return this.requireLlm().generate(data as LlmGenerateInput, profileId, originAddress);
       default:
         throw new Error(`Unknown profile action: ${event}`);
     }
@@ -1505,6 +1531,11 @@ class ClientEvents_ {
     data?: any;
     returnValue?: number;
   }) {
+    return this.profileIdRequired();
+  }
+
+  /** Skip the join delay for a queued bot. */
+  JOIN_BOT_NOW(_data: { botId: number }) {
     return this.profileIdRequired();
   }
 

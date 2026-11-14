@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import Chains from './Chains';
 import { useSettingsStore } from '../../../redux/settings';
 import SidePanel from '../../other/botSideBar/SidePanel';
@@ -7,6 +8,8 @@ import SidePanelContextProvider, {
   usePanelContext,
 } from '../../other/botSideBar/SidePanelContextProvider';
 
+// react-markdown is ESM-only, which Jest can't parse (pulled in via LlmPrompt → LlmAnswer).
+jest.mock('react-markdown', () => ({ children }: { children: string }) => children);
 jest.mock('../../other/botSideBar/panelTabs/LogsTab', () => () => null);
 jest.mock('../../other/botSideBar/botPanel/BotPanel', () => () => null);
 jest.mock('../../mcLauncher/tabs/MinecraftProjectPanel', () => ({
@@ -33,9 +36,11 @@ function ChainDashboard() {
 
 function renderDashboard() {
   return render(
-    <SidePanelContextProvider>
-      <ChainDashboard />
-    </SidePanelContextProvider>,
+    <MemoryRouter>
+      <SidePanelContextProvider>
+        <ChainDashboard />
+      </SidePanelContextProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -59,7 +64,7 @@ beforeAll(() => {
     removeEventListener: jest.fn(),
   }));
   Object.defineProperty(window, 'ipcRenderer', {
-    value: { get: jest.fn().mockResolvedValue([]) },
+    value: { get: jest.fn().mockResolvedValue([]), on: jest.fn() },
   });
 });
 
@@ -117,8 +122,8 @@ it('creates a named chain with the chosen settings and reuses the settings panel
     name: 'Daily rewards',
     gamemode: 'Skyblock',
   });
-  expect(screen.getByText('Gamemode: Skyblock')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: /Settings$/ }));
+  expect(screen.getByText('Skyblock', { selector: '.ant-typography' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Chain settings' }));
   expect(
     screen.getByRole('tab', { name: 'Chain settings' }),
   ).toBeInTheDocument();
@@ -135,7 +140,7 @@ it('creates a named chain with the chosen settings and reuses the settings panel
       description: 'Claims every kit',
     }),
   );
-  // Shown in the chain list and above the steps.
-  expect(await screen.findAllByText('Claims every kit')).toHaveLength(2);
+  // Shown in the chain list.
+  expect(await screen.findByText('Claims every kit')).toBeInTheDocument();
   // Renders the full side panel twice; slow when the whole suite runs in parallel.
 }, 60_000);
